@@ -1,4 +1,4 @@
-# Infinite Canvas 沉浸式改造 — 设计开发文档
+# CanvasAgents 沉浸式改造 — 设计开发文档
 
 > 版本 v1.0 · 2026-10-12 · 基线：infinite-canvas v0.20.0 + canvas-agent 0.6.0（本地源码构建，launchd 常驻）
 > 目标用户：少爷（单用户，桌面端优先；多端监控后置）

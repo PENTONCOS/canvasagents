@@ -124,7 +124,7 @@ test("Codex 历史省略命令时使用补充事件恢复完整命令卡片", ()
         threadId: "thread-1",
         turnId: "turn-1",
         itemId: "command-1",
-        item: { id: "command-1", type: "command_execution", command: "Get-Location", status: "completed", exitCode: 0, aggregatedOutput: "D:\\infinite-canvas" },
+        item: { id: "command-1", type: "command_execution", command: "Get-Location", status: "completed", exitCode: 0, aggregatedOutput: "D:\\canvasagents" },
     }], turns: [] });
 
     const command = messages.find((item) => item.itemId === "command-1");
@@ -133,7 +133,7 @@ test("Codex 历史省略命令时使用补充事件恢复完整命令卡片", ()
         kind: "command",
         status: "completed",
         rows: [{ label: "退出状态", value: "0" }],
-        output: "D:\\infinite-canvas",
+        output: "D:\\canvasagents",
     });
 });
 
@@ -217,7 +217,7 @@ test("标准历史条目稀疏时按字段补全补充事件", () => {
         turnId: "turn-1",
         itemId: "command-1",
         sequence: 1,
-        item: { id: "command-1", type: "command_execution", command: "补充命令", cwd: "D:\\infinite-canvas", aggregatedOutput: "输出", exitCode: 0 },
+        item: { id: "command-1", type: "command_execution", command: "补充命令", cwd: "D:\\canvasagents", aggregatedOutput: "输出", exitCode: 0 },
     }], turns: [] });
 
     const command = messages.find((item) => item.itemId === "command-1");
@@ -225,7 +225,7 @@ test("标准历史条目稀疏时按字段补全补充事件", () => {
     assert.deepEqual(command?.detail, {
         kind: "command",
         status: "completed",
-        rows: [{ label: "工作目录", value: "D:\\infinite-canvas" }, { label: "退出状态", value: "0" }],
+        rows: [{ label: "工作目录", value: "D:\\canvasagents" }, { label: "退出状态", value: "0" }],
         output: "输出",
     });
 });
@@ -304,7 +304,7 @@ test("标准历史尚未物化 turn 时从本地终态事件恢复完整对话",
     context.after(() => fs.rm(directory, { recursive: true, force: true }));
     const file = path.join(directory, "codex-event-history.json");
     const history = new CodexEventHistory(file);
-    await history.record({ threadId: "thread-1", turnId: "turn-1", itemId: "command-1", sequence: 1, item: { id: "command-1", type: "command_execution", command: "Get-Location", status: "completed", exitCode: 0, aggregatedOutput: "D:\\infinite-canvas" } });
+    await history.record({ threadId: "thread-1", turnId: "turn-1", itemId: "command-1", sequence: 1, item: { id: "command-1", type: "command_execution", command: "Get-Location", status: "completed", exitCode: 0, aggregatedOutput: "D:\\canvasagents" } });
     await history.record({ threadId: "thread-1", turnId: "turn-1", itemId: "assistant-1", sequence: 2, item: { id: "assistant-1", type: "agent_message", text: "完成" } });
     await history.recordTurn({ threadId: "thread-1", turnId: "turn-1", turn: { id: "turn-1", status: "completed", input: "执行 Get-Location" } });
 
@@ -337,13 +337,13 @@ test("补充事件更新时保留已有字段并限制单项输出大小", async
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), "canvas-agent-history-"));
     context.after(() => fs.rm(directory, { recursive: true, force: true }));
     const history = new CodexEventHistory(path.join(directory, "codex-event-history.json"));
-    await history.record({ threadId: "thread-1", turnId: "turn-1", itemId: "command-1", sequence: 1, item: { id: "command-1", type: "command_execution", command: "Get-Location", cwd: "D:\\infinite-canvas" } });
+    await history.record({ threadId: "thread-1", turnId: "turn-1", itemId: "command-1", sequence: 1, item: { id: "command-1", type: "command_execution", command: "Get-Location", cwd: "D:\\canvasagents" } });
     await history.record({ threadId: "thread-1", turnId: "turn-1", itemId: "command-1", item: { id: "command-1", status: "completed", aggregatedOutput: "x".repeat(100_001) } });
 
     const [entry] = (await history.readThread("thread-1")).items;
     assert.equal(entry.sequence, 1);
     assert.equal(entry.item.command, "Get-Location");
-    assert.equal(entry.item.cwd, "D:\\infinite-canvas");
+    assert.equal(entry.item.cwd, "D:\\canvasagents");
     assert.equal(String(entry.item.aggregatedOutput).endsWith("[输出已截断]"), true);
 });
 

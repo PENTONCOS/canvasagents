@@ -10,7 +10,7 @@ import {formatDateForFilename} from "./date.js";
 /** 管理 Canvas Agent 的终端与文件 Debug 日志。 */
 export class Logger {
     readonly enabled = process.argv.includes("--debug");
-    readonly filePath = this.enabled ? path.join(os.homedir(), ".infinite-canvas", "logs", `canvas-agent-${formatDateForFilename()}.log`) : "";
+    readonly filePath = this.enabled ? path.join(os.homedir(), ".canvasagents", "logs", `canvas-agent-${formatDateForFilename()}.log`) : "";
     private readonly logger: WinstonLogger;
 
     /** 普通模式输出 Info 以上日志，Debug 模式额外输出 Debug 并写入文件。 */

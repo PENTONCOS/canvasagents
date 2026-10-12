@@ -1,9 +1,10 @@
 services:
   app:
-    image: infinite-canvas:local
     build:
       context: .
       dockerfile: Dockerfile
+    image: canvasagents:local
+    container_name: canvasagents
     ports:
       - "3000:3000"
     restart: unless-stopped

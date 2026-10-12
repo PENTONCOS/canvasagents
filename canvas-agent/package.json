@@ -1,12 +1,12 @@
 {
-  "name": "@basketikun/canvas-agent",
+  "name": "canvasagents-agent",
   "version": "0.6.0",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "canvas-agent": "dist/index.js"
+    "canvasagents-agent": "dist/index.js"
   },
   "files": [
     "dist",

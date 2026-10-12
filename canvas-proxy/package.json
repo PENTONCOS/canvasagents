@@ -1,12 +1,12 @@
 {
-  "name": "@basketikun/canvas-proxy",
+  "name": "canvasagents-proxy",
   "version": "0.1.0",
-  "description": "Minimal local forwarding proxy that lets the Infinite Canvas web app call AI provider APIs without CORS restrictions.",
+  "description": "Minimal local forwarding proxy that lets the CanvasAgents web app call AI provider APIs without CORS restrictions.",
   "license": "MIT",
   "type": "module",
   "main": "./index.js",
   "bin": {
-    "canvas-proxy": "index.js"
+    "canvasagents-proxy": "index.js"
   },
   "files": [
     "index.js",

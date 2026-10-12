@@ -243,7 +243,7 @@ test("对话 revision 单调递增且 MCP 全部进入终态前保持 preparing"
 
     revisions.push(session.beginConversation({ sourceClientId: "first" }).revision);
     revisions.push(session.updateConversationMcp("late-service", "starting").revision);
-    revisions.push(session.completeConversationMcpInventory([{ name: "infinite-canvas", authStatus: "unsupported" }]).revision);
+    revisions.push(session.completeConversationMcpInventory([{ name: "canvasagents", authStatus: "unsupported" }]).revision);
     const pending = session.completeConversationPreparation("thread-1");
     revisions.push(pending.revision);
     assert.equal(pending.status, "preparing");
@@ -259,7 +259,7 @@ test("可选 MCP 失败进入 warning，画布 MCP 失败进入 failed", () => {
     const optionalFailure = new CanvasSession();
     optionalFailure.beginConversation();
     optionalFailure.completeConversationMcpInventory([
-        { name: "infinite-canvas", authStatus: "unsupported" },
+        { name: "canvasagents", authStatus: "unsupported" },
         { name: "notion", authStatus: "notLoggedIn" },
     ]);
     const warning = optionalFailure.completeConversationPreparation("thread-1");
@@ -268,17 +268,17 @@ test("可选 MCP 失败进入 warning，画布 MCP 失败进入 failed", () => {
 
     const requiredFailure = new CanvasSession();
     requiredFailure.beginConversation();
-    requiredFailure.completeConversationMcpInventory([{ name: "infinite-canvas", authStatus: "notLoggedIn" }]);
+    requiredFailure.completeConversationMcpInventory([{ name: "canvasagents", authStatus: "notLoggedIn" }]);
     const failed = requiredFailure.completeConversationPreparation("thread-2");
     assert.equal(failed.status, "failed");
-    assert.match(failed.error || "", /Infinite Canvas MCP/);
+    assert.match(failed.error || "", /CanvasAgents MCP/);
 
     const requiredMissing = new CanvasSession();
     requiredMissing.beginConversation();
     requiredMissing.completeConversationMcpInventory([{ name: "notion", authStatus: "unsupported" }]);
     const missing = requiredMissing.completeConversationPreparation("thread-3");
     assert.equal(missing.status, "failed");
-    assert.match(missing.error || "", /Infinite Canvas MCP/);
+    assert.match(missing.error || "", /CanvasAgents MCP/);
 });
 
 test("Codex 写操作在多窗口之间互斥且不能与运行 turn 并发", () => {
@@ -427,7 +427,7 @@ test("增量事件重放时转换为完整文本快照", (t) => {
 test("并行 item 更新后重放仍保留开始顺序和命令字段", (t) => {
     const session = new CanvasSession();
     session.setCodexState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
-    session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.started", item: { id: "first", type: "command_execution", command: "first", cwd: "D:\\infinite-canvas" } });
+    session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.started", item: { id: "first", type: "command_execution", command: "first", cwd: "D:\\canvasagents" } });
     session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.started", item: { id: "second", type: "command_execution", command: "second" } });
     session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.updated", item: { id: "first", type: "command_execution", delta: "output" } });
 
@@ -436,7 +436,7 @@ test("并行 item 更新后重放仍保留开始顺序和命令字段", (t) => {
     const events = client.events("agent_event") as Array<Record<string, unknown>>;
 
     assert.deepEqual(events.map((event) => field(field(event, "item"), "id")), ["first", "second"]);
-    assert.deepEqual(field(events[0], "item"), { id: "first", type: "command_execution", command: "first", cwd: "D:\\infinite-canvas", text: "output" });
+    assert.deepEqual(field(events[0], "item"), { id: "first", type: "command_execution", command: "first", cwd: "D:\\canvasagents", text: "output" });
 });
 
 test("长 turn 不会淘汰仍在更新的活动条目快照", (t) => {

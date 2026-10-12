@@ -98,7 +98,7 @@ export function createProxyServer() {
         }
         const target = readTarget(req.url || "/");
         if (!target) {
-            sendJson(res, 200, { app: "infinite-canvas", proxy: pkg.name, version: pkg.version, usage: "/<full-target-url>" });
+            sendJson(res, 200, { app: "canvasagents", proxy: pkg.name, version: pkg.version, usage: "/<full-target-url>" });
             return;
         }
         const startedAt = Date.now();
@@ -128,5 +128,5 @@ const host = readArg(args, "host", process.env.HOST || "127.0.0.1");
 
 createProxyServer().listen(port, host, () => {
     console.log(`${pkg.name} v${pkg.version} listening on http://${host}:${port}`);
-    console.log(`Fill this address into Infinite Canvas → 配置 → 本地代理: http://${host}:${port}`);
+    console.log(`Fill this address into CanvasAgents → 配置 → 本地代理: http://${host}:${port}`);
 });

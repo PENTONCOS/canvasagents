@@ -1,6 +1,6 @@
 # CHANGELOG
 
-> 本仓库为 [basketikun/infinite-canvas](https://github.com/basketikun/infinite-canvas) 的二次开发分支。下方 Unreleased 之前的条目沿用上游；自 2026-10 起，本仓库按 [immersive-redesign](./docs/immersive-redesign.md) 路线独立演进（M1 沉浸式骨架起步）。
+> CanvasAgents 更新日志。Unreleased 之前的条目沿用自上游 infinite-canvas v0.20.0（MIT）；自 2026-10 起，本仓库按 docs/immersive-redesign.md 路线独立演进（M1 沉浸式骨架起步）。
 
 ## Unreleased
 

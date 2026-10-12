@@ -2,24 +2,20 @@
 
 ## Supported Versions
 
-infinite-canvas is in active development. Security fixes are accepted for the
+CanvasAgents is in active development. Security fixes are accepted for the
 `main` branch and the latest tagged release. Older versions may be handled on a
 best-effort basis.
 
 ## Reporting a Vulnerability
 
-Please do not open a public issue with exploit details, credentials, private
-API keys, proof-of-concept code, or screenshots that reveal sensitive data.
+Please do not disclose exploit details, credentials, private API keys,
+proof-of-concept code, or screenshots that reveal sensitive data publicly.
 
 Preferred reporting channels:
 
-1. Use GitHub private vulnerability reporting or a GitHub Security Advisory for
-   this repository, if available.
-2. If neither private channel is available, open a public issue that asks for a
+1. Contact the maintainer through a private channel.
+2. If no private channel is available, open a public issue that asks for a
    private contact channel and does not include technical exploit details.
-3. For issues inherited from the upstream project
-   ([basketikun/infinite-canvas](https://github.com/basketikun/infinite-canvas)),
-   consider reporting upstream as well.
 
 Please include:
 
@@ -73,9 +69,7 @@ Examples that are usually out of scope:
 ## Disclosure
 
 The maintainers aim to acknowledge valid reports within 7 days and coordinate a
-fix before public disclosure. Response and fix timelines are best effort for
-this community project.
+fix before public disclosure. Response and fix timelines are best effort.
 
 Please allow time for investigation and remediation before publishing details.
 Credit will be given on request unless you prefer to remain anonymous.
-

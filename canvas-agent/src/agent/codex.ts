@@ -495,7 +495,7 @@ async function writeAttachmentFiles(attachments: AgentAttachment[]) {
 async function writeAttachmentFile(item: AgentAttachment) {
     const [, meta = "", data = ""] = item.dataUrl?.match(/^data:([^;]+);base64,(.+)$/) || [];
     if (!data) throw new Error(`图片附件无效：${item.name || "未命名图片"}`);
-    const file = path.join(os.tmpdir(), `infinite-canvas-${Date.now()}-${Math.random().toString(16).slice(2)}.${imageExt(meta || item.type)}`);
+    const file = path.join(os.tmpdir(), `canvasagents-${Date.now()}-${Math.random().toString(16).slice(2)}.${imageExt(meta || item.type)}`);
     await fs.writeFile(file, Buffer.from(data, "base64"));
     return file;
 }
