@@ -1,5 +1,7 @@
 # CHANGELOG
 
+> 本仓库为 [basketikun/infinite-canvas](https://github.com/basketikun/infinite-canvas) 的二次开发分支。下方 Unreleased 之前的条目沿用上游；自 2026-10 起，本仓库按 [immersive-redesign](./docs/immersive-redesign.md) 路线独立演进（M1 沉浸式骨架起步）。
+
 ## Unreleased
 
 + [修复] 已选模型或所属渠道被移除时保留原选择并阻止生成及视频任务查询，避免静默切换到默认模型或其他渠道。
