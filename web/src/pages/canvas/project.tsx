@@ -16,6 +16,7 @@ import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { useAssetStore } from "@/stores/use-asset-store";
+import { useCommandStore } from "@/stores/use-command-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { cropDataUrl, splitDataUrl, upscaleDataUrl } from "@/lib/canvas/canvas-image-data";
 import { fitNodeSize, nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
@@ -182,6 +183,8 @@ function InfiniteCanvasPage() {
     const agentPanelOpen = useAgentStore((state) => state.panelOpen);
     const toggleAgentPanel = useAgentStore((state) => state.togglePanel);
     const openAgentPanel = useAgentStore((state) => state.openPanel);
+    const pendingNodeType = useCommandStore((state) => state.pendingNodeType);
+    const clearPendingNode = useCommandStore((state) => state.clearPendingNode);
     const containerRef = useRef<HTMLDivElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
     const uploadTargetRef = useRef<{ nodeId?: string; position?: Position } | null>(null);
@@ -860,6 +863,15 @@ function InfiniteCanvasPage() {
         },
         [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, getCanvasCenter],
     );
+
+    // M1 immersive redesign: ⌘K palette requests a node cross-page; consume it here.
+    const createNodeRef = useRef(createNode);
+    createNodeRef.current = createNode;
+    useEffect(() => {
+        if (!pendingNodeType) return;
+        createNodeRef.current(pendingNodeType);
+        clearPendingNode();
+    }, [pendingNodeType, clearPendingNode]);
 
     const deleteNodes = useCallback(
         (ids: Set<string>) => {

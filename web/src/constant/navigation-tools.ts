@@ -1,28 +1,14 @@
-import { FileText, ImagePlus, Images, Maximize2, Settings2, Video } from "lucide-react";
+import { Maximize2, Settings2 } from "lucide-react";
 
+// M1 immersive redesign: the canvas is the single entry point; settings is a global drawer
+// instead of a page, so navigation collapses to these two items.
 export const navigationTools = [
     {
         slug: "canvas",
         icon: Maximize2,
     },
     {
-        slug: "image",
-        icon: ImagePlus,
-    },
-    {
-        slug: "video",
-        icon: Video,
-    },
-    {
-        slug: "prompts",
-        icon: FileText,
-    },
-    {
-        slug: "assets",
-        icon: Images,
-    },
-    {
-        slug: "config",
+        slug: "settings",
         icon: Settings2,
     },
 ] as const;

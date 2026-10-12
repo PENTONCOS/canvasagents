@@ -1,34 +1,47 @@
-import { createBrowserRouter, Outlet } from "react-router-dom";
+import { Navigate, createBrowserRouter, Outlet } from "react-router-dom";
 
 import { AnalyticsTracker } from "@/components/layout/analytics-tracker";
+import { CommandPalette } from "@/components/layout/command-palette";
+import { OnboardingWizard } from "@/components/layout/onboarding-wizard";
+import { SettingsDrawer } from "@/components/layout/settings-drawer";
 import UserLayout from "@/layouts/user-layout";
-import AssetsPage from "@/pages/assets";
 import CanvasPage from "@/pages/canvas";
 import CanvasProjectPage from "@/pages/canvas/project";
-import ConfigPage from "@/pages/config";
-import HomePage from "@/pages/home";
-import ImagePage from "@/pages/image";
 import NotFound from "@/pages/not-found";
-import PromptsPage from "@/pages/prompts";
-import VideoPage from "@/pages/video";
 
+// Legacy routes (/image /video /assets /prompts /config) intentionally redirect to /canvas
+// so old links keep working; the capability now lives inside the canvas (M1 immersive redesign).
 export const router = createBrowserRouter([
     {
         element: (
-            <UserLayout>
+            <>
                 <AnalyticsTracker />
                 <Outlet />
-            </UserLayout>
+            </>
         ),
         children: [
-            { path: "/", element: <HomePage /> },
-            { path: "/image", element: <ImagePage /> },
-            { path: "/video", element: <VideoPage /> },
-            { path: "/assets", element: <AssetsPage /> },
-            { path: "/prompts", element: <PromptsPage /> },
-            { path: "/canvas", element: <CanvasPage /> },
-            { path: "/canvas/:id", element: <CanvasProjectPage /> },
-            { path: "/config", element: <ConfigPage /> },
+            {
+                element: (
+                    <>
+                        <OnboardingWizard />
+                        <UserLayout>
+                            <Outlet />
+                        </UserLayout>
+                        <SettingsDrawer />
+                        <CommandPalette />
+                    </>
+                ),
+                children: [
+                    { path: "/", element: <Navigate to="/canvas" replace /> },
+                    { path: "/image", element: <Navigate to="/canvas" replace /> },
+                    { path: "/video", element: <Navigate to="/canvas" replace /> },
+                    { path: "/assets", element: <Navigate to="/canvas" replace /> },
+                    { path: "/prompts", element: <Navigate to="/canvas" replace /> },
+                    { path: "/config", element: <Navigate to="/canvas" replace /> },
+                    { path: "/canvas", element: <CanvasPage /> },
+                    { path: "/canvas/:id", element: <CanvasProjectPage /> },
+                ],
+            },
         ],
     },
     { path: "*", element: <NotFound /> },

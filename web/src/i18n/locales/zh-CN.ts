@@ -330,6 +330,7 @@ export default {
         prompts: "提示词库",
         assets: "我的资产",
         config: "配置",
+        settings: "设置",
     },
     topNav: {
         openMenu: "打开导航菜单",
@@ -659,6 +660,45 @@ export default {
             submittingApproval: "正在提交权限决定", waitingCodexApproval: "等待 Codex 确认权限", approvalFailed: "权限审批失败", enableFullAccess: "启用完全访问权限", fullAccessDescription: "Codex 将不受沙箱限制，可访问互联网及本机任意文件。请仅在信任当前任务时使用。", enableFullAccessAction: "启用完全访问", offline: "离线", addressRequired: "请填写本地 Agent 地址", agentNotFound: "没有发现本地 Agent，请先在 Codex 使用插件或手动启动 Canvas Agent", invalidAddress: "本地 Agent 地址格式不正确", connecting: "连接中", creatingConversation: "正在新建对话", newConversation: "新对话", newConversationFailed: "新建对话失败", conversationResumed: "已恢复会话", resumeConversationFailed: "恢复对话失败", recordsDeleted: "已删除 {{count}} 条记录", deleteConversationFailed: "删除对话失败", deleteConversations: "删除 {{count}} 条对话记录", deleteConversationsDescription: "删除后无法恢复，确定继续吗？", importGeneratedImages: "导入生成图片", addedToSourceCanvas: "已添加到发起任务的画布", imageGenerated: "图片已生成", noImageAttachments: "没有可添加的图片附件", invalidAttachmentNode: "图片附件节点参数无效", attachmentReadFailed: "读取图片附件失败", referenceImage: "参考图", generatedImageReadFailed: "读取 Codex 生成图片失败", generatedImageName: "生成图片 {{index}}",
         },
     },
+    commandPalette: {
+        placeholder: "搜索命令…",
+        empty: "没有匹配的命令",
+        createNode: "新建{{type}}节点",
+        openSettings: "打开设置",
+        openAgent: "打开 Agent 面板",
+        openProject: "打开画布",
+        newProject: "新建画布",
+    },
+
+    onboarding: {
+        title: "欢迎使用 Infinite Canvas",
+        stepKey: "配置模型",
+        stepAgent: "连接 Agent",
+        keyDescription: "填入一个 OpenAI 兼容的 API 地址和密钥，用于图片/视频/文本生成；也可以稍后在设置中配置。",
+        apiKey: "API Key",
+        skip: "跳过",
+        next: "下一步",
+        start: "开始使用",
+        agentDescription: "本地 Agent 引擎地址：{{url}}（Codex 桥接，画布内对话与自动操作依赖它）。",
+        agentConnected: "● Agent 已连接",
+        agentOffline: "○ Agent 未连接（可稍后在设置中连接）",
+    },
+
+    settings: {
+        agent: {
+        urlRequired: "请填写本地 Agent 地址",
+        saved: "连接信息已保存",
+        connectionTitle: "连接",
+        url: "本地地址",
+        token: "Connect Token",
+        saveConnection: "保存连接",
+        behaviorTitle: "行为",
+        model: "模型",
+        reasoningEffort: "推理力度",
+        permissionMode: "权限模式",
+    },
+    },
+
     locale: {
         zhCN: "简体中文",
         enUS: "English",
