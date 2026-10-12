@@ -45,6 +45,7 @@ export type CanvasNodeText = {
 };
 
 export type CanvasNodeMetadata = {
+    terminalSession?: string; // M2: bound canvas-agent terminal session id
     content?: string;
     composerContent?: string;
     prompt?: string;

@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
 import { CanvasNodeType } from "@/types/canvas";
+import { TERMINAL_NODE_TYPE } from "@/components/canvas/nodes/terminal-node";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useCommandStore } from "@/stores/use-command-store";
 import { useConfigStore } from "@/stores/use-config-store";
@@ -61,6 +62,14 @@ export function CommandPalette() {
                 setOpen(false);
             },
         }));
+        items.push({
+            key: "node:terminal",
+            label: t("commandPalette.createNode", { type: t("canvas.nodeTypes.terminal") }),
+            run: () => {
+                requestNode(TERMINAL_NODE_TYPE);
+                setOpen(false);
+            },
+        });
         items.push(
             { key: "settings", label: t("commandPalette.openSettings"), run: () => { openConfigDialog(false); setOpen(false); } },
             { key: "agent", label: t("commandPalette.openAgent"), run: () => { openPanel(); setOpen(false); } },

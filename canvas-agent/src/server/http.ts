@@ -13,6 +13,7 @@ import { DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWo
 import { logger } from "../utils/logger.js";
 import { checkVersions } from "../version-check.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
+import { terminalManager } from "./terminal.js";
 
 /** 启动仅监听本机的 Canvas Agent HTTP 服务。 */
 export function startHttpServer() {
@@ -141,6 +142,17 @@ export function startHttpServer() {
         const ok = session.resolveResult(String(req.query.clientId || ""), req.body);
         res.status(ok ? 200 : 409).json({ ok });
     });
+    app.get("/terminal/sessions", route(async (req, res) => {
+        res.json({ ok: true, sessions: await terminalManager.list(String(req.query.canvasId || "")) });
+    }));
+    app.post("/terminal/sessions", route(async (req, res) => {
+        const created = await terminalManager.create(String(req.body?.canvasId || ""));
+        res.json({ ok: true, ...created });
+    }));
+    app.post("/terminal/sessions/:id/close", route(async (req, res) => {
+        await terminalManager.remove(routeParam(req.params.id));
+        res.json({ ok: true });
+    }));
     app.get("/agent/attachments/:attachmentId", route(async (req, res) => {
         const attachment = session.getTurnAttachment(String(req.query.clientId || ""), routeParam(req.params.attachmentId));
         const data = attachment.dataUrl.split(",", 2)[1];
@@ -431,7 +443,7 @@ export function startHttpServer() {
         res.status(500).json({ ok: false, error: error.message });
     });
 
-    app.listen(port, "127.0.0.1", () => {
+    const server = app.listen(port, "127.0.0.1", () => {
         console.log("Infinite Canvas Agent");
         checkVersions();
         console.log(`Local URL: ${config.url}`);
@@ -451,6 +463,7 @@ export function startHttpServer() {
             }).finally(() => session.endCodexMutation()).catch(() => undefined);
         }
     });
+    terminalManager.registerHttp(server, (req, url) => validToken(req as unknown as Parameters<typeof validToken>[0], url, config.token));
 }
 
 /** 将异步 Express 路由异常交给统一错误处理中间件。 */
