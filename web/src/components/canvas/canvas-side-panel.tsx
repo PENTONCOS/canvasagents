@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
 import { App, Empty, Input, Popconfirm, Select, Spin, Tag } from "antd";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Check, ChevronRight, Download, Eye, FileText, Image as ImageIcon, LayoutGrid, ListChecks, Music2, Plus, Rows3, Search, Settings2, Square, Trash2, Type, Video } from "lucide-react";
+import { History, ChevronDown, BookOpen, Check, ChevronRight, Download, Eye, FileText, Image as ImageIcon, LayoutGrid, ListChecks, Music2, Plus, Rows3, Search, Settings2, Square, Trash2, Type, Video } from "lucide-react";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
@@ -325,7 +325,8 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, on
                                         </span>
                                         <span className="min-w-0 flex-1 space-y-0.5">
                                             <span className="block truncate text-sm font-medium leading-snug">{node.title || getNodeDefinition(node.type)?.title || t("canvas.node.untitled")}</span>
-                                            <span className="block truncate text-xs leading-snug opacity-50">{nodePreviewText(node)}</span>
+                                            <span className="block truncate text-xs leading-snug opacity-50">{nodePreviewText(node)}
+<NodeTimelineSection node={node} theme={theme} /></span>
                                         </span>
                                         {node.metadata?.status && node.metadata.status !== "idle" ? <span className="size-1.5 shrink-0 rounded-full" style={{ background: STATUS_COLOR[node.metadata.status] || "transparent" }} /> : null}
                                     </button>
@@ -361,6 +362,50 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, on
                         {t("canvas.exportSelected")}
                     </button>
                 </div>
+            ) : null}
+        </div>
+    );
+}
+
+
+function formatTimelineTime(at: number) {
+    return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/** M3: "What did the agent do" expandable timeline for one node in the side panel list. */
+function NodeTimelineSection({ node, theme }: { node: CanvasNodeData; theme: CanvasTheme }) {
+    const { t } = useTranslation();
+    const [open, setOpen] = useState(false);
+    const timeline = node.metadata?.timeline || [];
+    if (!timeline.length) return null;
+    const latest = timeline[timeline.length - 1];
+    return (
+        <div className="mt-0.5 w-full min-w-0" onClick={(event) => event.stopPropagation()}>
+            <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setOpen((value) => !value)}
+                className="flex w-full cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-left text-[11px] opacity-70 transition hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
+                style={{ color: theme.node.text }}
+            >
+                <History className="size-3 shrink-0" />
+                <span className="min-w-0 truncate">
+                    {t("canvas.sidePanel.timelineLatest", { action: t(`canvas.agentOps.${latest.kind}`, { defaultValue: latest.kind }), count: timeline.length })}
+                </span>
+                <ChevronDown className={cn("size-3 shrink-0 transition-transform", open && "rotate-180")} />
+            </div>
+            {open ? (
+                <ul className="mt-0.5 space-y-0.5 border-l pl-2 text-[11px] opacity-80" style={{ borderColor: theme.toolbar.activeBg }}>
+                    {[...timeline].reverse().map((entry, index) => (
+                        <li key={`${entry.at}-${index}`} className="flex items-baseline gap-1.5">
+                            <span className="shrink-0 tabular-nums opacity-60">{formatTimelineTime(entry.at)}</span>
+                            <span className="min-w-0 truncate" title={entry.detail || undefined}>
+                                {t(`canvas.agentOps.${entry.kind}`, { defaultValue: entry.kind })}
+                                {entry.detail ? ` · ${entry.detail}` : ""}
+                            </span>
+                        </li>
+                    ))}
+                </ul>
             ) : null}
         </div>
     );

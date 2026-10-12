@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type Dispatch, type MutableR
 
 import i18n from "@/i18n";
 import { useAgentStore } from "@/stores/use-agent-store";
-import { applyCanvasAgentOps, type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
+import { applyCanvasAgentOps, collectNodeTimeline, type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import type { CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
 import type { CanvasConnection, CanvasNodeData, ContextMenuState, ViewportTransform } from "@/types/canvas";
 
@@ -49,12 +49,20 @@ export function useAgentBridge(params: AgentBridgeParams) {
                 before,
                 safeOps.filter((op) => op.type !== "run_generation"),
             );
-            nodesRef.current = next.nodes;
+            const timelineByNode = collectNodeTimeline(safeOps, before, next);
+            const mergedNodes = timelineByNode.size
+                ? next.nodes.map((node) => {
+                    const entries = timelineByNode.get(node.id);
+                    if (!entries?.length) return node;
+                    return { ...node, metadata: { ...node.metadata, timeline: [...(node.metadata?.timeline || []), ...entries].slice(-50) } };
+                  })
+                : next.nodes;
+            nodesRef.current = mergedNodes;
             connectionsRef.current = next.connections;
             selectedNodeIdsRef.current = new Set(next.selectedNodeIds);
             viewportRef.current = next.viewport;
             setAgentUndoSnapshot(before);
-            setNodes(next.nodes);
+            setNodes(mergedNodes);
             setConnections(next.connections);
             setSelectedNodeIds(new Set(next.selectedNodeIds));
             setSelectedConnectionId(null);
@@ -69,7 +77,7 @@ export function useAgentBridge(params: AgentBridgeParams) {
                     }),
                 );
             }
-            return { ...next, projectId, title: projectTitle };
+            return { ...next, nodes: mergedNodes, projectId, title: projectTitle };
         },
         [projectTitle, projectId],
     );

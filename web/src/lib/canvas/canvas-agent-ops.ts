@@ -2,7 +2,7 @@ import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
 import { getNodeSpec, isRegisteredNodeType } from "@/lib/canvas/node-registry";
-import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type CanvasNodeMetadata, type CanvasNodeTypeId, type ViewportTransform } from "@/types/canvas";
+import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type CanvasNodeMetadata, type CanvasNodeTimelineEntry, type CanvasNodeTypeId, type ViewportTransform } from "@/types/canvas";
 
 export type CanvasAgentOp =
     | { type: "add_node"; id?: string; nodeType?: CanvasNodeTypeId; title?: string; position?: { x: number; y: number }; x?: number; y?: number; width?: number; height?: number; metadata?: CanvasNodeMetadata }
@@ -82,6 +82,46 @@ export function applyCanvasAgentOps(snapshot: CanvasAgentSnapshot, ops?: CanvasA
     });
 
     return { ...snapshot, nodes, connections, selectedNodeIds, viewport };
+}
+
+/** M3: derive per-node timeline entries from agent ops by diffing before/after snapshots. */
+export function collectNodeTimeline(ops: CanvasAgentOp[], before: CanvasAgentSnapshot, after: CanvasAgentSnapshot) {
+    const at = Date.now();
+    const map = new Map<string, CanvasNodeTimelineEntry[]>();
+    const add = (id: string | undefined, entry: CanvasNodeTimelineEntry) => {
+        if (!id) return;
+        const list = map.get(id) || [];
+        list.push(entry);
+        map.set(id, list);
+    };
+    const beforeIds = new Set(before.nodes.map((node) => node.id));
+    const addedNodes = after.nodes.filter((node) =>!beforeIds.has(node.id));
+    let addIndex = 0;
+    (Array.isArray(ops)? ops: []).forEach((op) => {
+        if (!op?.type) return;
+        const entry: CanvasNodeTimelineEntry = { at, kind: op.type };
+        if (op.type === "add_node") {
+            const id = op.id || addedNodes[addIndex++]?.id;
+            add(id, entry);
+        } else if (op.type === "update_node") {
+            add(op.id, entry);
+        } else if (op.type === "connect_nodes") {
+            add(op.fromNodeId, entry);
+            add(op.toNodeId, entry);
+        } else if (op.type === "delete_connections") {
+            const ids = new Set(op.ids || (op.id? [op.id]: []));
+            const removed = op.all? before.connections: before.connections.filter((conn) => ids.has(conn.id));
+            removed.forEach((conn) => {
+                add(conn.fromNodeId, entry);
+                add(conn.toNodeId, entry);
+            });
+        } else if (op.type === "run_generation" && op.nodeId) {
+            const prompt = op.prompt?.trim();
+            add(op.nodeId, { ...entry, detail: prompt?.slice(0, 80) });
+        }
+        // delete_node targets disappear; set_viewport/select_nodes are not node-scoped.
+    });
+    return map;
 }
 
 function opLabel(type: string) {

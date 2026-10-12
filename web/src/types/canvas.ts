@@ -44,8 +44,15 @@ export type CanvasNodeText = {
     content: string;
 };
 
+export type CanvasNodeTimelineEntry = {
+    at: number; // epoch ms
+    kind: string; // CanvasAgentOp type, rendered via canvas.agentOps.* i18n
+    detail?: string; // optional short human-readable detail (e.g. generation prompt)
+};
+
 export type CanvasNodeMetadata = {
     terminalSession?: string; // M2: bound canvas-agent terminal session id
+    timeline?: CanvasNodeTimelineEntry[]; // M3: agent op history for this node, oldest first, capped at 50
     content?: string;
     composerContent?: string;
     prompt?: string;
