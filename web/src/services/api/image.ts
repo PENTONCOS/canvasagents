@@ -809,13 +809,34 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     const imageField = files.length > 1 ? "image[]" : "image";
     files.forEach((file) => formData.append(imageField, file));
 
-    try {
-        const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/edits"), formData, { headers: aiHeaders(requestConfig), signal: options?.signal, timeout: IMAGE_REQUEST_TIMEOUT_MS });
-        const images = await parseImagePayload(response.data);
-        return images;
-    } catch (error) {
-        throw new Error(readAxiosError(error, apiText("requestFailed")));
-    }
+        const postEdit = (payload: FormData) =>
+        axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/edits"), payload, { headers: aiHeaders(requestConfig), signal: options?.signal, timeout: IMAGE_REQUEST_TIMEOUT_MS });
+        const editErrorStatus = (err: unknown) => (axios.isAxiosError(err) ? err.response?.status : undefined);
+        try {
+            const response = await postEdit(formData);
+            const images = await parseImagePayload(response.data);
+            return images;
+        } catch (error) {
+            // Some relays/models reject optional edit fields (or multipart edits entirely) with a bare 4xx/5xx.
+            const status = editErrorStatus(error);
+            if (status !== 500 && status !== 400) {
+                throw new Error(readAxiosError(error, apiText("requestFailed")));
+            }
+            for (const field of ["output_format", "quality", "background"]) {
+                formData.delete(field);
+            }
+            try {
+                const response = await postEdit(formData);
+                const images = await parseImagePayload(response.data);
+                return images;
+            } catch (retryError) {
+                const retryStatus = editErrorStatus(retryError);
+                if (retryStatus === 500 || retryStatus === 400) {
+                    throw new Error(apiText("imageEditUnsupported"));
+                }
+                throw new Error(readAxiosError(retryError, apiText("requestFailed")));
+            }
+        }
 }
 
 export async function requestImageQuestion(config: AiConfig, messages: AiTextMessage[], onDelta: (text: string) => void, options?: RequestOptions) {
