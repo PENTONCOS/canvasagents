@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
 import { useConfigStore } from "@/stores/use-config-store";
 import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
+import { AccountNavEntry } from "@/components/layout/account-nav-entry";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { cn } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
@@ -99,6 +100,7 @@ export function AppTopNav() {
                             <Tooltip title={t(panelOpen ? "topNav.closeAgent" : "topNav.openAgent")}>
                                 <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" icon={<Bot className="size-4" />} onClick={togglePanel} aria-label={t(panelOpen ? "topNav.closeAgent" : "topNav.openAgent")} />
                             </Tooltip>
+                            <AccountNavEntry />
                             <UserStatusActions />
                         </div>
                     </div>

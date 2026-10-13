@@ -346,6 +346,8 @@ export default {
         shortcuts: "Keyboard shortcuts",
         lightTheme: "Switch to light theme",
         darkTheme: "Switch to dark theme",
+        account: "Account",
+        signInRegister: "Sign in / Sign up",
     },
     home: {
         promptError: "Failed to load prompts",
