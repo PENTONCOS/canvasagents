@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { AgentPanel } from "@/components/agent/agent-panel";
+import { AgentQueueView } from "@/components/agent/agent-queue-view";
 import { AppTopNav } from "@/components/layout/app-top-nav";
 
 export default function UserLayout({ children }: { children: ReactNode }) {
@@ -11,6 +12,7 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                 <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
             </div>
             <AgentPanel />
+            <AgentQueueView />
         </div>
     );
 }

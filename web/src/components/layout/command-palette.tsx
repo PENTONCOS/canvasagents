@@ -37,6 +37,7 @@ export function CommandPalette() {
     const requestNode = useCommandStore((state) => state.requestNode);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const openPanel = useAgentStore((state) => state.openPanel);
+    const setAgentState = useAgentStore((state) => state.setAgentState);
     const projects = useCanvasStore((state) => state.projects);
     const createProject = useCanvasStore((state) => state.createProject);
 
@@ -73,6 +74,7 @@ export function CommandPalette() {
         items.push(
             { key: "settings", label: t("commandPalette.openSettings"), run: () => { openConfigDialog(false); setOpen(false); } },
             { key: "agent", label: t("commandPalette.openAgent"), run: () => { openPanel(); setOpen(false); } },
+            { key: "queue", label: t("commandPalette.openQueue"), run: () => { setAgentState({ queueOpen: true }); setOpen(false); } },
             ...projects.slice(0, 8).map((project) => ({
                 key: `project:${project.id}`,
                 label: t("commandPalette.openProject"),
@@ -90,7 +92,7 @@ export function CommandPalette() {
             },
         );
         return items;
-    }, [t, projects, navigate, requestNode, openConfigDialog, openPanel, createProject]);
+    }, [t, projects, navigate, requestNode, openConfigDialog, openPanel, createProject, setAgentState]);
 
     const filtered = useMemo(() => {
         const keyword = query.trim().toLowerCase();
