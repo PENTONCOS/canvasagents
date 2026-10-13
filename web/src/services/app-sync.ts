@@ -12,19 +12,19 @@ import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 
 type StoredLog = Record<string, unknown> & { id?: string };
 export type AppSyncDomainKey = "canvas" | "assets" | "image-workbench" | "video-workbench";
-type DomainKey = AppSyncDomainKey;
+export type DomainKey = AppSyncDomainKey | "config";
 type CanvasDomainData = { projects: CanvasProject[]; deleted: CanvasDeletedProject[] };
 type AssetDomainData = { assets: Asset[] };
 type LogDomainData = { logs: StoredLog[] };
 
-type AppSyncFile = {
+export type AppSyncFile = {
     storageKey: string;
     path: string;
     mimeType: string;
     bytes: number;
 };
 
-type DomainManifest<T> = {
+export type DomainManifest<T> = {
     app: "infinite-canvas";
     version: 1;
     domain: DomainKey;
@@ -33,7 +33,7 @@ type DomainManifest<T> = {
     files: AppSyncFile[];
 };
 
-type SyncDomainOptions<T> = {
+export type SyncDomainOptions<T> = {
     key: DomainKey;
     label: string;
     localData: () => Promise<T>;
@@ -42,7 +42,7 @@ type SyncDomainOptions<T> = {
     applyData?: (data: T) => Promise<void>;
 };
 
-type SyncDomainResult<T> = {
+export type SyncDomainResult<T> = {
     data: T;
     mergedRemote: boolean;
     files: number;
@@ -65,7 +65,7 @@ export type AppSyncResult = {
 };
 
 export type AppSyncProgressEvent = {
-    domain?: AppSyncDomainKey;
+    domain?: string;
     label?: string;
     stage: string;
     current?: number;
@@ -75,18 +75,38 @@ export type AppSyncProgressEvent = {
 
 export type AppSyncProgress = (event: AppSyncProgressEvent) => void;
 
-const FILE_CONCURRENCY = 3;
-const imageLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" });
-const videoLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" });
+export type AppSyncTransport = {
+    readManifest: (domain: DomainKey) => Promise<Blob | null>;
+    writeManifest: (domain: DomainKey, blob: Blob) => Promise<void>;
+    readFile: (path: string) => Promise<Blob | null>;
+    writeFile: (path: string, blob: Blob, mimeType: string) => Promise<void>;
+};
+
+export const FILE_CONCURRENCY = 3;
+export const imageLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" });
+export const videoLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" });
 type LogStore = typeof imageLogStore;
 const storageKeyPattern = /^(image|video|audio|file|video-reference|audio-reference):/;
 
 export async function syncAppDataToWebdav(config: WebdavSyncConfig, onProgress?: AppSyncProgress): Promise<AppSyncResult> {
+    return runAppSync(webdavTransport(config), onProgress);
+}
+
+export function webdavTransport(config: WebdavSyncConfig): AppSyncTransport {
+    return {
+        readManifest: async (domain) => downloadWebdavFile(config, domainPath(domain, WEBDAV_MANIFEST_FILE_NAME)),
+        writeManifest: async (domain, blob) => uploadWebdavFile(config, domainPath(domain, WEBDAV_MANIFEST_FILE_NAME), blob, "application/json"),
+        readFile: (path) => downloadWebdavFile(config, path),
+        writeFile: (path, blob, mimeType) => uploadWebdavFile(config, path, blob, mimeType),
+    };
+}
+
+export async function runAppSync(transport: AppSyncTransport, onProgress?: AppSyncProgress): Promise<AppSyncResult> {
     emitProgress(onProgress, { stage: "等待本地数据加载" });
     await Promise.all([waitForHydration(useCanvasStore), waitForHydration(useAssetStore)]);
 
     const [canvas, assets, imageLogs, videoLogs] = await Promise.all([
-        syncDomain<CanvasDomainData>(config, onProgress, {
+        syncDomain<CanvasDomainData>(transport, onProgress, {
             key: "canvas",
             label: "画布",
             emptyData: { projects: [], deleted: [] },
@@ -97,7 +117,7 @@ export async function syncAppDataToWebdav(config: WebdavSyncConfig, onProgress?:
             mergeData: mergeCanvasData,
             applyData: async (data) => useCanvasStore.getState().replaceProjects(data.projects, data.deleted),
         }),
-        syncDomain<AssetDomainData>(config, onProgress, {
+        syncDomain<AssetDomainData>(transport, onProgress, {
             key: "assets",
             label: "我的资产",
             emptyData: { assets: [] },
@@ -105,7 +125,7 @@ export async function syncAppDataToWebdav(config: WebdavSyncConfig, onProgress?:
             mergeData: (local, remote) => ({ assets: mergeById(local.assets, remote.assets, "updatedAt") }),
             applyData: async (data) => useAssetStore.getState().replaceAssets(await Promise.all(data.assets.map(hydrateAsset))),
         }),
-        syncDomain<LogDomainData>(config, onProgress, {
+        syncDomain<LogDomainData>(transport, onProgress, {
             key: "image-workbench",
             label: "生图工作台",
             emptyData: { logs: [] },
@@ -113,7 +133,7 @@ export async function syncAppDataToWebdav(config: WebdavSyncConfig, onProgress?:
             mergeData: (local, remote) => ({ logs: mergeById(local.logs, remote.logs, "createdAt") }),
             applyData: async (data) => replaceStoredLogs(imageLogStore, data.logs),
         }),
-        syncDomain<LogDomainData>(config, onProgress, {
+        syncDomain<LogDomainData>(transport, onProgress, {
             key: "video-workbench",
             label: "视频创作台",
             emptyData: { logs: [] },
@@ -139,27 +159,27 @@ export async function syncAppDataToWebdav(config: WebdavSyncConfig, onProgress?:
     return result;
 }
 
-async function syncDomain<T>(config: WebdavSyncConfig, onProgress: AppSyncProgress | undefined, options: SyncDomainOptions<T>): Promise<SyncDomainResult<T>> {
+export async function syncDomain<T>(transport: AppSyncTransport, onProgress: AppSyncProgress | undefined, options: SyncDomainOptions<T>): Promise<SyncDomainResult<T>> {
     try {
         emitProgress(onProgress, { domain: options.key, label: options.label, stage: "读取远端清单", status: "active" });
-        const remoteManifest = await readDomainManifest(config, options.key, options.emptyData);
+        const remoteManifest = await readDomainManifest(transport, options.key, options.emptyData);
         emitProgress(onProgress, { domain: options.key, label: options.label, stage: "读取本地数据", status: "active" });
         const localData = await options.localData();
         const mergedData = remoteManifest ? options.mergeData(localData, remoteManifest.data) : localData;
 
         if (remoteManifest) {
             emitProgress(onProgress, { domain: options.key, label: options.label, stage: "下载缺失媒体", status: "active" });
-            await downloadMissingFiles(config, options.key, mergedData, remoteManifest.files, onProgress);
+            await downloadMissingFiles(transport, options.key, mergedData, remoteManifest.files, onProgress);
             emitProgress(onProgress, { domain: options.key, label: options.label, stage: "写入本地合并结果", status: "active" });
             await options.applyData?.(mergedData);
         }
 
         emitProgress(onProgress, { domain: options.key, label: options.label, stage: "上传新增媒体", status: "active" });
-        const uploaded = await uploadChangedFiles(config, options.key, mergedData, remoteManifest?.files || [], onProgress);
+        const uploaded = await uploadChangedFiles(transport, options.key, mergedData, remoteManifest?.files || [], onProgress);
         const manifest: DomainManifest<T> = { app: "infinite-canvas", version: 1, domain: options.key, exportedAt: new Date().toISOString(), data: mergedData, files: uploaded.files };
         const manifestFile = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
         emitProgress(onProgress, { domain: options.key, label: options.label, stage: `上传清单 ${formatBytes(manifestFile.size)}`, status: "active" });
-        await uploadWebdavFile(config, domainPath(options.key, WEBDAV_MANIFEST_FILE_NAME), manifestFile, "application/json");
+        await transport.writeManifest(options.key, manifestFile);
         emitProgress(onProgress, { domain: options.key, label: options.label, stage: "完成", current: 1, total: 1, status: "success" });
 
         return {
@@ -176,8 +196,8 @@ async function syncDomain<T>(config: WebdavSyncConfig, onProgress: AppSyncProgre
     }
 }
 
-async function readDomainManifest<T>(config: WebdavSyncConfig, domain: DomainKey, emptyData: T): Promise<DomainManifest<T> | null> {
-    const file = await downloadWebdavFile(config, domainPath(domain, WEBDAV_MANIFEST_FILE_NAME));
+export async function readDomainManifest<T>(transport: AppSyncTransport, domain: DomainKey, emptyData: T): Promise<DomainManifest<T> | null> {
+    const file = await transport.readManifest(domain);
     if (!file) return null;
     const data = JSON.parse(await file.text()) as DomainManifest<T>;
     if (data.app !== "infinite-canvas" || data.domain !== domain) throw new Error(i18n.t("config.webdav.errors.invalidManifest", { domain }));
@@ -191,7 +211,7 @@ async function readDomainManifest<T>(config: WebdavSyncConfig, domain: DomainKey
     };
 }
 
-async function downloadMissingFiles<T>(config: WebdavSyncConfig, domain: DomainKey, data: T, remoteFiles: AppSyncFile[], onProgress?: AppSyncProgress) {
+export async function downloadMissingFiles<T>(transport: AppSyncTransport, domain: DomainKey, data: T, remoteFiles: AppSyncFile[], onProgress?: AppSyncProgress) {
     const remoteFileMap = new Map(remoteFiles.map((item) => [item.storageKey, item]));
     const tasks: AppSyncFile[] = [];
     const storageKeys = collectStorageKeys(data);
@@ -213,7 +233,7 @@ async function downloadMissingFiles<T>(config: WebdavSyncConfig, domain: DomainK
     }
     let downloaded = 0;
     await runWithConcurrency(tasks, FILE_CONCURRENCY, async (remoteFile) => {
-        const blob = await downloadWebdavFile(config, remoteFile.path);
+        const blob = await transport.readFile(remoteFile.path);
         if (!blob) return;
         const typedBlob = blob.type ? blob : blob.slice(0, blob.size, remoteFile.mimeType);
         await (remoteFile.storageKey.startsWith("image:") ? setImageBlob(remoteFile.storageKey, typedBlob) : setMediaBlob(remoteFile.storageKey, typedBlob));
@@ -222,7 +242,7 @@ async function downloadMissingFiles<T>(config: WebdavSyncConfig, domain: DomainK
     });
 }
 
-async function uploadChangedFiles<T>(config: WebdavSyncConfig, domain: DomainKey, data: T, remoteFiles: AppSyncFile[], onProgress?: AppSyncProgress) {
+export async function uploadChangedFiles<T>(transport: AppSyncTransport, domain: DomainKey, data: T, remoteFiles: AppSyncFile[], onProgress?: AppSyncProgress) {
     const remoteFileMap = new Map(remoteFiles.map((item) => [item.storageKey, item]));
     const files: AppSyncFile[] = [];
     const tasks: Array<{ item: AppSyncFile; blob: Blob }> = [];
@@ -258,7 +278,7 @@ async function uploadChangedFiles<T>(config: WebdavSyncConfig, domain: DomainKey
     }
 
     await runWithConcurrency(tasks, FILE_CONCURRENCY, async ({ item, blob }) => {
-        await uploadWebdavFile(config, item.path, blob, item.mimeType);
+        await transport.writeFile(item.path, blob, item.mimeType);
         uploadedFiles += 1;
         uploadedBytes += blob.size;
         emitProgress(onProgress, { domain, label: domainLabel(domain), stage: `上传媒体 ${formatBytes(blob.size)}`, current: uploadedFiles, total: tasks.length, status: "active" });
@@ -267,7 +287,7 @@ async function uploadChangedFiles<T>(config: WebdavSyncConfig, domain: DomainKey
     return { files, uploadedFiles, uploadedBytes };
 }
 
-async function hydrateAsset(asset: Asset): Promise<Asset> {
+export async function hydrateAsset(asset: Asset): Promise<Asset> {
     if (asset.kind === "image" && asset.data.storageKey) {
         const dataUrl = await resolveImageUrl(asset.data.storageKey, asset.data.dataUrl);
         return { ...asset, coverUrl: asset.coverUrl.startsWith("blob:") ? dataUrl : asset.coverUrl, data: { ...asset.data, dataUrl } };
@@ -279,7 +299,7 @@ async function hydrateAsset(asset: Asset): Promise<Asset> {
     return asset;
 }
 
-async function readStoredLogs(store: LogStore) {
+export async function readStoredLogs(store: LogStore) {
     const logs: StoredLog[] = [];
     await store.iterate<StoredLog, void>((value) => {
         if (value && typeof value === "object") logs.push(value);
@@ -287,7 +307,7 @@ async function readStoredLogs(store: LogStore) {
     return logs;
 }
 
-async function replaceStoredLogs(store: LogStore, logs: StoredLog[]) {
+export async function replaceStoredLogs(store: LogStore, logs: StoredLog[]) {
     await store.clear();
     await runWithConcurrency(logs, FILE_CONCURRENCY, async (log) => {
         const id = getStringField(log, "id");
@@ -295,7 +315,7 @@ async function replaceStoredLogs(store: LogStore, logs: StoredLog[]) {
     });
 }
 
-function mergeCanvasData(local: CanvasDomainData, remote: CanvasDomainData): CanvasDomainData {
+export function mergeCanvasData(local: CanvasDomainData, remote: CanvasDomainData): CanvasDomainData {
     const localDeleted = local.deleted || [];
     const remoteDeleted = remote.deleted || [];
     const deletedAtById = new Map<string, string>();
@@ -336,7 +356,7 @@ function mergeById<T extends { id?: string }>(local: T[], remote: T[], timeKey: 
     return Array.from(items.values()).sort((a, b) => getTime(b as Record<string, unknown>, timeKey) - getTime(a as Record<string, unknown>, timeKey));
 }
 
-function collectStorageKeys(value: unknown, keys = new Set<string>()) {
+export function collectStorageKeys(value: unknown, keys = new Set<string>()) {
     if (typeof value === "string") {
         if (storageKeyPattern.test(value)) keys.add(value);
         return [...keys];
@@ -355,7 +375,8 @@ function domainLabel(domain: DomainKey) {
     if (domain === "canvas") return "画布";
     if (domain === "assets") return "我的资产";
     if (domain === "image-workbench") return "生图工作台";
-    return "视频创作台";
+    if (domain === "video-workbench") return "视频创作台";
+    return "配置";
 }
 
 function emitProgress(onProgress: AppSyncProgress | undefined, event: AppSyncProgressEvent) {
@@ -374,11 +395,11 @@ function getTime(item: Record<string, unknown>, key: string) {
     return 0;
 }
 
-function safeFileName(value: string) {
+export function safeFileName(value: string) {
     return value.replace(/[\\/:*?"<>|]/g, "_");
 }
 
-function fileExtension(mimeType: string, storageKey: string) {
+export function fileExtension(mimeType: string, storageKey: string) {
     if (mimeType.includes("png")) return "png";
     if (mimeType.includes("jpeg")) return "jpg";
     if (mimeType.includes("webp")) return "webp";
@@ -390,7 +411,7 @@ function fileExtension(mimeType: string, storageKey: string) {
     return storageKey.startsWith("image:") ? "png" : "bin";
 }
 
-function waitForHydration<T extends { hydrated: boolean }>(store: { getState: () => T; subscribe: (listener: (state: T) => void) => () => void }) {
+export function waitForHydration<T extends { hydrated: boolean }>(store: { getState: () => T; subscribe: (listener: (state: T) => void) => () => void }) {
     if (store.getState().hydrated) return Promise.resolve();
     return new Promise<void>((resolve) => {
         const unsubscribe = store.subscribe((state) => {
@@ -401,7 +422,7 @@ function waitForHydration<T extends { hydrated: boolean }>(store: { getState: ()
     });
 }
 
-async function runWithConcurrency<T, R>(items: T[], limit: number, worker: (item: T, index: number) => Promise<R>) {
+export async function runWithConcurrency<T, R>(items: T[], limit: number, worker: (item: T, index: number) => Promise<R>) {
     const results = new Array<R>(items.length);
     let nextIndex = 0;
     await Promise.all(
@@ -415,7 +436,7 @@ async function runWithConcurrency<T, R>(items: T[], limit: number, worker: (item
     return results;
 }
 
-function formatBytes(bytes: number) {
+export function formatBytes(bytes: number) {
     if (bytes < 1024) return `${bytes}B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
     return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
