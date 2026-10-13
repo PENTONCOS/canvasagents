@@ -30,3 +30,8 @@ npx --yes surge dist canvas-agents.surge.sh
 
 - `~/rea-lab/logs/canvasagents-watch.log`
 - `~/rea-lab/logs/canvasagents-autodeploy.log`
+
+## 注意：SURGE_TOKEN 必须是 Surge token（32 位）
+
+- Surge token = 32 位十六进制（`npx surge token` 可查；也可读 `~/.netrc` 中 `machine surge.surge.sh` 的 password）。
+- 不要填 GitHub PAT（`ghp_…`，40 位）；否则 CI 报 `Invalid token`。
