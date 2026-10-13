@@ -1,0 +1,46 @@
+name: Deploy to Surge
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-surge
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        working-directory: web
+        run: pnpm build
+
+      - name: Publish to Surge
+        working-directory: web
+        env:
+          SURGE_TOKEN: ${{ secrets.SURGE_TOKEN }}
+        run: |
+          if [ -z "$SURGE_TOKEN" ]; then
+            echo "::notice::SURGE_TOKEN secret is not set - skipping Surge publish."
+            exit 0
+          fi
+          echo "canvas-agents.surge.sh" > dist/CNAME
+          npx --yes surge dist canvas-agents.surge.sh --token "$SURGE_TOKEN"
