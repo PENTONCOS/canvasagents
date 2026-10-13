@@ -9,7 +9,7 @@
 #      npx wrangler d1 execute canvasagents-sync --file=schema.sql --remote
 #      npx wrangler deploy
 
-name = "canvasagents-sync"
+name = "sync"
 main = "src/index.js"
 compatibility_date = "2026-10-13"
 
@@ -18,7 +18,7 @@ compatibility_date = "2026-10-13"
 [[d1_databases]]
 binding = "DB"
 database_name = "canvasagents-sync"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "6effefcf-5482-4dab-b718-3b1aadb8f95c"
 
 # R2: file blobs (the R2 bucket name can differ from the binding name).
 [[r2_buckets]]

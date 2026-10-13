@@ -23,7 +23,7 @@ npx wrangler deploy
 Wrangler prints the public URL on the last line, e.g.:
 
 ```
-https://canvasagents-sync.<your-subdomain>.workers.dev
+https://sync.canvasagents-sync.workers.dev
 ```
 
 Use that URL as the sync server address in the CanvasAgents web app.

@@ -645,7 +645,7 @@ export default {
             title: "Account & Sync",
             description: "Sign in to your self-hosted sync server to keep canvases, assets, generation history and settings in the cloud — sign in on any computer to restore them.",
             serverUrl: "Sync server URL",
-            serverUrlDescription: "Leave empty to use the current site origin (not needed for same-origin deployments).",
+            serverUrlDescription: "Leave empty to use the built-in public sync service; enter your own address when self-hosting.",
             login: "Sign in",
             register: "Sign up",
             username: "Username",

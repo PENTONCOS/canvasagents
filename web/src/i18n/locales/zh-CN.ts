@@ -645,7 +645,7 @@ export default {
             title: "账号与同步",
             description: "登录自建同步服务器后，画布、我的资产、生成记录与各项设置会同步到云端，换台电脑登录即可恢复。",
             serverUrl: "同步服务器地址",
-            serverUrlDescription: "留空则使用当前站点地址（同源部署时无需填写）。",
+            serverUrlDescription: "留空则使用内置的公共同步服务；自建服务器时填写自己的地址。",
             login: "登录",
             register: "注册",
             username: "用户名",

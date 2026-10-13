@@ -6,6 +6,10 @@ export type AccountApiResult<T> = {
     headers: Headers;
 };
 
+// 内置的公网同步服务（Cloudflare Workers + D1 + R2），留空时默认使用它，
+// 这样换一台电脑登录同一个账号即可恢复配置。自建部署可在「同步服务器地址」里覆盖。
+export const DEFAULT_SYNC_SERVER_URL = "https://sync.canvasagents-sync.workers.dev";
+
 function normalizeServerUrl(value: string) {
     return value.trim().replace(/\/+$/, "");
 }
@@ -15,9 +19,12 @@ export function resolveServerUrl(serverUrl?: string) {
     if (configured) return configured;
     if (typeof window !== "undefined" && window.location) {
         const { protocol, hostname, port } = window.location;
-        if (protocol.startsWith("http")) return `${protocol}//${hostname}${port? `:${port}`: ""}`;
+        // 本地开发时优先同源，方便连本机自建的同步服务。
+        if (protocol.startsWith("http") && (hostname === "localhost" || hostname === "127.0.0.1")) {
+            return `${protocol}//${hostname}${port ? `:${port}` : ""}`;
+        }
     }
-    return "http://127.0.0.1:17372";
+    return DEFAULT_SYNC_SERVER_URL;
 }
 
 export function accountRequestInit(method: string, body?: BodyInit, contentType?: string): RequestInit {
