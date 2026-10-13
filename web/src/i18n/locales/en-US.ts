@@ -349,6 +349,12 @@ export default {
         account: "Account",
         signInRegister: "Sign in / Sign up",
     },
+    accountOnboarding: {
+        title: "Sign in to sync automatically",
+        description: "Sign in to keep your canvases, assets and settings in the cloud and continue on any device.",
+        action: "Sign in / Sign up",
+        dismiss: "Not now",
+    },
     home: {
         promptError: "Failed to load prompts",
         description: "Generate, connect, and reshape <content>images, text, and graphics</content> in <canvas>CanvasAgents</canvas>, turning one-off generations into a continuous creative process.",

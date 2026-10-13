@@ -349,6 +349,12 @@ export default {
         account: "账号",
         signInRegister: "登录 / 注册",
     },
+    accountOnboarding: {
+        title: "登录后自动同步",
+        description: "登录即可把画布、资产与设置同步到云端，换台设备也能继续。",
+        action: "登录 / 注册",
+        dismiss: "暂不需要",
+    },
     home: {
         promptError: "获取提示词失败",
         description: "在 <canvas>CanvasAgents</canvas> 中生成、连接和重组 <content>图片、文字与图形</content>，让创作从单次生成变成连续推演。",
