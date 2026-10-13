@@ -15,6 +15,8 @@ export type AccountState = {
     token: string;
     user: AccountUser | null;
     lastSyncedAt: string;
+    /** Id of the account that owns the local data; survives logout so a switch can be detected. */
+    lastAccountId: string;
 };
 
 type AccountStore = AccountState & {
@@ -22,6 +24,7 @@ type AccountStore = AccountState & {
     setSession: (payload: { token: string; user: AccountUser }) => void;
     setUser: (user: AccountUser | null) => void;
     setLastSyncedAt: (lastSyncedAt: string) => void;
+    setLastAccountId: (lastAccountId: string) => void;
     clearSession: () => void;
 };
 
@@ -32,16 +35,18 @@ export const useAccountStore = create<AccountStore>()(
             token: "",
             user: null,
             lastSyncedAt: "",
+            lastAccountId: "",
             setServerUrl: (serverUrl) => set({ serverUrl }),
             setSession: ({ token, user }) => set({ token, user }),
             setUser: (user) => set({ user }),
             setLastSyncedAt: (lastSyncedAt) => set({ lastSyncedAt }),
+            setLastAccountId: (lastAccountId) => set({ lastAccountId }),
             clearSession: () => set({ token: "", user: null, lastSyncedAt: "" }),
         }),
         {
             name: `${APP_ID}:account_store`,
             storage: createJSONStorage(() => createBrandStorage()),
-            partialize: (state) => ({ serverUrl: state.serverUrl, token: state.token, user: state.user, lastSyncedAt: state.lastSyncedAt }),
+            partialize: (state) => ({ serverUrl: state.serverUrl, token: state.token, user: state.user, lastSyncedAt: state.lastSyncedAt, lastAccountId: state.lastAccountId }),
         },
     ),
 );

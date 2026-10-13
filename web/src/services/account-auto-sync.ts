@@ -1,7 +1,8 @@
 import { create, type StoreApi } from "zustand";
 
-import { currentConfigData, hashData, syncAccountData, type AccountSyncResult } from "@/services/account-sync";
-import type { AppSyncProgress } from "@/services/app-sync";
+import { removeStoredValue } from "@/lib/brand-migration";
+import { CONFIG_SYNC_STATE_KEY, currentConfigData, hashData, syncAccountData, type AccountSyncResult } from "@/services/account-sync";
+import { imageLogStore, videoLogStore, type AppSyncProgress } from "@/services/app-sync";
 import { useAccountStore } from "@/stores/use-account-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
@@ -21,7 +22,8 @@ import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
  *
  * The image/video generation log stores are plain localforage instances without
  * change events, so they cannot trigger a sync on their own; they are still
- * uploaded by every sync that a watched domain starts.
+ * uploaded by every sync that a watched domain starts, and they are reset on an
+ * account switch so the previous account's history cannot bleed through.
  */
 
 export const AUTO_SYNC_DEBOUNCE_MS = 4000;
@@ -67,6 +69,17 @@ let lastSyncedHash = "";
 
 function isSuppressed() {
     return suppressionDepth > 0 || Date.now() < suppressedUntil;
+}
+
+/** Runs local mutations that must not be mistaken for user edits (remote apply, account reset). */
+function runSuppressed<T>(work: () => T): T {
+    suppressionDepth += 1;
+    try {
+        return work();
+    } finally {
+        suppressionDepth -= 1;
+        suppressedUntil = Date.now() + AUTO_SYNC_COOLDOWN_MS;
+    }
 }
 
 function currentRefs(): WatchedRefs {
@@ -229,8 +242,30 @@ function subscribeDomain<T>(store: StoreApi<T>, changed: (state: T, prev: T) => 
     });
 }
 
+/**
+ * Resets every local store that carries account data, in memory and on disk.
+ * Used when a *different* account signs in so the previous account's canvases,
+ * assets, settings and generation logs cannot be merged into the new account.
+ */
+export function resetLocalAccountData() {
+    runSuppressed(() => {
+        useCanvasStore.getState().replaceProjects([], []);
+        useAssetStore.getState().replaceAssets([]);
+        const configInitial = useConfigStore.getInitialState();
+        useConfigStore.setState({ config: configInitial.config, webdav: configInitial.webdav });
+        const promptInitial = usePromptSourceStore.getInitialState();
+        usePromptSourceStore.setState({ sources: promptInitial.sources, schedule: promptInitial.schedule });
+        // The config three-way baseline also belongs to the previous account.
+        removeStoredValue(CONFIG_SYNC_STATE_KEY);
+        void imageLogStore.clear();
+        void videoLogStore.clear();
+        lastSyncedRefs = null;
+        lastSyncedHash = "";
+    });
+}
+
 function handleAccountChange() {
-    const { token } = useAccountStore.getState();
+    const { token, user } = useAccountStore.getState();
     if (token === lastKnownToken) return;
     const previousToken = lastKnownToken;
     lastKnownToken = token;
@@ -245,7 +280,14 @@ function handleAccountChange() {
     }
     if (previousToken) return;
 
-    // A fresh session: pull the account's data right away.
+    // A fresh session: if it is a different account, wipe the previous account's
+    // data before pulling so nothing bleeds across, then sync right away.
+    const accountId = user?.id || "";
+    if (accountId) {
+        const storedAccountId = useAccountStore.getState().lastAccountId;
+        if (storedAccountId && storedAccountId !== accountId) resetLocalAccountData();
+        useAccountStore.getState().setLastAccountId(accountId);
+    }
     void performSync(true);
 }
 
