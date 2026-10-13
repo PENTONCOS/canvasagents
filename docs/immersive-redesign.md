@@ -80,6 +80,10 @@
 ## 5. M2-M5 技术要点（概要）
 
 - **M2 终端**：agent 侧新增 `/tmux` 管理 API（new/list/attach）；ttyd 编译进 launchd 依赖（或 brew 安装）；画布侧新节点类型 `plugin:terminal:window`（iframe 指向 ttyd 端口，按画布 ID 绑定 tmux session 名 `canvas-<id>-<n>`）
+- **M2 本机 Codex 生图入口（B 方案，低耦合）**：生图面板新增独立入口「用本机 Codex 生图」，**仅在探测到 canvas-agent 在线时显示**；取当前提示词（可选参考图）透传给 canvas-agent，触发一个 agent 回合调用 Codex 内置 `imagegen`，结果由 agent 经现有 `canvas_*` 工具落回当前画布节点。透传参数：`prompt`、比例/尺寸、参考图（可选，UI 标注支持范围）、落点（选中节点/新节点）。
+  - **边界（刻意不做）**：不进模型选择器；不改 `image.ts` 的同步 HTTP 语义；不实现批量出图/取消。UI 明确标注「本机 Codex · 慢」，与渠道生图（快）分开展示——两种生成器代价不同，不混进同一个下拉框。
+  - **验收**：入口可见性依赖 canvas-agent 健康探测；一次成功生成并落入画布节点；渠道生图路径零回归。
+  - **备选 C（暂不做）**：独立 generation backend 抽象（`channel` 同步 / `local-agent` 异步），模型选择器按 backend 分组、异步路径带进度态——仅当「本机 Codex 生图」升级为卖点级能力时再投入。
 - **M3 时间线**：canvas-agent 的 SSE 事件流里已含 tool call 事件；按 `nodeId` 关联落 `node.metadata.timeline[]`（截断保留最近 50 条）
 - **M4 预览**：agent 侧探测 workspace 内 `npm run dev` 端口（解析 vite/next 输出）；前端 iframe 节点 + 手动「截图」按钮（html2canvas 或 CDP）→ 转 attachment 投喂
 - **M5 队列**：agent 侧聚合所有 thread 状态（已有 threads + eventLogs 数据源），新增 `/queue` API；前端全局队列页（可从 ⌘K 进入）
@@ -103,6 +107,6 @@
 ## 8. 当前状态
 
 - [x] Git 仓库初始化，首次 commit `b480280`（506 文件）
-- [ ] GitHub 远程推送（**阻塞项：需用户提供 repo 创建权限**——API token 或网页建仓，二选一）
+- [x] GitHub 远程推送（`origin` = `git@github.com:PENTONCOS/canvasagents.git`，SSH 认证已通；已推至 `110cf73`——原「阻塞」记录系 repo/remote 建立前的陈旧结论，`gh` CLI 未装不影响 SSH push）
 - [x] 本设计文档
 - [ ] M1 开工
