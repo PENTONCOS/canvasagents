@@ -68,7 +68,7 @@ export function accountTransport(): AppSyncTransport {
     };
 }
 
-function stableStringify(value: unknown): string {
+export function stableStringify(value: unknown): string {
     if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
     if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
     const record = value as Record<string, unknown>;
@@ -78,7 +78,7 @@ function stableStringify(value: unknown): string {
     return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`).join(",")}}`;
 }
 
-async function hashData(value: unknown): Promise<string> {
+export async function hashData(value: unknown): Promise<string> {
     const text = stableStringify(value);
     if (typeof crypto !== "undefined" && crypto.subtle) {
         const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));

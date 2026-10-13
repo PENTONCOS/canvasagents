@@ -1,13 +1,15 @@
 import { App, Button, Form, Input, Progress, Radio } from "antd";
-import { Cloud, LogIn, LogOut, RefreshCw, UserPlus } from "lucide-react";
+import { Cloud, LogIn, LogOut, UserPlus } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
+import { useAccountAutoSyncStore, requestAccountSync } from "@/services/account-auto-sync";
 import { fetchCurrentUser, loginAccount, logoutAccount, registerAccount } from "@/services/account-auth";
-import { pullConfigFromCloud, pushConfigToCloud, syncAccountData } from "@/services/account-sync";
+import { pullConfigFromCloud, pushConfigToCloud } from "@/services/account-sync";
 import { resolveServerUrl } from "@/services/account-client";
 import { useAccountStore } from "@/stores/use-account-store";
+import { cn } from "@/lib/utils";
 
 type AccountDomainKey = "canvas" | "assets" | "image-workbench" | "video-workbench" | "config";
 
@@ -71,7 +73,6 @@ export function ConfigAccount({ active = true }: { active?: boolean }) {
     const locale = i18n.language as string;
     const serverUrl = useAccountStore((state) => state.serverUrl);
     const setServerUrl = useAccountStore((state) => state.setServerUrl);
-    const setLastSyncedAt = useAccountStore((state) => state.setLastSyncedAt);
     const token = useAccountStore((state) => state.token);
     const user = useAccountStore((state) => state.user);
     const lastSyncedAt = useAccountStore((state) => state.lastSyncedAt);
@@ -84,8 +85,8 @@ export function ConfigAccount({ active = true }: { active?: boolean }) {
     const [syncing, setSyncing] = useState(false);
     const [progress, setProgress] = useState<Partial<Record<AccountDomainKey, DomainProgress>>>({});
     const [conflict, setConflict] = useState(false);
-    const [status, setStatus] = useState("");
     const [serverDraft, setServerDraft] = useState(serverUrl);
+    const autoSyncStatus = useAccountAutoSyncStore((state) => state.status);
 
     useEffect(() => {
         setServerDraft(serverUrl);
@@ -113,40 +114,27 @@ export function ConfigAccount({ active = true }: { active?: boolean }) {
         }
     };
 
-    const runSync = async () => {
+    // Manual recovery only: everything else syncs automatically in the background.
+    const manualResync = async () => {
         setSyncing(true);
         setConflict(false);
         setProgress({});
-        setStatus(t("config.account.syncing"));
         try {
-            const result = await syncAccountData((event) => {
-                const key = (event.domain || "config") as AccountDomainKey;
-                setProgress((prev) => ({
-                    ...prev,
-                    [key]: { stage: event.stage, current: event.current, total: event.total, status: event.status },
-                }));
+            const result = await requestAccountSync({
+                force: true,
+                onProgress: (event) => {
+                    const key = (event.domain || "config") as AccountDomainKey;
+                    setProgress((prev) => ({
+                        ...prev,
+                        [key]: { stage: event.stage, current: event.current, total: event.total, status: event.status },
+                    }));
+                },
             });
-            setLastSyncedAt(result.syncedAt);
-            const app = result.app;
-            setStatus(
-                t("config.webdav.completed", {
-                    projects: app.projects,
-                    assets: app.assets,
-                    records: app.imageLogs + app.videoLogs,
-                    files: app.uploadedFiles,
-                    bytes: `${(app.uploadedBytes / 1024 / 1024).toFixed(1)}MB`,
-                }),
-            );
-            if (result.config === "conflict") {
+            // Failures never throw out of the coordinator; the status line reports them.
+            if (result?.config === "conflict") {
                 setConflict(true);
                 message.warning(t("config.account.conflictDetected"));
-            } else {
-                message.success(t("config.account.syncDone"));
             }
-        } catch (error) {
-            const text = error instanceof Error ? error.message : t("config.account.syncFailed");
-            setStatus(text);
-            message.error(text);
         } finally {
             setSyncing(false);
         }
@@ -171,7 +159,6 @@ export function ConfigAccount({ active = true }: { active?: boolean }) {
         try {
             await logoutAccount();
             setProgress({});
-            setStatus("");
             setConflict(false);
             message.success(t("config.account.loggedOut"));
         } finally {
@@ -189,6 +176,14 @@ export function ConfigAccount({ active = true }: { active?: boolean }) {
             />
         </Form.Item>
     );
+
+    const autoSyncLabel = autoSyncStatus === "syncing"
+        ? t("config.account.autoSyncing")
+        : autoSyncStatus === "error"
+            ? t("config.account.autoSyncError")
+            : lastSyncedAt
+                ? t("config.account.lastSynced", { time: formatAccountTime(lastSyncedAt, locale) })
+                : t("config.account.autoSyncOn");
 
     if (!token) {
         return (
@@ -252,13 +247,16 @@ export function ConfigAccount({ active = true }: { active?: boolean }) {
                 </div>
                 {serverField}
                 <div className="flex flex-wrap items-center gap-2">
-                    <Button type="primary" icon={<RefreshCw className="size-4" />} loading={syncing} onClick={() => void runSync()}>
-                        {t(syncing ? "config.account.syncing" : "config.account.syncNow")}
-                    </Button>
                     <Button icon={<LogOut className="size-4" />} disabled={busy || syncing} onClick={() => void doLogout()}>
                         {t("config.account.logout")}
                     </Button>
-                    {status ? <span className="text-xs text-stone-500">{status}</span> : null}
+                    <span className="inline-flex items-center gap-1.5 text-xs text-stone-500">
+                        <span className={cn("size-1.5 rounded-full", autoSyncStatus === "error" ? "bg-red-500" : autoSyncStatus === "syncing" ? "bg-amber-500" : "bg-emerald-500")} />
+                        {autoSyncLabel}
+                    </span>
+                    <Button type="text" size="small" className="!h-6 !px-1 !text-xs text-stone-500" disabled={syncing} onClick={() => void manualResync()}>
+                        {t("config.account.resync")}
+                    </Button>
                 </div>
                 {conflict ? (
                     <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs dark:border-amber-700 dark:bg-amber-950/40">
