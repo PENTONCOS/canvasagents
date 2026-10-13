@@ -1,5 +1,8 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
+
+import { APP_ID } from "@/constant/brand";
+import { createBrandStorage } from "@/lib/brand-migration";
 
 export type ThemeName = "light" | "dark";
 
@@ -14,6 +17,6 @@ export const useThemeStore = create<ThemeStore>()(
             theme: "dark",
             setTheme: (theme) => set({ theme }),
         }),
-        { name: "infinite-canvas:theme_store" },
+        { name: `${APP_ID}:theme_store`, storage: createJSONStorage(() => createBrandStorage()) },
     ),
 );

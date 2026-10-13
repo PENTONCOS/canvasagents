@@ -5,6 +5,7 @@ import dayjs from "dayjs";
 import { Bot, History, MessageSquare, PanelRightClose, PlugZap, Plus, Sparkles, Terminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { APP_ID } from "@/constant/brand";
 import i18n from "@/i18n";
 import { readAgentUrlBootstrap } from "@/lib/agent/agent-url-bootstrap";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -88,7 +89,7 @@ type AgentHelloEvent = { ok?: boolean; protocolVersion?: number; clientId?: stri
 type AgentWorkspaceEvent = { activeThreadId?: string; threadId?: string; sourceClientId?: string; emptyThread?: boolean; draftThread?: boolean; conversation?: AgentConversationState };
 type AgentChatEvent = { threadId?: string; turnId?: string; sourceClientId?: string; replayed?: boolean; message?: AgentChatItem };
 type AgentBootstrapEvent = { type?: "codex.preparing" | "codex.prepare_failed" | "mcp.startup" | "mcp.complete"; phase?: "preheat" | "runtime"; threadId?: string; name?: string; status?: "starting" | "ready" | "failed" | "cancelled"; error?: string | null; failureReason?: string | null };
-type AgentClientGlobal = typeof globalThis & { __infiniteCanvasAgentClientIdPromise?: Promise<string> };
+type AgentClientGlobal = typeof globalThis & { __canvasAgentsClientIdPromise?: Promise<string> };
 
 function authoritativeHistoryTurnKeys(threadId: string, settledTurnIds: string[]) {
     return new Set(settledTurnIds.map((turnId) => `${threadId}\0${turnId}`));
@@ -1454,7 +1455,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
 
 function acquireAgentClientId() {
     const scope = globalThis as AgentClientGlobal;
-    scope.__infiniteCanvasAgentClientIdPromise ||= (async () => {
+    scope.__canvasAgentsClientIdPromise ||= (async () => {
         const storedClientId = readAgentClientId();
         let clientId = storedClientId || randomId();
         if (!navigator.locks) {
@@ -1463,7 +1464,7 @@ function acquireAgentClientId() {
         }
         while (true) {
             const acquired = await new Promise<boolean>((resolve, reject) => {
-                void navigator.locks.request(`infinite-canvas-agent:${clientId}`, { ifAvailable: true }, async (lock) => {
+                void navigator.locks.request(`${APP_ID}-agent:${clientId}`, { ifAvailable: true }, async (lock) => {
                     if (!lock) return resolve(false);
                     resolve(true);
                     await new Promise<void>(() => undefined);
@@ -1480,7 +1481,7 @@ function acquireAgentClientId() {
         saveAgentClientId(clientId);
         return clientId;
     });
-    return scope.__infiniteCanvasAgentClientIdPromise;
+    return scope.__canvasAgentsClientIdPromise;
 }
 
 function readAgentClientId() {

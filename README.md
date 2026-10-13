@@ -59,4 +59,4 @@ M1–M3（沉浸式骨架 / 配置下沉 / 命令面板与直连）已落地，M
 
 ## 许可
 
-[MIT](./LICENSE)。本项目基于上游 infinite-canvas（MIT）二次开发演进，保留原版权致谢。
+[MIT](./LICENSE)。本项目在 MIT 许可的既有代码基础上二次开发演进，原版权声明见 [LICENSE](./LICENSE)。

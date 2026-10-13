@@ -4,6 +4,7 @@ import { Cloud, Download, Pencil, Plus, RefreshCw, Trash2, Upload, Wifi } from "
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { APP_ID } from "@/constant/brand";
 import { ModelPicker } from "@/components/model-picker";
 import { videoResolutionOptions } from "@/components/video-settings-panel";
 import { ChannelEditorDrawer } from "@/components/layout/channel-editor-drawer";
@@ -328,7 +329,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                             <Input value={webdav.url} placeholder="https://nas.example.com/webdav" onChange={(event) => updateWebdavConfig("url", event.target.value)} />
                                         </Form.Item>
                                         <Form.Item label={t("config.webdav.directory")} extra={t("config.webdav.directoryDescription", { manifest: WEBDAV_MANIFEST_FILE_NAME })} className="mb-4">
-                                            <Input value={webdav.directory} placeholder="infinite-canvas" onChange={(event) => updateWebdavConfig("directory", event.target.value)} />
+                                            <Input value={webdav.directory} placeholder={APP_ID} onChange={(event) => updateWebdavConfig("directory", event.target.value)} />
                                         </Form.Item>
                                         <Form.Item label={t("config.webdav.username")} className="mb-0">
                                             <Input value={webdav.username} autoComplete="username" onChange={(event) => updateWebdavConfig("username", event.target.value)} />

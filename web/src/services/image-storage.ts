@@ -1,6 +1,7 @@
 import localforage from "localforage";
 
 import { nanoid } from "nanoid";
+import { APP_ID } from "@/constant/brand";
 import i18n from "@/i18n";
 import { withLocalProxy } from "@/stores/use-config-store";
 import { createImageThumbnail } from "@/lib/image-thumbnail";
@@ -14,10 +15,10 @@ export type UploadedImage = {
     mimeType: string;
 };
 
-const store = localforage.createInstance({ name: "infinite-canvas", storeName: "image_files" });
-const previewStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_previews" });
-const imageLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" });
-const videoLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" });
+const store = localforage.createInstance({ name: APP_ID, storeName: "image_files" });
+const previewStore = localforage.createInstance({ name: APP_ID, storeName: "image_previews" });
+const imageLogStore = localforage.createInstance({ name: APP_ID, storeName: "image_generation_logs" });
+const videoLogStore = localforage.createInstance({ name: APP_ID, storeName: "video_generation_logs" });
 const objectUrls = new Map<string, string>();
 const previewUrls = new Map<string, string>();
 const previewListeners = new Set<() => void>();
