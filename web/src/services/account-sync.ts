@@ -1,3 +1,5 @@
+import { APP_ID } from "@/constant/brand";
+import { readStoredValue, writeStoredValue } from "@/lib/brand-migration";
 import type { PromptSource } from "@/services/api/prompt-source-presets";
 import { accountRequestInit, resolveServerUrl } from "@/services/account-client";
 import { runAppSync, type AppSyncProgress, type AppSyncResult, type AppSyncTransport, type DomainKey } from "@/services/app-sync";
@@ -22,7 +24,7 @@ export type AccountSyncResult = {
     config: ConfigSyncAction;
 };
 
-export const CONFIG_SYNC_STATE_KEY = "infinite-canvas:config_sync_state";
+export const CONFIG_SYNC_STATE_KEY = `${APP_ID}:config_sync_state`;
 
 type ConfigSyncState = {
     hash: string;
@@ -92,7 +94,7 @@ async function hashData(value: unknown): Promise<string> {
 function readConfigSyncState(): ConfigSyncState | null {
     if (typeof localStorage === "undefined") return null;
     try {
-        const raw = localStorage.getItem(CONFIG_SYNC_STATE_KEY);
+        const raw = readStoredValue(CONFIG_SYNC_STATE_KEY);
         if (!raw) return null;
         const parsed = JSON.parse(raw) as Partial<ConfigSyncState>;
         return parsed && typeof parsed.hash === "string" ? { hash: parsed.hash, syncedAt: parsed.syncedAt || "" } : null;
@@ -105,7 +107,7 @@ function readConfigSyncState(): ConfigSyncState | null {
 function writeConfigSyncState(hash: string) {
     if (typeof localStorage === "undefined") return;
     try {
-        localStorage.setItem(CONFIG_SYNC_STATE_KEY, JSON.stringify({ hash, syncedAt: new Date().toISOString() } satisfies ConfigSyncState));
+        writeStoredValue(CONFIG_SYNC_STATE_KEY, JSON.stringify({ hash, syncedAt: new Date().toISOString() } satisfies ConfigSyncState));
     } catch {
         // storage full or unavailable: sync still succeeded, only the baseline record is skipped
     }

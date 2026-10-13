@@ -92,7 +92,7 @@ describe("canvasagents-sync-server", () => {
         const missing = await api("GET", "/v1/domains/canvas/manifest", { token: tokenA });
         assert.equal(missing.status, 404);
 
-        const manifest = { app: "infinite-canvas", version: 1, domain: "canvas", data: { projects: [{ id: "p1" }] }, files: [] };
+        const manifest = { app: "canvasagents", version: 1, domain: "canvas", data: { projects: [{ id: "p1" }] }, files: [] };
         const put = await api("PUT", "/v1/domains/canvas/manifest", { token: tokenA, json: manifest });
         assert.equal(put.status, 200);
         assert.ok(put.data.updatedAt);

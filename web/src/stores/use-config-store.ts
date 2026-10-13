@@ -1,8 +1,10 @@
 import { useMemo } from "react";
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 
+import { APP_ID } from "@/constant/brand";
+import { createBrandStorage } from "@/lib/brand-migration";
 import i18n from "@/i18n";
 
 export type ApiCallFormat = "openai" | "gemini";
@@ -72,7 +74,7 @@ export type ChannelCredentialsImportResult = {
     channelName?: string;
 };
 
-export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
+export const CONFIG_STORE_KEY = `${APP_ID}:ai_config_store`;
 const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
@@ -131,7 +133,7 @@ export const defaultWebdavSyncConfig: WebdavSyncConfig = {
     url: "",
     username: "",
     password: "",
-    directory: "infinite-canvas",
+    directory: APP_ID,
     lastSyncedAt: "",
 };
 
@@ -247,6 +249,7 @@ export const useConfigStore = create<ConfigStore>()(
         }),
         {
             name: CONFIG_STORE_KEY,
+            storage: createJSONStorage(() => createBrandStorage()),
             partialize: (state) => ({ config: state.config, webdav: state.webdav }),
             merge: (persisted, current) => {
                 const persistedState = (persisted || {}) as Partial<ConfigStore>;

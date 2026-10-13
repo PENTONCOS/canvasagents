@@ -1,5 +1,7 @@
 import localforage from "localforage";
 
+import { APP_ID } from "@/constant/brand";
+import { LEGACY_APP_ID } from "@/lib/brand-migration";
 import i18n from "@/i18n";
 import { getMediaBlob, resolveMediaUrl, setMediaBlob } from "@/services/file-storage";
 import { getImageBlob, resolveImageUrl, setImageBlob } from "@/services/image-storage";
@@ -25,7 +27,7 @@ export type AppSyncFile = {
 };
 
 export type DomainManifest<T> = {
-    app: "infinite-canvas";
+    app: string;
     version: 1;
     domain: DomainKey;
     exportedAt: string;
@@ -83,8 +85,8 @@ export type AppSyncTransport = {
 };
 
 export const FILE_CONCURRENCY = 3;
-export const imageLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" });
-export const videoLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" });
+export const imageLogStore = localforage.createInstance({ name: APP_ID, storeName: "image_generation_logs" });
+export const videoLogStore = localforage.createInstance({ name: APP_ID, storeName: "video_generation_logs" });
 type LogStore = typeof imageLogStore;
 const storageKeyPattern = /^(image|video|audio|file|video-reference|audio-reference):/;
 
@@ -176,7 +178,7 @@ export async function syncDomain<T>(transport: AppSyncTransport, onProgress: App
 
         emitProgress(onProgress, { domain: options.key, label: options.label, stage: "上传新增媒体", status: "active" });
         const uploaded = await uploadChangedFiles(transport, options.key, mergedData, remoteManifest?.files || [], onProgress);
-        const manifest: DomainManifest<T> = { app: "infinite-canvas", version: 1, domain: options.key, exportedAt: new Date().toISOString(), data: mergedData, files: uploaded.files };
+        const manifest: DomainManifest<T> = { app: APP_ID, version: 1, domain: options.key, exportedAt: new Date().toISOString(), data: mergedData, files: uploaded.files };
         const manifestFile = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
         emitProgress(onProgress, { domain: options.key, label: options.label, stage: `上传清单 ${formatBytes(manifestFile.size)}`, status: "active" });
         await transport.writeManifest(options.key, manifestFile);
@@ -200,9 +202,9 @@ export async function readDomainManifest<T>(transport: AppSyncTransport, domain:
     const file = await transport.readManifest(domain);
     if (!file) return null;
     const data = JSON.parse(await file.text()) as DomainManifest<T>;
-    if (data.app !== "infinite-canvas" || data.domain !== domain) throw new Error(i18n.t("config.webdav.errors.invalidManifest", { domain }));
+    if (![APP_ID, LEGACY_APP_ID].includes(data.app) || data.domain !== domain) throw new Error(i18n.t("config.webdav.errors.invalidManifest", { domain }));
     return {
-        app: "infinite-canvas",
+        app: data.app,
         version: 1,
         domain,
         exportedAt: data.exportedAt || new Date().toISOString(),

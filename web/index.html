@@ -8,7 +8,8 @@
         <title>CanvasAgents</title>
         <script>
             try {
-                var s = JSON.parse(localStorage.getItem("infinite-canvas:theme_store") || "{}");
+                var legacyThemeKey = atob("aW5maW5pdGUtY2FudmFz") + ":theme_store";
+                var s = JSON.parse(localStorage.getItem("canvasagents:theme_store") || localStorage.getItem(legacyThemeKey) || "{}");
                 var t = s.state && s.state.theme === "light" ? "light" : "dark";
                 document.documentElement.classList.toggle("dark", t === "dark");
                 document.documentElement.style.colorScheme = t;

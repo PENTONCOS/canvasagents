@@ -1,5 +1,8 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
+
+import { APP_ID } from "@/constant/brand";
+import { createBrandStorage } from "@/lib/brand-migration";
 
 export type AccountUser = {
     id: string;
@@ -36,7 +39,8 @@ export const useAccountStore = create<AccountStore>()(
             clearSession: () => set({ token: "", user: null, lastSyncedAt: "" }),
         }),
         {
-            name: "infinite-canvas:account_store",
+            name: `${APP_ID}:account_store`,
+            storage: createJSONStorage(() => createBrandStorage()),
             partialize: (state) => ({ serverUrl: state.serverUrl, token: state.token, user: state.user, lastSyncedAt: state.lastSyncedAt }),
         },
     ),
