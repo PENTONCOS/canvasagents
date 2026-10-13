@@ -251,8 +251,9 @@ export default {
         agentDisconnected: "Codex 未连接",
         connecting: "连接中",
         openAgent: "打开本地 Codex 面板",
-        nodeTypes: { image: "图片", text: "文本", config: "生成配置", video: "视频", audio: "音频", group: "组", terminal: "终端" },
+        nodeTypes: { image: "图片", text: "文本", config: "生成配置", video: "视频", audio: "音频", group: "组", terminal: "终端", preview: "网页预览" },
         terminal: { description: "交互式终端（screen 持久会话）", connecting: "正在连接终端…", closed: "会话已结束", reconnect: "重连", newSession: "新会话", error: "终端连接失败", retry: "重试" },
+        preview: { description: "本地 dev server 实时预览（iframe）", urlPlaceholder: "http://localhost:5173", open: "在新标签页打开", refresh: "刷新预览", interval: "自动刷新间隔", intervalOff: "不自动刷新", intervalSeconds: "{{seconds}} 秒", screenshot: "截图投喂给 Agent", reachable: "dev server 可访问", unreachable: "dev server 无法访问", probing: "正在探测 dev server…", capturing: "正在截图…", screenshotAttached: "截图已作为附件投喂给 Agent", screenshotUnsupported: "当前环境不支持自动截图，已在新标签页打开预览（未附带任何图片）", screenshotFailed: "截图失败" },
         toolbar: {
             select: "选择", pan: "移动", focus: "居中聚焦", text: "文本", image: "图片", video: "视频", audio: "音频", config: "生成配置", group: "组", extensions: "扩展节点", upload: "上传资产", appearance: "画布外观", clear: "清空画布",
             themeMode: "主题模式", light: "浅色", dark: "深色", gridStyle: "网格样式", dots: "点", lines: "线", blank: "空白", imageInfo: "图片信息",
