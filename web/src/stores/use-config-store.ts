@@ -65,7 +65,7 @@ export type WebdavSyncConfig = {
     directory: string;
     lastSyncedAt: string;
 };
-export type ConfigTabKey = "channels" | "local-proxy" | "preferences" | "prompt-sources" | "webdav" | "local-storage" | "agent";
+export type ConfigTabKey = "channels" | "account" | "local-proxy" | "preferences" | "prompt-sources" | "webdav" | "local-storage" | "agent";
 
 export type ChannelCredentialsImportResult = {
     status: "created" | "updated" | "missing-base-url" | "invalid-base-url";
