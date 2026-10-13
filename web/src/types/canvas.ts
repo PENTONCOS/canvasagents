@@ -52,6 +52,7 @@ export type CanvasNodeTimelineEntry = {
 
 export type CanvasNodeMetadata = {
     terminalSession?: string; // M2: bound canvas-agent terminal session id
+    preview?: { url?: string; autoRefreshMs?: number }; // M4: web preview node iframe target + auto refresh interval (ms, 0 = off)
     timeline?: CanvasNodeTimelineEntry[]; // M3: agent op history for this node, oldest first, capped at 50
     content?: string;
     composerContent?: string;

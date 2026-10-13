@@ -251,8 +251,9 @@ export default {
         agentDisconnected: "Codex disconnected",
         connecting: "Connecting",
         openAgent: "Open local Codex panel",
-        nodeTypes: { image: "Image", text: "Text", config: "Generation config", video: "Video", audio: "Audio", group: "Group", terminal: "Terminal" },
+        nodeTypes: { image: "Image", text: "Text", config: "Generation config", video: "Video", audio: "Audio", group: "Group", terminal: "Terminal", preview: "Web preview" },
         terminal: { description: "Interactive terminal (persistent screen session)", connecting: "Connecting terminal…", closed: "Session ended", reconnect: "Reconnect", newSession: "New session", error: "Terminal connection failed", retry: "Retry" },
+        preview: { description: "Live preview of a local dev server (iframe)", urlPlaceholder: "http://localhost:5173", open: "Open in new tab", refresh: "Reload preview", interval: "Auto refresh interval", intervalOff: "No auto refresh", intervalSeconds: "{{seconds}}s", screenshot: "Feed screenshot to Agent", reachable: "Dev server reachable", unreachable: "Dev server unreachable", probing: "Probing dev server…", capturing: "Capturing screenshot…", screenshotAttached: "Screenshot attached to the Agent", screenshotUnsupported: "Automatic capture is unavailable here; opened the preview in a new tab instead (no image attached)", screenshotFailed: "Screenshot failed" },
         toolbar: {
             select: "Select", pan: "Move", focus: "Center focus", text: "Text", image: "Image", video: "Video", audio: "Audio", config: "Generation config", group: "Group", extensions: "Extension nodes", upload: "Upload assets", appearance: "Canvas appearance", clear: "Clear canvas",
             themeMode: "Theme", light: "Light", dark: "Dark", gridStyle: "Grid style", dots: "Dots", lines: "Lines", blank: "Blank", imageInfo: "Image info",
