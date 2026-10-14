@@ -1,4 +1,4 @@
-import { App, Button, Form, Input } from "antd";
+import { App, Button, Form, Input, Segmented } from "antd";
 import { ArrowLeft, Cloud, LogIn, RefreshCw, ShieldCheck, UserPlus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -8,13 +8,30 @@ import { APP_NAME } from "@/constant/brand";
 import { APP_VERSION } from "@/constant/env";
 import { loginAccount, registerAccount } from "@/services/account-auth";
 import { useAccountStore } from "@/stores/use-account-store";
-import { cn } from "@/lib/utils";
 
 type AuthMode = "login" | "register";
+
+function BrandMark({ className }: { className?: string }) {
+    return (
+        <span
+            className={className}
+            style={{
+                mask: "url(/logo.svg) center / contain no-repeat",
+                WebkitMask: "url(/logo.svg) center / contain no-repeat",
+            }}
+        />
+    );
+}
 
 /**
  * Dedicated sign-in / sign-up page. The account is a first-class dimension, so it
  * gets its own full-page surface instead of hiding inside the settings dialog.
+ *
+ * Layout notes (why it is written this way):
+ * - The brand panel is a fixed dark surface in BOTH themes, so contrast never
+ *   depends on the light/dark inversion and the logo stays legible.
+ * - The login/register switcher is antd `Segmented`, so the active state comes
+ *   from the design system instead of hand-rolled background/text pairs.
  */
 export default function AuthPage({ mode: initialMode = "login" }: { mode?: AuthMode }) {
     const { message } = App.useApp();
@@ -64,79 +81,73 @@ export default function AuthPage({ mode: initialMode = "login" }: { mode?: AuthM
     };
 
     const features = [
-        { icon: <Cloud className="size-4" />, text: t("auth.featureSync") },
-        { icon: <RefreshCw className="size-4" />, text: t("auth.featureDevices") },
-        { icon: <ShieldCheck className="size-4" />, text: t("auth.featurePrivate") },
+        { icon: <Cloud className="size-4 shrink-0" />, text: t("auth.featureSync") },
+        { icon: <RefreshCw className="size-4 shrink-0" />, text: t("auth.featureDevices") },
+        { icon: <ShieldCheck className="size-4 shrink-0" />, text: t("auth.featurePrivate") },
     ];
 
+    const brandMark = (
+        // `!` is load-bearing: antd injects an UNLAYERED `:where(.css-x) a { color: var(--ant-color-link) }`,
+        // and unlayered rules outrank Tailwind's @layer utilities. Without `!` the wordmark inherits
+        // antd's link colour — near-black in light mode — and vanishes into this black panel.
+        <Link to="/canvas" className="inline-flex items-center gap-2 text-sm font-semibold tracking-tight text-stone-100!">
+            <BrandMark className="size-5 shrink-0 bg-current" />
+            {APP_NAME}
+        </Link>
+    );
+
     return (
-        <div className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
-            <main className="flex h-full min-h-0 items-center justify-center overflow-y-auto bg-background bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] px-6 py-10 text-stone-900 [background-size:16px_16px] dark:bg-[radial-gradient(rgba(245,245,244,.16)_1px,transparent_1px)] dark:text-stone-100">
-                <section className="w-full max-w-3xl overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm dark:border-stone-800 dark:bg-stone-900 md:grid md:grid-cols-2">
-                    <div className="hidden flex-col justify-between bg-stone-950 p-8 text-stone-100 md:flex dark:bg-stone-100 dark:text-stone-950">
-                        <Link to="/canvas" className="inline-flex items-center gap-2 text-sm font-semibold tracking-tight">
-                            <span
-                                className="size-5 shrink-0 bg-current"
-                                style={{
-                                    mask: "url(/logo.svg) center / contain no-repeat",
-                                    WebkitMask: "url(/logo.svg) center / contain no-repeat",
-                                }}
-                            />
-                            {APP_NAME}
-                        </Link>
-                        <div>
-                            <h1 className="text-2xl font-semibold leading-snug">{t("auth.sideTitle")}</h1>
-                            <p className="mt-3 text-sm leading-6 opacity-70">{t("auth.sideDescription")}</p>
-                            <ul className="mt-6 space-y-3 text-sm">
+        <div className="flex min-h-dvh flex-col bg-background text-foreground">
+            <main className="flex flex-1 items-center justify-center bg-background bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] px-6 py-12 [background-size:16px_16px] dark:bg-[radial-gradient(rgba(245,245,244,.14)_1px,transparent_1px)]">
+                <section className="w-full max-w-4xl overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm dark:border-stone-800 dark:bg-stone-900 md:grid md:grid-cols-2">
+                    <aside className="hidden flex-col gap-10 bg-stone-950 p-8 text-stone-100 md:flex">
+                        {brandMark}
+                        <div className="my-auto space-y-6">
+                            <div>
+                                <h1 className="text-2xl font-semibold leading-snug">{t("auth.sideTitle")}</h1>
+                                <p className="mt-3 max-w-[30ch] text-sm leading-6 text-stone-400">{t("auth.sideDescription")}</p>
+                            </div>
+                            <ul className="space-y-3 text-sm text-stone-300">
                                 {features.map((feature) => (
-                                    <li key={feature.text} className="flex items-center gap-2.5 opacity-80">
+                                    <li key={feature.text} className="flex items-center gap-2.5">
                                         {feature.icon}
                                         {feature.text}
                                     </li>
                                 ))}
                             </ul>
                         </div>
-                        <div className="text-xs opacity-50">{APP_NAME} v{APP_VERSION}</div>
-                    </div>
+                        <div className="text-xs text-stone-400">
+                            {APP_NAME} {APP_VERSION}
+                        </div>
+                    </aside>
 
-                    <div className="p-8">
+                    <div className="flex flex-col p-8">
                         <div className="mb-6 md:hidden">
-                            <Link to="/canvas" className="inline-flex items-center gap-2 text-sm font-semibold tracking-tight">
-                                <span
-                                    className="size-5 shrink-0 bg-current"
-                                    style={{
-                                        mask: "url(/logo.svg) center / contain no-repeat",
-                                        WebkitMask: "url(/logo.svg) center / contain no-repeat",
-                                    }}
-                                />
+                            <Link to="/canvas" className="inline-flex items-center gap-2 text-sm font-semibold tracking-tight text-foreground!">
+                                <BrandMark className="size-5 shrink-0 bg-current" />
                                 {APP_NAME}
                             </Link>
                         </div>
 
-                        <div className="mb-6 grid grid-cols-2 gap-1 rounded-lg border border-stone-200 p-1 dark:border-stone-800">
-                            {(["login", "register"] as const).map((item) => (
-                                <button
-                                    key={item}
-                                    type="button"
-                                    onClick={() => switchMode(item)}
-                                    className={cn(
-                                        "h-9 cursor-pointer rounded-md text-sm font-medium transition",
-                                        mode === item
-                                            ? "bg-stone-950 text-white dark:bg-stone-100 dark:text-stone-950"
-                                            : "text-stone-500 hover:text-stone-800 dark:hover:text-stone-200",
-                                    )}
-                                >
-                                    {t(item === "login" ? "auth.login" : "auth.register")}
-                                </button>
-                            ))}
-                        </div>
+                        <Segmented
+                            block
+                            className="auth-switcher"
+                            value={mode}
+                            onChange={(value) => switchMode(value as AuthMode)}
+                            options={[
+                                { label: t("auth.login"), value: "login" },
+                                { label: t("auth.register"), value: "register" },
+                            ]}
+                        />
 
-                        <div className="mb-5">
+                        <div className="mt-6 mb-5">
                             <h2 className="text-lg font-semibold">{t(mode === "login" ? "auth.welcome" : "auth.createTitle")}</h2>
-                            <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">{t("auth.subtitle")}</p>
+                            <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+                                {t(mode === "login" ? "auth.subtitle" : "auth.createSubtitle")}
+                            </p>
                         </div>
 
-                        <Form layout="vertical" requiredMark={false}>
+                        <Form layout="vertical" requiredMark={false} onFinish={() => void submit()}>
                             <Form.Item label={t("auth.username")} className="mb-4">
                                 <Input
                                     size="large"
@@ -153,7 +164,6 @@ export default function AuthPage({ mode: initialMode = "login" }: { mode?: AuthM
                                     autoComplete={mode === "register" ? "new-password" : "current-password"}
                                     placeholder={t("auth.passwordPlaceholder")}
                                     onChange={(event) => setPassword(event.target.value)}
-                                    onPressEnter={() => void submit()}
                                 />
                             </Form.Item>
                             {mode === "register" ? (
@@ -163,7 +173,6 @@ export default function AuthPage({ mode: initialMode = "login" }: { mode?: AuthM
                                         value={displayName}
                                         placeholder={t("auth.displayNamePlaceholder")}
                                         onChange={(event) => setDisplayName(event.target.value)}
-                                        onPressEnter={() => void submit()}
                                     />
                                 </Form.Item>
                             ) : null}
@@ -171,22 +180,25 @@ export default function AuthPage({ mode: initialMode = "login" }: { mode?: AuthM
                                 type="primary"
                                 size="large"
                                 block
+                                htmlType="submit"
                                 loading={busy}
                                 icon={mode === "register" ? <UserPlus className="size-4" /> : <LogIn className="size-4" />}
-                                onClick={() => void submit()}
                             >
                                 {t(mode === "register" ? "auth.registerAction" : "auth.loginAction")}
                             </Button>
                         </Form>
 
-                        <div className="mt-6 flex items-center justify-between text-xs">
-                            <Link to="/canvas" className="inline-flex items-center gap-1 text-stone-500 transition hover:text-stone-800 dark:hover:text-stone-200">
+                        <div className="mt-5 flex items-center justify-between gap-4 text-xs">
+                            <Link
+                                to="/canvas"
+                                className="inline-flex items-center gap-1 text-stone-500! transition hover:text-stone-900! dark:text-stone-400! dark:hover:text-stone-100!"
+                            >
                                 <ArrowLeft className="size-3.5" />
                                 {t("auth.backToCanvas")}
                             </Link>
                             <button
                                 type="button"
-                                className="cursor-pointer text-stone-500 transition hover:text-stone-800 dark:hover:text-stone-200"
+                                className="cursor-pointer text-stone-500 transition hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100"
                                 onClick={() => switchMode(mode === "login" ? "register" : "login")}
                             >
                                 {t(mode === "login" ? "auth.noAccount" : "auth.haveAccount")}

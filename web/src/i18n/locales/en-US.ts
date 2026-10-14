@@ -356,6 +356,7 @@ export default {
         welcome: "Welcome back",
         createTitle: "Create your account",
         subtitle: "Sign in and your canvases, assets and settings sync to the cloud automatically.",
+        createSubtitle: "Sign up and your canvases, assets and settings sync to the cloud automatically.",
         username: "Username",
         usernamePlaceholder: "Enter your username",
         password: "Password",

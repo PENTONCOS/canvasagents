@@ -356,6 +356,7 @@ export default {
         welcome: "欢迎回来",
         createTitle: "创建账号",
         subtitle: "登录后，画布、资产与设置自动同步到云端。",
+        createSubtitle: "注册后，画布、资产与设置自动同步到云端。",
         username: "用户名",
         usernamePlaceholder: "请输入用户名",
         password: "密码",

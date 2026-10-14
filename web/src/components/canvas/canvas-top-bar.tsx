@@ -3,6 +3,7 @@ import { Bot, Download, Home, Images, Menu, PanelLeftClose, PanelLeftOpen, Plus,
 import { Button, Dropdown, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
+import { AccountNavEntry } from "@/components/layout/account-nav-entry";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
@@ -148,6 +149,10 @@ export function CanvasTopBar({
                     >
                         Agent
                     </Button>
+                    {/* The account entry lives here too: entering a canvas hides the global top nav,
+                        so without this the avatar would disappear on the editor screen. */}
+                    <span className="h-6 w-px" style={{ background: theme.toolbar.border }} />
+                    <AccountNavEntry />
                 </div>
             </div>
             <Modal title={t("canvas.shortcuts")} open={shortcutsOpen} onCancel={() => setShortcutsOpen(false)} footer={null} centered>
