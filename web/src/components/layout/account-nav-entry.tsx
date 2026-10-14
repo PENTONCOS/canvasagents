@@ -1,6 +1,7 @@
 import { App, Avatar, Button, Dropdown, type MenuProps } from "antd";
 import { LogIn, LogOut } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 
 import { logoutAccount } from "@/services/account-auth";
 import { useAccountStore } from "@/stores/use-account-store";
@@ -16,13 +17,14 @@ export function AccountNavEntry() {
     const { t, i18n } = useTranslation();
     const locale = i18n.language as string;
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
+    const navigate = useNavigate();
     const token = useAccountStore((state) => state.token);
     const user = useAccountStore((state) => state.user);
     const lastSyncedAt = useAccountStore((state) => state.lastSyncedAt);
 
     if (!token) {
         return (
-            <Button size="small" className="!h-8" icon={<LogIn className="size-4" />} onClick={() => openConfigDialog(false, "account")}>
+            <Button size="small" className="!h-8" icon={<LogIn className="size-4" />} onClick={() => navigate("/login")}>
                 {t("topNav.signInRegister")}
             </Button>
         );
@@ -34,10 +36,15 @@ export function AccountNavEntry() {
         { key: "account", disabled: true, label: t("config.account.signedInAs", { name }) },
         { key: "synced", disabled: true, label: lastSyncedAt ? t("config.account.lastSynced", { time: formatSyncedAt(lastSyncedAt, locale) }) : t("config.account.neverSynced") },
         { type: "divider" },
+        { key: "settings", label: t("topNav.accountSettings") },
         { key: "logout", icon: <LogOut className="size-4" />, label: t("config.account.logout") },
     ];
 
     const onMenuClick: MenuProps["onClick"] = async ({ key }) => {
+        if (key === "settings") {
+            openConfigDialog(false, "account");
+            return;
+        }
         if (key !== "logout") return;
         try {
             await logoutAccount();

@@ -2,11 +2,11 @@ import { Button } from "antd";
 import { Cloud, X } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 
 import { APP_ID } from "@/constant/brand";
 import { readStoredValue, writeStoredValue } from "@/lib/brand-migration";
 import { useAccountStore } from "@/stores/use-account-store";
-import { useConfigStore } from "@/stores/use-config-store";
 
 const ONBOARDING_DISMISSED_KEY = `${APP_ID}:onboarding_dismissed`;
 
@@ -17,7 +17,7 @@ const ONBOARDING_DISMISSED_KEY = `${APP_ID}:onboarding_dismissed`;
 export function AccountOnboardingBanner() {
     const { t } = useTranslation();
     const token = useAccountStore((state) => state.token);
-    const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
+    const navigate = useNavigate();
     const [dismissed, setDismissed] = useState(() => readStoredValue(ONBOARDING_DISMISSED_KEY) === "1");
 
     if (token || dismissed) return null;
@@ -35,7 +35,7 @@ export function AccountOnboardingBanner() {
                     <div className="text-sm font-medium">{t("accountOnboarding.title")}</div>
                     <div className="mt-1 text-xs text-stone-500">{t("accountOnboarding.description")}</div>
                     <div className="mt-2 flex items-center gap-2">
-                        <Button type="primary" size="small" onClick={() => openConfigDialog(false, "account")}>
+                        <Button type="primary" size="small" onClick={() => navigate("/login")}>
                             {t("accountOnboarding.action")}
                         </Button>
                         <Button type="text" size="small" className="!text-xs text-stone-500" onClick={dismiss}>

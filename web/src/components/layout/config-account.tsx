@@ -1,13 +1,13 @@
-import { App, Button, Form, Input, Progress, Radio } from "antd";
-import { Cloud, LogIn, LogOut, UserPlus } from "lucide-react";
+import { App, Button, Form, Progress } from "antd";
+import { Cloud, LogIn, LogOut } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 
 import { useAccountAutoSyncStore, requestAccountSync } from "@/services/account-auto-sync";
-import { fetchCurrentUser, loginAccount, logoutAccount, registerAccount } from "@/services/account-auth";
+import { fetchCurrentUser, logoutAccount } from "@/services/account-auth";
 import { pullConfigFromCloud, pushConfigToCloud } from "@/services/account-sync";
-import { resolveServerUrl } from "@/services/account-client";
 import { useAccountStore } from "@/stores/use-account-store";
 import { cn } from "@/lib/utils";
 
@@ -71,48 +71,20 @@ export function ConfigAccount({ active = true }: { active?: boolean }) {
     const { message } = App.useApp();
     const { t, i18n } = useTranslation();
     const locale = i18n.language as string;
-    const serverUrl = useAccountStore((state) => state.serverUrl);
-    const setServerUrl = useAccountStore((state) => state.setServerUrl);
+    const navigate = useNavigate();
     const token = useAccountStore((state) => state.token);
     const user = useAccountStore((state) => state.user);
     const lastSyncedAt = useAccountStore((state) => state.lastSyncedAt);
 
-    const [mode, setMode] = useState<"login" | "register">("login");
-    const [username, setUsername] = useState("");
-    const [password, setPassword] = useState("");
-    const [displayName, setDisplayName] = useState("");
     const [busy, setBusy] = useState(false);
     const [syncing, setSyncing] = useState(false);
     const [progress, setProgress] = useState<Partial<Record<AccountDomainKey, DomainProgress>>>({});
     const [conflict, setConflict] = useState(false);
-    const [serverDraft, setServerDraft] = useState(serverUrl);
     const autoSyncStatus = useAccountAutoSyncStore((state) => state.status);
-
-    useEffect(() => {
-        setServerDraft(serverUrl);
-    }, [serverUrl]);
 
     useEffect(() => {
         if (active && token && !user) void fetchCurrentUser().catch(() => undefined);
     }, [active, token, user]);
-
-    const submitAuth = async () => {
-        if (!username.trim() || !password) {
-            message.error(t("config.account.credentialsRequired"));
-            return;
-        }
-        setBusy(true);
-        try {
-            if (mode === "register") await registerAccount(username.trim(), password, displayName.trim());
-            else await loginAccount(username.trim(), password);
-            setPassword("");
-            message.success(t(mode === "register" ? "config.account.registered" : "config.account.loggedIn"));
-        } catch (error) {
-            message.error(error instanceof Error ? error.message : t("config.account.authFailed"));
-        } finally {
-            setBusy(false);
-        }
-    };
 
     // Manual recovery only: everything else syncs automatically in the background.
     const manualResync = async () => {
@@ -166,17 +138,6 @@ export function ConfigAccount({ active = true }: { active?: boolean }) {
         }
     };
 
-    const serverField = (
-        <Form.Item label={t("config.account.serverUrl")} extra={t("config.account.serverUrlDescription")} className="mb-4">
-            <Input
-                value={serverDraft}
-                placeholder="https://sync.example.com"
-                onChange={(event) => setServerDraft(event.target.value)}
-                onBlur={() => setServerUrl(serverDraft.trim())}
-            />
-        </Form.Item>
-    );
-
     const autoSyncLabel = autoSyncStatus === "syncing"
         ? t("config.account.autoSyncing")
         : autoSyncStatus === "error"
@@ -187,45 +148,16 @@ export function ConfigAccount({ active = true }: { active?: boolean }) {
 
     if (!token) {
         return (
-            <Form layout="vertical" requiredMark={false}>
-                <section className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
-                    <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-                        <Cloud className="size-4" />
-                        {t("config.account.title")}
-                    </div>
-                    <div className="mb-3 text-xs text-stone-500">{t("config.account.description")}</div>
-                    {serverField}
-                    <Radio.Group
-                        value={mode}
-                        optionType="button"
-                        buttonStyle="solid"
-                        className="mb-4"
-                        onChange={(event) => setMode(event.target.value)}
-                        options={[
-                            { label: t("config.account.login"), value: "login" },
-                            { label: t("config.account.register"), value: "register" },
-                        ]}
-                    />
-                    <div className="grid gap-4 md:grid-cols-2">
-                        <Form.Item label={t("config.account.username")} className="mb-0">
-                            <Input value={username} autoComplete="username" onChange={(event) => setUsername(event.target.value)} />
-                        </Form.Item>
-                        <Form.Item label={t("config.account.password")} className="mb-0">
-                            <Input.Password value={password} autoComplete={mode === "register" ? "new-password" : "current-password"} onChange={(event) => setPassword(event.target.value)} onPressEnter={() => void submitAuth()} />
-                        </Form.Item>
-                        {mode === "register" ? (
-                            <Form.Item label={t("config.account.displayName")} className="mb-0 md:col-span-2">
-                                <Input value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
-                            </Form.Item>
-                        ) : null}
-                    </div>
-                    <div className="mt-4">
-                        <Button type="primary" icon={mode === "register" ? <UserPlus className="size-4" /> : <LogIn className="size-4" />} loading={busy} onClick={() => void submitAuth()}>
-                            {t(mode === "register" ? "config.account.registerAction" : "config.account.loginAction")}
-                        </Button>
-                    </div>
-                </section>
-            </Form>
+            <section className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+                    <Cloud className="size-4" />
+                    {t("config.account.title")}
+                </div>
+                <div className="mb-3 text-xs text-stone-500">{t("config.account.description")}</div>
+                <Button type="primary" icon={<LogIn className="size-4" />} onClick={() => navigate("/login")}>
+                    {t("config.account.goToAuth")}
+                </Button>
+            </section>
         );
     }
 
@@ -238,14 +170,10 @@ export function ConfigAccount({ active = true }: { active?: boolean }) {
                             <Cloud className="size-4" />
                             {t("config.account.signedInAs", { name: user?.displayName || user?.username || t("config.account.notLoggedIn") })}
                         </div>
-                        <div className="mt-1 text-xs text-stone-500">
-                            {resolveServerUrl(serverUrl)}
-                            {user?.username ? ` · @${user.username}` : ""}
-                        </div>
+                        {user?.username ? <div className="mt-1 text-xs text-stone-500">@{user.username}</div> : null}
                     </div>
                     <div className="text-xs text-stone-500">{lastSyncedAt ? t("config.account.lastSynced", { time: formatAccountTime(lastSyncedAt, locale) }) : t("config.account.neverSynced")}</div>
                 </div>
-                {serverField}
                 <div className="flex flex-wrap items-center gap-2">
                     <Button icon={<LogOut className="size-4" />} disabled={busy || syncing} onClick={() => void doLogout()}>
                         {t("config.account.logout")}

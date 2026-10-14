@@ -5,6 +5,7 @@ import { CommandPalette } from "@/components/layout/command-palette";
 import { OnboardingWizard } from "@/components/layout/onboarding-wizard";
 import { SettingsDrawer } from "@/components/layout/settings-drawer";
 import UserLayout from "@/layouts/user-layout";
+import AuthPage from "@/pages/auth";
 import CanvasPage from "@/pages/canvas";
 import CanvasProjectPage from "@/pages/canvas/project";
 import NotFound from "@/pages/not-found";
@@ -20,6 +21,8 @@ export const router = createBrowserRouter([
             </>
         ),
         children: [
+            { path: "/login", element: <AuthPage mode="login" /> },
+            { path: "/register", element: <AuthPage mode="register" /> },
             {
                 element: (
                     <>
