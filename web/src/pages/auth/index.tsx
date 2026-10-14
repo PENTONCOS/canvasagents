@@ -99,7 +99,7 @@ export default function AuthPage({ mode: initialMode = "login" }: { mode?: AuthM
     return (
         <div className="flex min-h-dvh flex-col bg-background text-foreground">
             <main className="flex flex-1 items-center justify-center bg-background bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] px-6 py-12 [background-size:16px_16px] dark:bg-[radial-gradient(rgba(245,245,244,.14)_1px,transparent_1px)]">
-                <section className="w-full max-w-4xl overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm dark:border-stone-800 dark:bg-stone-900 md:grid md:grid-cols-2">
+                <section className="w-full max-w-4xl overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm md:grid md:grid-cols-2 dark:border-stone-700/60 dark:bg-stone-900 dark:shadow-xl dark:shadow-black/50">
                     <aside className="hidden flex-col gap-10 bg-stone-950 p-8 text-stone-100 md:flex">
                         {brandMark}
                         <div className="my-auto space-y-6">

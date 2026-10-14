@@ -48,7 +48,9 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                 </button>
             </Tooltip>
             <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={naturalIconClass} style={iconStyle} aria-label={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} title={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} />
-            <VersionReleaseModal style={versionStyle} />
+            {/* The canvas toolbar keeps only icons — the version chip is page furniture there,
+                and the library page + settings dialog already expose it. */}
+            {variant === "canvas" ? null : <VersionReleaseModal style={versionStyle} />}
 
             {onOpenShortcuts ? (
                 <button type="button" className={naturalIconClass} style={iconStyle} onClick={onOpenShortcuts} aria-label={t("topNav.shortcuts")} title={t("topNav.shortcuts")}>
