@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next";
 
 import { useConfigStore } from "@/stores/use-config-store";
 import { startAccountAutoSync } from "@/services/account-auto-sync";
-import { AccountOnboardingBanner } from "@/components/layout/account-onboarding-banner";
 import { usePromptSourceScheduler } from "@/hooks/use-prompt-source-scheduler";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
@@ -42,10 +41,8 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
         else message.error(t("config.importedChannelBaseUrlInvalid"));
     }, [importChannelCredentials, message, openConfigDialog, t]);
 
-    return (
-        <>
-            <AccountOnboardingBanner />
-            {children}
-        </>
-    );
+    // NOTE: this component renders outside <RouterProvider>, so it must not render
+    // anything that needs router context (useNavigate/useLocation). The account
+    // onboarding banner lives in router.tsx for exactly that reason.
+    return <>{children}</>;
 }

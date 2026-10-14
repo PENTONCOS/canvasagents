@@ -1,5 +1,6 @@
 import { Navigate, createBrowserRouter, Outlet } from "react-router-dom";
 
+import { AccountOnboardingBanner } from "@/components/layout/account-onboarding-banner";
 import { AnalyticsTracker } from "@/components/layout/analytics-tracker";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { OnboardingWizard } from "@/components/layout/onboarding-wizard";
@@ -24,6 +25,8 @@ export const router = createBrowserRouter([
             { path: "/login", element: <AuthPage mode="login" /> },
             { path: "/register", element: <AuthPage mode="register" /> },
             {
+                // AccountOnboardingBanner lives here (not in ClientRootInit) because it needs
+                // router context; ClientRootInit renders outside <RouterProvider>.
                 element: (
                     <>
                         <OnboardingWizard />
@@ -32,6 +35,7 @@ export const router = createBrowserRouter([
                         </UserLayout>
                         <SettingsDrawer />
                         <CommandPalette />
+                        <AccountOnboardingBanner />
                     </>
                 ),
                 children: [
