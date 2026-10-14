@@ -31,7 +31,7 @@ export function AgentConnectView({
 }) {
     const { t } = useTranslation();
     const { message } = App.useApp();
-    const steps = [{ title: t("agent.connect.optionTitle"), text: t("agent.connect.optionText"), command: "npx canvasagents-agent@latest" }];
+    const steps = [{ title: t("agent.connect.optionTitle"), text: t("agent.connect.optionText"), command: "npx -y canvasagents-agent@latest" }];
     const statusText = connectError ? t("agent.status.failed") : connected ? activity : enabled ? t("agent.status.connecting") : t("agent.status.disconnected");
     const statusColor = connectError ? "#dc2626" : connected ? "#16a34a" : enabled ? "#d97706" : theme.node.muted;
     const copyCommand = (command: string) => {
