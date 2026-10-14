@@ -242,13 +242,14 @@ export function createApp({ db, files, now = () => Date.now() }) {
                 const body = JSON.parse(new TextDecoder().decode(bytes) || "{}");
                 const username = String(body.username || "").trim();
                 const password = String(body.password || "");
+                const displayName = String(body.displayName || "").trim() || username;
                 if (parts[2] === "register") {
                     if (!USERNAME_PATTERN.test(username)) throw httpError(400, "invalid username (3-32 chars: a-z 0-9 _ -)");
                     if (password.length < 6) throw httpError(400, "password must be at least 6 characters");
                     if (await stmts.userByName(username)) throw httpError(409, "username already taken");
                     const salt = randomHex(16);
                     const id = randomHex(12);
-                    await stmts.insertUser(id, username, username, salt, await hashPassword(password, salt), now());
+                    await stmts.insertUser(id, username, displayName, salt, await hashPassword(password, salt), now());
                     return json(200, { token: await issueToken(id), user: publicUser(await stmts.userById(id)) });
                 }
                 if (parts[2] === "login") {

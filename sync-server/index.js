@@ -186,13 +186,14 @@ export function createSyncServer(options = {}) {
                 const body = JSON.parse((await readBody(req, MAX_JSON_BYTES)).toString("utf8") || "{}");
                 const username = String(body.username || "").trim();
                 const password = String(body.password || "");
+                const displayName = String(body.displayName || "").trim() || username;
                 if (parts[2] === "register") {
                     if (!USERNAME_PATTERN.test(username)) throw Object.assign(new Error("invalid username (3-32 chars: a-z 0-9 _ -)"), { status: 400 });
                     if (password.length < 6) throw Object.assign(new Error("password must be at least 6 characters"), { status: 400 });
                     if (stmts.userByName.get(username)) throw Object.assign(new Error("username already taken"), { status: 409 });
                     const salt = randomBytes(16).toString("hex");
                     const id = randomBytes(12).toString("hex");
-                    stmts.insertUser.run(id, username, username, salt, hashPassword(password, salt), Date.now());
+                    stmts.insertUser.run(id, username, displayName, salt, hashPassword(password, salt), Date.now());
                     sendJson(res, 200, { token: issueToken(id), user: publicUser(stmts.userById.get(id)) });
                     return;
                 }
