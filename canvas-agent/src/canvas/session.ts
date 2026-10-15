@@ -9,7 +9,7 @@ import { compactCanvasState, compactNode, isToolName, nextCanvasX, parseToolInpu
 import type { CanvasSnapshot } from "./types.js";
 
 type PendingRequest = { clientId: string; resolve: (value: unknown) => void; reject: (error: Error) => void };
-type TurnAttachment = { clientId: string; id: string; name: string; type: string; size: number; width: number; height: number; dataUrl: string };
+type TurnAttachment = { clientId: string; id: string; name: string; type: string; size: number; width: number; height: number; dataUrl: string; source: "upload" | "canvas"; canvasNodeId?: string };
 type ReplayEvent = { type: string; payload: Record<string, unknown> };
 export type CodexState = { busy: boolean; threadId: string; turnId: string };
 export type McpStartupState = "starting" | "ready" | "failed" | "cancelled";
@@ -341,6 +341,8 @@ export class CanvasSession {
         return attachments.flatMap((item, index) => {
             if (!item.dataUrl?.startsWith("data:image/")) return [];
             const id = item.id?.trim() || `attachment-${crypto.randomUUID()}`;
+            const source: "upload" | "canvas" = item.source === "canvas" ? "canvas" : "upload";
+            const canvasNodeId = item.canvasNodeId?.trim() || undefined;
             const attachment: TurnAttachment = {
                 clientId,
                 id,
@@ -350,9 +352,11 @@ export class CanvasSession {
                 width: positiveNumber(item.width, 1024),
                 height: positiveNumber(item.height, 1024),
                 dataUrl: item.dataUrl,
+                source,
+                ...(canvasNodeId ? { canvasNodeId } : {}),
             };
             this.turnAttachments.set(id, attachment);
-            return [{ id, name: attachment.name, type: attachment.type, size: attachment.size, width: attachment.width, height: attachment.height }];
+            return [{ id, name: attachment.name, type: attachment.type, size: attachment.size, width: attachment.width, height: attachment.height, source, ...(canvasNodeId ? { canvasNodeId } : {}) }];
         });
     }
 
@@ -463,12 +467,18 @@ export class CanvasSession {
         const clientId = this.targetClientId;
         if (!this.clients.has(clientId)) throw new Error("当前没有已连接画布");
         const attachments = input.attachmentIds.map((id) => this.getTurnAttachment(clientId, id));
+        // 画布已有素材（本轮 @ 引用的节点）不重复建节点：只要该节点仍在当前画布上，直接复用原 nodeId。
+        const existingNodeIds = new Set((this.canvasState?.nodes || []).map((node) => node.id));
+        const reused = attachments.filter((attachment) => attachment.source === "canvas" && attachment.canvasNodeId && existingNodeIds.has(attachment.canvasNodeId));
+        const reusedIds = new Set(reused.map((attachment) => attachment.id));
+        const pending = attachments.filter((attachment) => !reusedIds.has(attachment.id));
+        if (!pending.length) return { nodes: reused.map((attachment) => ({ id: attachment.canvasNodeId as string, attachmentId: attachment.id, title: attachment.name, reused: true })) };
         const x = Number(input.x ?? nextCanvasX(this.canvasState));
         const y = Number(input.y ?? 0);
         const gap = Number(input.gap ?? 40);
         const direction = input.direction || "row";
         let offset = 0;
-        const nodes = attachments.map((attachment) => {
+        const nodes = pending.map((attachment) => {
             const size = fitAttachmentNodeSize(attachment.width, attachment.height);
             const node = {
                 id: `image-${crypto.randomUUID()}`,
@@ -482,7 +492,7 @@ export class CanvasSession {
             return node;
         });
         await this.requestCanvasTool("canvas_create_attachment_nodes", { nodes });
-        return { nodes: nodes.map(({ id, attachmentId, title }) => ({ id, attachmentId, title })) };
+        return { nodes: [...reused.map((attachment) => ({ id: attachment.canvasNodeId as string, attachmentId: attachment.id, title: attachment.name, reused: true })), ...nodes.map(({ id, attachmentId, title }) => ({ id, attachmentId, title }))] };
     }
 
     /** 向目标网页发送工具请求并等待调用结果。 */

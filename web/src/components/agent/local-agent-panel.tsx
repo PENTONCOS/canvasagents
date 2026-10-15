@@ -17,6 +17,7 @@ import { readImageMeta } from "@/lib/image-utils";
 import { randomId } from "@/lib/utils";
 import { uploadImage } from "@/services/image-storage";
 import { useThemeStore } from "@/stores/use-theme-store";
+import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import { useShallow } from "zustand/react/shallow";
 import { useAgentStore, type AgentAttachment, type AgentBootstrapStatus, type AgentCanvasContext, type AgentCanvasReference, type AgentChatItem, type AgentConversationState, type AgentModel, type AgentPendingApproval, type AgentPendingToolCall, type AgentPermissionMode, type AgentReasoningEffort, type AgentThreadSummary } from "@/stores/use-agent-store";
@@ -174,6 +175,8 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     const clearEventLogs = useAgentStore((state) => state.clearEventLogs);
     const loadSkills = useAgentSkillStore((state) => state.loadSkills);
     const clearSkillSelection = useAgentSkillStore((state) => state.clearSelection);
+    const effectiveConfig = useEffectiveConfig();
+    const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const skillCount = useAgentSkillStore((state) => state.skills.length);
     const messageCount = useAgentStore((state) => state.messages.length);
     const canvasContextRef = useRef<AgentCanvasContext | null>(useAgentStore.getState().canvasContext);
@@ -653,13 +656,18 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 return;
             }
         }
-        const requestFiles = [...files, ...referenceImages.filter((reference) => !files.some((file) => file.dataUrl === reference.dataUrl))];
-        if (requestFiles.length > MAX_ATTACHMENTS) {
+        const requestFiles = files;
+        const canvasAttachments = canvasReferences.flatMap(({ nodeId }) => {
+            const image = referenceImages.find((item) => item.id === `canvas:${nodeId}`);
+            return image ? [{ id: image.id, name: image.name, type: image.type, size: image.size, width: image.width, height: image.height, url: image.url, dataUrl: image.dataUrl, canvasNodeId: nodeId }] : [];
+        });
+        const payloadAttachments = [...requestFiles, ...canvasAttachments];
+        if (payloadAttachments.length > MAX_ATTACHMENTS) {
             setAgentState({ sending: false, activity: rt("tooManyImages") });
             addMessage({ role: "error", title: rt("tooManyImages"), text: rt("imageCountLimit", { count: MAX_ATTACHMENTS }) });
             return;
         }
-        if (attachmentPayloadBytes(requestFiles) > MAX_ATTACHMENT_PAYLOAD_BYTES) {
+        if (attachmentPayloadBytes(payloadAttachments) > MAX_ATTACHMENT_PAYLOAD_BYTES) {
             setAgentState({ sending: false, activity: rt("imageTooLarge") });
             addMessage({ role: "error", title: rt("imageTooLarge"), text: rt("imagePayloadTooLarge") });
             return;
@@ -703,6 +711,8 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                     effort: reasoningEffort,
                     skill: selectedSkill ? { name: selectedSkill.name, path: selectedSkill.path } : undefined,
                     attachments: requestFiles.map(({ id, name, type, size, width, height, dataUrl }) => ({ id, name, type, size, width, height, dataUrl })),
+                    canvasAttachments: canvasAttachments.map(({ id, name, type, size, width, height, dataUrl, canvasNodeId }) => ({ id, name, type, size, width, height, dataUrl, source: "canvas", canvasNodeId })),
+                    imageChannelReady: isAiConfigReady(effectiveConfig, effectiveConfig.imageModel),
                     messageMetadata,
                 }),
             });

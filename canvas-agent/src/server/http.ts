@@ -331,6 +331,8 @@ export function startHttpServer() {
     }));
     app.post("/agent/codex/turn", codexMutation(async (req, res) => {
         const attachments = Array.isArray(req.body?.attachments) ? (req.body.attachments as AgentAttachment[]) : [];
+        const canvasAttachments = Array.isArray(req.body?.canvasAttachments) ? (req.body.canvasAttachments as AgentAttachment[]) : [];
+        const imageChannelReady = req.body?.imageChannelReady !== false;
         const workspace = ensureSiteWorkspace(config);
         const prompt = String(req.body?.prompt || "");
         if (!prompt.trim()) return res.status(400).json({ ok: false, error: "请输入任务内容" });
@@ -360,7 +362,7 @@ export function startHttpServer() {
         session.setCodexState({ busy: true, threadId, turnId: "" });
         try {
             let turnId = "";
-            const attachmentRefs = session.setTurnAttachments(clientId, attachments);
+            const attachmentRefs = session.setTurnAttachments(clientId, [...attachments, ...canvasAttachments]);
             session.emitThread("chat_message", threadId, {
                 sourceClientId: clientId,
                 message: { id: `${threadId}:pending:synthetic:user`, itemId: "synthetic:user", clientMessageId: messageId, threadId, turnId: "", role: "user", text: messageText, ...messageMetadata },
@@ -380,7 +382,7 @@ export function startHttpServer() {
                     ...(sourceClientId ? { sourceClientId } : {}),
                 });
             };
-            void runCodexTurn(withAttachmentContext(prompt, attachmentRefs), lifecycleEmit, attachments, {
+            void runCodexTurn(withAttachmentContext(prompt, attachmentRefs, imageChannelReady), lifecycleEmit, [...attachments, ...canvasAttachments], {
                 threadId,
                 cwd: workspace.workspacePath,
                 permissionMode: permissionMode(req.body?.permissionMode),
@@ -582,8 +584,23 @@ function validToken(req: Request, url: URL, token: string) {
 }
 
 /** 向 Agent 提示词追加本轮图片附件引用说明。 */
-function withAttachmentContext(prompt: string, attachments: Array<{ id: string; name: string }>) {
-    if (!attachments.length) return prompt;
-    const list = attachments.map((item, index) => `${index + 1}. attachmentId=${item.id}, name=${JSON.stringify(item.name)}`).join("\n");
-    return `${prompt}\n\n本轮可用图片附件（顺序与图片输入一致）：\n${list}\n需要把附件放入画布或作为生成参考图时，先调用 canvas_create_attachment_nodes，再使用返回的画布节点 ID 创建生成流程。`;
+function withAttachmentContext(prompt: string, attachments: Array<{ id: string; name: string; source?: "upload" | "canvas"; canvasNodeId?: string }>, imageChannelReady: boolean) {
+    const uploaded = attachments.filter((item) => item.source !== "canvas");
+    const onCanvas = attachments.filter((item) => item.source === "canvas");
+    const sections: string[] = [];
+    if (attachments.length) {
+        const list = attachments.map((item, index) => {
+            const origin = item.source === "canvas" ? `画布已有素材，画布节点 nodeId=${JSON.stringify(item.canvasNodeId || "")}` : "用户本轮上传";
+            return `${index + 1}. attachmentId=${item.id}, name=${JSON.stringify(item.name)}, 来源=${origin}`;
+        }).join("\n");
+        const rules: string[] = [];
+        if (uploaded.length) rules.push("用户本轮上传的图片：需要放入画布或作为生成参考图时，先调用 canvas_create_attachment_nodes，再使用返回的画布节点 ID 创建生成流程。");
+        if (onCanvas.length) rules.push(`画布已有素材（共 ${onCanvas.length} 个）：这些图片已经在当前画布上，直接把它们上面的 nodeId 作为参考节点使用；禁止对它们调用 canvas_create_attachment_nodes——那会在画布上产生完全重复的图片节点。`);
+        sections.push(`本轮可用图片附件（顺序与图片输入一致）：\n${list}\n${rules.join("\n")}`);
+    }
+    if (!imageChannelReady) {
+        sections.push("当前网页没有可用的生图通道（未配置图片模型的 Base URL / API Key）：任何需要产出图片的任务必须使用 Codex 内置 imagegen 技能完成，不要调用 canvas_generate_image、canvas_generate_image_prompt_flow 或 canvas_run_generation——它们会被网页侧拦截并且不会产出任何图片。内置生图完成后，其结果会由 Canvas Agent 自动展示到对话并插入当前画布。");
+    }
+    if (!sections.length) return prompt;
+    return `${prompt}\n\n${sections.join("\n\n")}`;
 }

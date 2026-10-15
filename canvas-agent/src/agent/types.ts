@@ -1,8 +1,8 @@
 /** Agent 向网页广播事件的函数类型。 */
 export type AgentEmit = (type: string, payload: unknown) => void;
 
-/** 用户随当前 Agent 消息上传的附件。 */
-export type AgentAttachment = { id?: string; name?: string; type?: string; size?: number; width?: number; height?: number; dataUrl?: string };
+/** 用户随当前 Agent 消息上传的附件，或本轮 @ 引用的画布已有素材。 */
+export type AgentAttachment = { id?: string; name?: string; type?: string; size?: number; width?: number; height?: number; dataUrl?: string; source?: "upload" | "canvas"; canvasNodeId?: string };
 
 /** 用户消息在历史记录中展示所需的附件信息。 */
 export type AgentAttachmentDisplay = { id: string; name: string; type?: string; size?: number; width?: number; height?: number; url: string };
