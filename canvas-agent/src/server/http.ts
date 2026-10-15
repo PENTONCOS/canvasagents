@@ -7,6 +7,7 @@ import { runClaudeTurn } from "../agent/claude.js";
 import { archiveCodexThread, CodexSkillLookupError, configureCodexSkill, generateCodexSkillDraft, interruptCodexTurn, isRecoverableThreadError, listCodexModels, listCodexSkills, listCodexThreads, readCodexThread, resolveCodexApproval, resolveCodexSkill, resumeCodexThread, runCodexTurn, startCodexThread, summarizeCodexThread } from "../agent/codex.js";
 import type { CodexReasoningEffort, CodexSkillSelector } from "../agent/codex-protocol.js";
 import { messageMetadataStore } from "../agent/message-metadata.js";
+import { buildTurnContextPrompt, turnContextAttachments } from "../agent/turn-context.js";
 import type { AgentAttachment, AgentPermissionMode } from "../agent/types.js";
 import { AGENT_PROTOCOL_VERSION, CanvasSession } from "../canvas/session.js";
 import { DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWorkspace, type CanvasAgentConfig } from "../config.js";
@@ -382,7 +383,7 @@ export function startHttpServer() {
                     ...(sourceClientId ? { sourceClientId } : {}),
                 });
             };
-            void runCodexTurn(withAttachmentContext(prompt, attachmentRefs, imageChannelReady), lifecycleEmit, [...attachments, ...canvasAttachments], {
+            void runCodexTurn(buildTurnContextPrompt(prompt, turnContextAttachments(attachmentRefs), imageChannelReady), lifecycleEmit, [...attachments, ...canvasAttachments], {
                 threadId,
                 cwd: workspace.workspacePath,
                 permissionMode: permissionMode(req.body?.permissionMode),

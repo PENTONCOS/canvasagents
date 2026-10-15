@@ -92,6 +92,53 @@ test("当前 turn 的图片附件可在发起标签页画布创建图片节点",
     assert.throws(() => session.getTurnAttachment("first", "attachment-1"), /找不到/);
 });
 
+test("引用画布已有素材时复用原节点，不重复创建图片节点", async (t) => {
+    const session = new CanvasSession();
+    const first = connect(session, "first");
+    t.after(() => first.close());
+    session.updateState(
+        {
+            projectId: "canvas-1",
+            title: "canvas-1",
+            nodes: [{ id: "node-1", type: "image", title: "参考.png", position: { x: 10, y: 20 }, width: 640, height: 320 }],
+            connections: [],
+            selectedNodeIds: [],
+            viewport: { x: 0, y: 0, k: 1 },
+        },
+        "first",
+    );
+    session.setTurnAttachments("first", [{ id: "canvas:node-1", name: "参考.png", type: "image/png", dataUrl: "data:image/png;base64,aW1hZ2U=", source: "canvas", canvasNodeId: "node-1" }]);
+    session.bindClient("first");
+
+    const result = (await session.callTool("canvas_create_attachment_nodes", { attachmentIds: ["canvas:node-1"] })) as { nodes: Array<{ id: string; attachmentId: string; reused?: boolean }> };
+    assert.equal(first.event("tool_call"), undefined);
+    assert.equal(result.nodes.length, 1);
+    assert.equal(result.nodes[0].id, "node-1");
+    assert.equal(result.nodes[0].reused, true);
+});
+
+test("画布素材已从画布移除时仍然创建新节点", async (t) => {
+    const session = new CanvasSession();
+    const first = connect(session, "first");
+    t.after(() => first.close());
+    session.updateState(snapshot("canvas-1"), "first");
+    session.setTurnAttachments("first", [{ id: "canvas:node-1", name: "参考.png", type: "image/png", dataUrl: "data:image/png;base64,aW1hZ2U=", source: "canvas", canvasNodeId: "node-1" }]);
+    session.bindClient("first");
+
+    const result = session.callTool("canvas_create_attachment_nodes", { attachmentIds: ["canvas:node-1"], x: 50, y: 60 });
+    const call = first.event("tool_call");
+    const nodes = (field(call, "input") as Record<string, unknown>).nodes as Array<Record<string, unknown>>;
+    assert.equal(field(call, "name"), "canvas_create_attachment_nodes");
+    assert.equal(nodes.length, 1);
+    assert.equal(nodes[0].title, "参考.png");
+    assert.deepEqual(nodes[0].position, { x: 50, y: 60 });
+
+    session.resolveResult("first", { requestId: String(field(call, "requestId")), result: { ok: true } });
+    const created = (await result) as { nodes: Array<{ id: string; reused?: boolean }> };
+    assert.equal(created.nodes[0].id, nodes[0].id);
+    assert.equal(created.nodes[0].reused, undefined);
+});
+
 test("图片附件只允许发起 turn 的标签页读取和落入画布", async (t) => {
     const session = new CanvasSession();
     const first = connect(session, "first");
