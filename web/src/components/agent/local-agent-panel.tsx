@@ -22,6 +22,7 @@ import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import { useShallow } from "zustand/react/shallow";
 import { useAgentStore, type AgentAttachment, type AgentBootstrapStatus, type AgentCanvasContext, type AgentCanvasReference, type AgentChatItem, type AgentConversationState, type AgentModel, type AgentPendingApproval, type AgentPendingToolCall, type AgentPermissionMode, type AgentReasoningEffort, type AgentThreadSummary } from "@/stores/use-agent-store";
 import { type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
+import { referenceConnectionOps } from "@/lib/canvas/canvas-reference-links";
 import { isSiteTool, runSiteTool } from "@/lib/agent/agent-site-tools";
 import { acknowledgeCodexHistory, activateAgentClient, AgentApiError, discoverAgentConfig, fetchAgentJson, interruptCodexTurn, postCodexApproval, postState, postToolResult } from "@/services/api/canvas-agent";
 import { AgentChatTimeline, AgentTaskProgress, AgentUsageBar } from "./agent-chat";
@@ -187,6 +188,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     const errorLoggedRef = useRef(false);
     const attachmentUrlsRef = useRef(new Set<string>());
     const clientIdRef = useRef("");
+    const turnReferenceNodeIdsRef = useRef<string[]>([]);
     const [clientReady, setClientReady] = useState(false);
     const loadThreadsSequenceRef = useRef(0);
     const threadMessagesRef = useRef(new Map<string, AgentChatItem[]>());
@@ -695,6 +697,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             const modelName = models.find((item) => item.model === model)?.displayName || model || rt("defaultModel");
             const effortName = reasoningEffort ? i18n.t(`agent.composer.effort.${reasoningEffort}`) : rt("defaultEffort");
             addEventLog(rt("sendTask"), `${modelName} · ${effortName}${selectedSkill ? ` · Skill ${selectedSkill.name}` : ""}${files.length ? ` · ${rt("attachmentCount", { count: files.length })}` : ""}${canvasReferences.length ? ` · ${rt("canvasReferenceCount", { count: canvasReferences.length })}` : ""} · ${compactText(text) || rt(canvasReferences.length ? "canvasReferencesOnly" : "attachmentsOnly")}`);
+            turnReferenceNodeIdsRef.current = messageReferences.map((item) => item.nodeId);
             const accepted = await fetchAgentJson<AgentTurnResponse>(endpoint, token, "/agent/codex/turn", {
                 method: "POST",
                 headers: { "content-type": "application/json" },
@@ -1284,7 +1287,9 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                             metadata: imageMetadata(image.upload),
                         };
                     });
-                    const result = context.applyOps(ops);
+                    const newNodeIds = ops.flatMap((op) => (op.type === "add_node" && op.id ? [op.id] : []));
+                    const links = referenceConnectionOps(turnReferenceNodeIdsRef.current, newNodeIds, context.snapshot.nodes.map((node) => node.id));
+                    const result = context.applyOps([...ops, ...links]);
                     void postState(endpoint, token, clientIdRef.current, result);
                 }
                 addEventLog(rt("importGeneratedImages"), rt(context ? "addedToSourceCanvas" : "imageGenerated"));
@@ -1295,6 +1300,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             return;
         }
         if (event.type === "turn.completed") {
+            turnReferenceNodeIdsRef.current = [];
             const scope = eventScope(event);
             if (scope.turnId) {
                 finishPlanActivity(event);
