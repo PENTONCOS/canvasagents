@@ -34,6 +34,10 @@ export function summarizeCanvasAgentOps(ops?: CanvasAgentOp[]) {
         .join("，");
 }
 
+/** Screen-space inset (px, relative to the canvas container) where agent-created nodes land by default.
+ *  Clears the floating top bar and the left sidebar so new nodes never open underneath them. */
+const AGENT_NODE_INSET = { x: 140, y: 120 };
+
 export function applyCanvasAgentOps(snapshot: CanvasAgentSnapshot, ops?: CanvasAgentOp[]) {
     let nodes = snapshot.nodes;
     let connections = snapshot.connections;
@@ -45,11 +49,17 @@ export function applyCanvasAgentOps(snapshot: CanvasAgentSnapshot, ops?: CanvasA
         if (op.type === "add_node") {
             const nodeType = op.nodeType && isRegisteredNodeType(op.nodeType) ? op.nodeType : CanvasNodeType.Text;
             const spec = getNodeSpec(nodeType);
+            const viewport = snapshot.viewport || { x: 0, y: 0, k: 1 };
+            const scale = viewport.k || 1;
+            const inset = {
+                x: (AGENT_NODE_INSET.x - viewport.x) / scale + index * 36,
+                y: (AGENT_NODE_INSET.y - viewport.y) / scale + index * 36,
+            };
             const node: CanvasNodeData = {
                 id: op.id || `${nodeType}-${Date.now()}-${index}`,
                 type: nodeType,
                 title: op.title || spec.title,
-                position: op.position || { x: op.x ?? index * 36, y: op.y ?? index * 36 },
+                position: op.position || { x: op.x ?? inset.x, y: op.y ?? inset.y },
                 width: op.width || spec.width,
                 height: op.height || spec.height,
                 metadata: { ...spec.metadata, ...op.metadata },
