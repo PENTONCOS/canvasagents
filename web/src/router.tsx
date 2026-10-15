@@ -3,7 +3,6 @@ import { Navigate, createBrowserRouter, Outlet } from "react-router-dom";
 import { AccountOnboardingBanner } from "@/components/layout/account-onboarding-banner";
 import { AnalyticsTracker } from "@/components/layout/analytics-tracker";
 import { CommandPalette } from "@/components/layout/command-palette";
-import { OnboardingWizard } from "@/components/layout/onboarding-wizard";
 import { SettingsDrawer } from "@/components/layout/settings-drawer";
 import UserLayout from "@/layouts/user-layout";
 import AuthPage from "@/pages/auth";
@@ -29,7 +28,6 @@ export const router = createBrowserRouter([
                 // router context; ClientRootInit renders outside <RouterProvider>.
                 element: (
                     <>
-                        <OnboardingWizard />
                         <UserLayout>
                             <Outlet />
                         </UserLayout>

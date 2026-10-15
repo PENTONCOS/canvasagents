@@ -394,6 +394,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 connectError: "",
                 silentConnect: false,
                 fragmentBootstrap: false,
+                activeTab: current.activeTab === "setup" ? "chat" : current.activeTab,
                 activeThreadId: nextThreadId,
                 activeTurnId,
                 messages,
