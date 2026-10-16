@@ -1,0 +1,4 @@
+# vision_ocr — 编译产物（由 build_swift.sh 生成，不入库）
+vision_ocr
+__pycache__/
+*.pyc

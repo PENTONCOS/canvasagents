@@ -1,0 +1,17 @@
+# image-parse service dependencies
+# Verified on: macOS 15.0 (x64, Intel), CPython 3.9.6 (CommandLineTools), 2026-10-17.
+#
+# NOTE on pyobjc pinning: the macOS Vision backend needs pyobjc wheels matching the
+# interpreter. Python 3.9 has NO cp39 wheel for pyobjc 12.x (installs fall back to a
+# source build that fails), so 11.1 is the last version shipping cp39 universal2
+# wheels. On Python 3.10+ you may relax to pyobjc-* >=12.
+fastapi==0.110.3
+uvicorn==0.30.6
+pillow==10.4.0
+pyobjc-framework-Vision==11.1 ; sys_platform == "darwin"
+pyobjc-framework-Quartz==11.1 ; sys_platform == "darwin"
+
+# OPTIONAL (not required): `paddle` backend hook. Leave commented out; app.py imports
+# it lazily and silently disables the backend when the import fails.
+# paddleocr>=2.7
+# paddlepaddle>=2.6
