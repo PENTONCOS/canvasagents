@@ -8,3 +8,7 @@ dist/
 coverage/
 .vite/
 *.tsbuildinfo
+
+# 自托管 miniPaint 构建产物（PS 模式编辑器，需随站点发布）
+!web/public/minipaint/dist/
+!web/public/minipaint/dist/**
