@@ -81,6 +81,31 @@ export type CanvasNodeRepoMetadata = {
     lastCommit?: string;
 };
 
+// M7: image structure layer. `regions` is the parsed structure of an image (text boxes plus font
+// hints) kept next to the pixels: edits change this metadata only, never the source image.
+export type CanvasImageRegionType = "title" | "subtitle" | "body" | "button" | "label" | "logo" | "image" | "unknown";
+export type CanvasImageRegionFont = { sizePx?: number; weight?: "regular" | "bold"; align?: "left" | "center" | "right"; family?: string };
+export type CanvasImageRegionBbox = { x: number; y: number; w: number; h: number };
+export type CanvasImageRegion = {
+    id: string;
+    type: CanvasImageRegionType;
+    bbox: CanvasImageRegionBbox;
+    text: string;
+    confidence?: number;
+    font?: CanvasImageRegionFont;
+};
+// `source` is the image reference this structure was parsed from (data URL or absolute path);
+// width/height are the image's natural pixel size and bound every region bbox.
+export type CanvasNodeRegionsMetadata = {
+    source?: string;
+    width?: number;
+    height?: number;
+    engine?: string;
+    parsedAt?: number;
+    regions?: CanvasImageRegion[];
+    selectedRegionId?: string;
+};
+
 // M6: service node binding. `port` + `healthPath` build the probe target; `status` caches the
 // last probe outcome ("probing" | "ready" | "failed") so the node can render before the first poll.
 export type CanvasNodeServiceStatus = "probing" | "ready" | "failed";
@@ -105,6 +130,7 @@ export type CanvasNodeMetadata = {
     terminalSession?: string; // M2: bound canvas-agent terminal session id
     preview?: { url?: string; autoRefreshMs?: number }; // M4: web preview node iframe target + auto refresh interval (ms, 0 = off)
     code?: CanvasNodeCodeMetadata; // M5: code browser repo binding + tree/file/diff view state
+    regions?: CanvasNodeRegionsMetadata; // M7: image structure layer (parsed regions + edits)
     timeline?: CanvasNodeTimelineEntry[]; // M3: agent op history for this node, oldest first, capped at 50
     content?: string;
     composerContent?: string;

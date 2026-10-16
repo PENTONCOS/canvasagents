@@ -77,6 +77,7 @@ import { registerPreviewNode } from "@/components/canvas/nodes/preview-node";
 import { registerCodeNode } from "@/components/canvas/nodes/code-node";
 import { registerRepoNode } from "@/components/canvas/nodes/repo-node";
 import { registerServiceNode } from "@/components/canvas/nodes/service-node";
+import { registerImageRegionsNode } from "@/components/canvas/nodes/image-regions-node";
 import { CanvasConnectionPanel } from "@/components/canvas/canvas-connection-panel";
 import { CanvasPluginManagerModal } from "@/components/canvas/canvas-plugin-manager-modal";
 import { CanvasRefreshShell } from "@/components/canvas/canvas-refresh-shell";
@@ -108,6 +109,7 @@ registerPreviewNode();
 registerCodeNode();
 registerRepoNode();
 registerServiceNode();
+registerImageRegionsNode();
 
 type CanvasClipboard = {
     nodes: CanvasNodeData[];

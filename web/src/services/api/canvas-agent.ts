@@ -190,6 +190,30 @@ export function fetchAgentRepoStatus(endpoint: string, token: string, params: { 
     return fetchAgentJson<AgentRepoStatusResponse>(endpoint, token, `/repo/status?${query.toString()}`, { headers: repoAuthHeaders(token) });
 }
 
+// M7: image structure layer. The parser runs behind the agent bridge (the raw service has no
+// CORS headers), so both calls authenticate with the same x-canvas-agent-token header as /repo/*.
+export type AgentImageParseLang = "zh-Hans" | "en-US";
+export type AgentImageParseBody = { image?: string; path?: string; options?: { lang?: AgentImageParseLang; maxRegions?: number } };
+export type AgentImageParseResponse = {
+    ok?: boolean;
+    width?: number;
+    height?: number;
+    engine?: string;
+    regions?: unknown[];
+    warnings?: string[];
+    error?: string;
+};
+export type AgentImageHealthResponse = { ok?: boolean; engine?: string; version?: string };
+
+// POST /image/parse. A 502 body carries { ok:false, error }, surfaced through AgentApiError.message.
+export function parseImageRegions(endpoint: string, token: string, body: AgentImageParseBody) {
+    return fetchAgentJson<AgentImageParseResponse>(endpoint, token, "/image/parse", { method: "POST", headers: repoAuthHeaders(token, true), body: JSON.stringify(body) });
+}
+
+export function fetchImageParseHealth(endpoint: string, token: string) {
+    return fetchAgentJson<AgentImageHealthResponse>(endpoint, token, "/image/health", { headers: repoAuthHeaders(token) });
+}
+
 export async function discoverAgentConfig(endpoint: string) {
     try {
         const res = await fetch(`${endpoint}/config`);
