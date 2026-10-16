@@ -106,6 +106,14 @@ export type CanvasNodeRegionsMetadata = {
     selectedRegionId?: string;
 };
 
+// Phase 3: PS-mode editor binding. `engine`/`version` identify the embedded editing engine and
+// `lastSavedAt` records the last save-from-editor round trip shown in the node toolbar.
+export type CanvasNodeEditorMetadata = {
+    engine?: string;
+    version?: string;
+    lastSavedAt?: number;
+};
+
 // M6: service node binding. `port` + `healthPath` build the probe target; `status` caches the
 // last probe outcome ("probing" | "ready" | "failed") so the node can render before the first poll.
 export type CanvasNodeServiceStatus = "probing" | "ready" | "failed";
@@ -131,6 +139,7 @@ export type CanvasNodeMetadata = {
     preview?: { url?: string; autoRefreshMs?: number }; // M4: web preview node iframe target + auto refresh interval (ms, 0 = off)
     code?: CanvasNodeCodeMetadata; // M5: code browser repo binding + tree/file/diff view state
     regions?: CanvasNodeRegionsMetadata; // M7: image structure layer (parsed regions + edits)
+    editor?: CanvasNodeEditorMetadata; // Phase 3: PS-mode editor engine binding + last save time
     timeline?: CanvasNodeTimelineEntry[]; // M3: agent op history for this node, oldest first, capped at 50
     content?: string;
     composerContent?: string;
