@@ -11,7 +11,7 @@ import { buildTurnContextPrompt, turnContextAttachments } from "../agent/turn-co
 import type { AgentAttachment, AgentPermissionMode } from "../agent/types.js";
 import { AGENT_PROTOCOL_VERSION, CanvasSession } from "../canvas/session.js";
 import { DEFAULT_PORT, ensureSiteWorkspace, findRepo, loadConfig, readRepoGitInfo, removeRepo, saveConfig, updateSiteWorkspace, upsertRepo, type CanvasAgentConfig } from "../config.js";
-import { buildRepoTree, readRepoDiff, readRepoFile, RepoPathError } from "../repo/fs-ops.js";
+import { buildRepoTree, readRepoDiff, readRepoFile, readRepoStatus, RepoPathError } from "../repo/fs-ops.js";
 import { logger } from "../utils/logger.js";
 import { checkVersions } from "../version-check.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
@@ -204,6 +204,12 @@ export function startHttpServer() {
         if (!readRepoGitInfo(repo.path).isGit) return void res.json({ ok: false, error: "当前仓库不是 git 仓库，无法读取 diff" });
         const result = await readRepoDiff(repo.path, req.query.path);
         res.json({ ok: true, ...result });
+    }));
+    app.get("/repo/status", route(async (req, res) => {
+        const repo = repoForRequest(config, req.query.repoId);
+        if (!repo) return void res.status(404).json({ ok: false, error: "未注册的仓库" });
+        const status = await readRepoStatus(repo.path);
+        res.json({ ok: true, repoId: repo.id, name: repo.name, path: repo.path, ...status });
     }));
     app.get("/agent/attachments/:attachmentId", route(async (req, res) => {
         const attachment = session.getTurnAttachment(String(req.query.clientId || ""), routeParam(req.params.attachmentId));

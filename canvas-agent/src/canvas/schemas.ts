@@ -6,6 +6,39 @@ const viewportSchema = z.object({ x: z.number(), y: z.number(), k: z.number() })
 const nodeTypeSchema = z.enum(["image", "text", "config", "video", "audio"]);
 const generationModeSchema = z.enum(["text", "image", "video", "audio"]);
 
+/** 边类型：缺省视为 flow。 */
+export const edgeTypeSchema = z.enum(["flow", "http", "depends-on", "event", "db"]);
+export type CanvasEdgeType = z.infer<typeof edgeTypeSchema>;
+
+/** 节点所处的研发阶段，随 metadata 透传给网页。 */
+export const nodeStageSchema = z.enum(["requirement", "design", "code", "service", "test", "runtime"]);
+export type CanvasNodeStage = z.infer<typeof nodeStageSchema>;
+
+/** 接口契约块：method/path 可选，request/response/openapi 结构不限。 */
+const edgeContractSchema = z.object({
+    method: z.string().optional(),
+    path: z.string().optional(),
+    request: z.unknown().optional(),
+    response: z.unknown().optional(),
+    notes: z.string().optional(),
+    openapi: z.unknown().optional(),
+}).passthrough();
+
+/** 边 metadata：可含 contract，其余键原样透传。 */
+const edgeMetadataSchema = z.object({ contract: edgeContractSchema.optional() }).passthrough();
+
+/** 节点 metadata：校验 stage 枚举，其余键原样透传。 */
+const nodeMetadataSchema = z.object({ stage: nodeStageSchema.optional() }).passthrough();
+
+/** 批量 connect_nodes 操作的边参数。 */
+const connectEdgeSchema = z.object({
+    fromNodeId: z.string(),
+    toNodeId: z.string(),
+    edgeType: edgeTypeSchema.optional(),
+    label: z.string().optional(),
+    metadata: edgeMetadataSchema.optional(),
+});
+
 /** Canvas Agent 对外提供的工具名称。 */
 export const toolNames = [
     "site_navigate",
@@ -32,6 +65,7 @@ export const toolNames = [
     "canvas_resize_node",
     "canvas_delete_nodes",
     "canvas_connect_nodes",
+    "canvas_update_edge",
     "canvas_select_nodes",
     "canvas_set_viewport",
     "canvas_run_generation",
@@ -47,11 +81,12 @@ export const toolNames = [
 export type ToolName = (typeof toolNames)[number];
 
 export const canvasOpSchema = z.discriminatedUnion("type", [
-    z.object({ type: z.literal("add_node"), nodeType: nodeTypeSchema.optional(), id: z.string().optional(), title: z.string().optional(), x: z.number().optional(), y: z.number().optional(), width: z.number().optional(), height: z.number().optional(), position: positionSchema.optional(), metadata: recordSchema.optional() }).passthrough(),
-    z.object({ type: z.literal("update_node"), id: z.string(), patch: recordSchema.optional(), metadata: recordSchema.optional() }).passthrough(),
+    z.object({ type: z.literal("add_node"), nodeType: nodeTypeSchema.optional(), id: z.string().optional(), title: z.string().optional(), x: z.number().optional(), y: z.number().optional(), width: z.number().optional(), height: z.number().optional(), position: positionSchema.optional(), metadata: nodeMetadataSchema.optional() }).passthrough(),
+    z.object({ type: z.literal("update_node"), id: z.string(), patch: recordSchema.optional(), metadata: nodeMetadataSchema.optional() }).passthrough(),
     z.object({ type: z.literal("delete_node"), id: z.string().optional(), ids: z.array(z.string()).optional() }).passthrough(),
     z.object({ type: z.literal("delete_connections"), id: z.string().optional(), ids: z.array(z.string()).optional(), all: z.boolean().optional() }).passthrough(),
-    z.object({ type: z.literal("connect_nodes"), id: z.string().optional(), fromNodeId: z.string(), toNodeId: z.string() }).passthrough(),
+    z.object({ type: z.literal("connect_nodes"), id: z.string().optional(), fromNodeId: z.string(), toNodeId: z.string(), edgeType: edgeTypeSchema.optional(), label: z.string().optional(), metadata: edgeMetadataSchema.optional() }).passthrough(),
+    z.object({ type: z.literal("update_connection"), id: z.string().optional(), edgeId: z.string().optional(), fromNodeId: z.string().optional(), toNodeId: z.string().optional(), edgeType: edgeTypeSchema.optional(), label: z.string().optional(), metadata: edgeMetadataSchema.optional() }).passthrough(),
     z.object({ type: z.literal("set_viewport"), viewport: viewportSchema }).passthrough(),
     z.object({ type: z.literal("select_nodes"), ids: z.array(z.string()) }).passthrough(),
     z.object({ type: z.literal("run_generation"), nodeId: z.string(), mode: generationModeSchema.optional(), prompt: z.string().optional() }).passthrough(),
@@ -98,7 +133,7 @@ export const toolInputSchemas = {
     canvas_get_node: z.object({ nodeId: z.string() }),
     canvas_export_snapshot: z.object({}).passthrough(),
     canvas_apply_ops: z.object({ ops: z.array(canvasOpSchema) }),
-    canvas_create_node: z.object({ nodeType: nodeTypeSchema, title: z.string().optional(), x: z.number().optional(), y: z.number().optional(), width: z.number().optional(), height: z.number().optional(), metadata: recordSchema.optional() }),
+    canvas_create_node: z.object({ nodeType: nodeTypeSchema, title: z.string().optional(), x: z.number().optional(), y: z.number().optional(), width: z.number().optional(), height: z.number().optional(), metadata: nodeMetadataSchema.optional() }),
     canvas_create_attachment_nodes: z.object({ attachmentIds: z.array(z.string()).min(1), x: z.number().optional(), y: z.number().optional(), gap: z.number().optional(), direction: z.enum(["row", "column"]).optional() }),
     canvas_create_text_node: z.object({ text: z.string().optional(), x: z.number().optional(), y: z.number().optional(), title: z.string().optional(), width: z.number().optional(), height: z.number().optional() }),
     canvas_create_text_nodes: z.object({ items: z.array(textNodeSchema).min(1), x: z.number().optional(), y: z.number().optional(), gap: z.number().optional(), direction: z.enum(["row", "column"]).optional() }),
@@ -109,12 +144,13 @@ export const toolInputSchemas = {
     canvas_generate_image: generationFlowSchema.merge(generationOptionsSchema),
     canvas_generate_video: generationFlowSchema.merge(generationOptionsSchema),
     canvas_generate_audio: generationFlowSchema.merge(generationOptionsSchema),
-    canvas_update_node: z.object({ id: z.string(), patch: recordSchema.optional(), metadata: recordSchema.optional() }),
+    canvas_update_node: z.object({ id: z.string(), patch: recordSchema.optional(), metadata: nodeMetadataSchema.optional() }),
     canvas_update_node_text: z.object({ id: z.string(), text: z.string(), title: z.string().optional() }),
     canvas_move_nodes: z.object({ items: z.array(z.object({ id: z.string(), x: z.number().optional(), y: z.number().optional(), dx: z.number().optional(), dy: z.number().optional() })).min(1) }),
     canvas_resize_node: z.object({ id: z.string(), width: z.number(), height: z.number(), freeResize: z.boolean().optional() }),
     canvas_delete_nodes: z.object({ ids: z.array(z.string()).min(1) }),
-    canvas_connect_nodes: z.object({ connections: z.array(z.object({ fromNodeId: z.string(), toNodeId: z.string() })).min(1) }),
+    canvas_connect_nodes: z.object({ connections: z.array(connectEdgeSchema).min(1) }),
+    canvas_update_edge: z.object({ edgeId: z.string().optional(), fromNodeId: z.string().optional(), toNodeId: z.string().optional(), edgeType: edgeTypeSchema.optional(), label: z.string().optional(), metadata: edgeMetadataSchema.optional() }),
     canvas_select_nodes: z.object({ ids: z.array(z.string()) }),
     canvas_set_viewport: z.object({ viewport: viewportSchema }),
     canvas_run_generation: z.object({ nodeId: z.string(), mode: generationModeSchema.optional(), prompt: z.string().optional() }),
@@ -135,7 +171,7 @@ export const toolDescriptions: Record<ToolName, string> = {
     canvas_get_selection: "读取当前网页画布选中的节点。",
     canvas_get_node: "读取指定节点的完整内容，含 metadata.content 全文（上限 200000 字符，超出会截断并标 truncated:true）。需要读取上游节点（需求文档、代码等）全文时使用本工具，不要假设 canvas_get_state 返回的内容是完整的。",
     canvas_export_snapshot: "导出当前画布快照，用于理解布局。",
-    canvas_apply_ops: "批量操作当前网页画布。ops 支持 add_node、update_node、delete_node、delete_connections、connect_nodes、set_viewport、select_nodes、run_generation。",
+    canvas_apply_ops: "批量操作当前网页画布。ops 支持 add_node、update_node、delete_node、delete_connections、connect_nodes、update_connection、set_viewport、select_nodes、run_generation。connect_nodes 可带 edgeType（flow/http/depends-on/event/db，缺省 flow）、label、metadata（可含 contract）。",
     canvas_create_node: "创建任意类型节点：text、image、config、video、audio。适合创建占位图、媒体占位、配置节点或自定义 metadata 节点。",
     canvas_create_attachment_nodes: "把当前对话中用户上传的图片附件创建成真实画布图片节点。attachmentIds 使用本轮附件清单中的 ID；返回的节点 ID 可传给 canvas_create_generation_flow.referenceNodeIds 作为生成参考图。",
     canvas_create_text_node: "在当前画布创建单个文本节点。",
@@ -147,12 +183,13 @@ export const toolDescriptions: Record<ToolName, string> = {
     canvas_generate_image: "创建通用图片生成流程并立即触发生成。",
     canvas_generate_video: "创建通用视频生成流程并立即触发生成。",
     canvas_generate_audio: "创建通用音频生成流程并立即触发生成。",
-    canvas_update_node: "更新节点基础字段或 metadata。",
+    canvas_update_node: "更新节点基础字段或 metadata；metadata 支持 stage（requirement/design/code/service/test/runtime）。",
     canvas_update_node_text: "更新文本节点内容和标题。",
     canvas_move_nodes: "移动一个或多个节点，支持绝对坐标或 dx/dy 偏移。",
     canvas_resize_node: "调整节点尺寸。",
     canvas_delete_nodes: "删除指定节点及相关连线。",
-    canvas_connect_nodes: "批量连接节点。",
+    canvas_connect_nodes: "批量连接节点，并可为每条边赋予语义：edgeType（flow/http/depends-on/event/db，缺省 flow）、label、metadata（可含 contract：method/path/request/response/notes/openapi）。",
+    canvas_update_edge: "按 edgeId 或 (fromNodeId,toNodeId) 更新已存在连线的语义：可改 edgeType、label、metadata。metadata 与已有边 metadata 做局部合并（顶层键覆盖，嵌套对象递归合并），不会整块替换。",
     canvas_select_nodes: "设置当前选中节点。",
     canvas_set_viewport: "调整画布视口。",
     canvas_run_generation: "触发指定节点生成，通常用于配置节点或文本/图片/视频/音频节点。",

@@ -1,8 +1,8 @@
 import crypto from "node:crypto";
 
-import type { ToolName } from "./schemas.js";
+import type { CanvasEdgeType, ToolName } from "./schemas.js";
 import { nextCanvasX } from "./tools.js";
-import type { CanvasNode, CanvasNodeType, CanvasSnapshot } from "./types.js";
+import type { CanvasConnection, CanvasNode, CanvasNodeType, CanvasSnapshot } from "./types.js";
 
 export type CanvasToolRequest = { name: "canvas_apply_ops"; input: Record<string, unknown> };
 
@@ -58,8 +58,13 @@ export function buildCanvasToolRequest(name: ToolName, input: Record<string, unk
     }
     if (name === "canvas_delete_nodes") return applyOps([{ type: "delete_node", ids: (input as { ids: string[] }).ids }]);
     if (name === "canvas_connect_nodes") {
-        const data = input as { connections: Array<{ fromNodeId: string; toNodeId: string }> };
+        const data = input as { connections: Array<{ fromNodeId: string; toNodeId: string; edgeType?: CanvasEdgeType; label?: string; metadata?: Record<string, unknown> }> };
         return applyOps(data.connections.map((connection) => ({ type: "connect_nodes", ...connection })));
+    }
+    if (name === "canvas_update_edge") {
+        const data = input as { edgeId?: string; fromNodeId?: string; toNodeId?: string; edgeType?: CanvasEdgeType; label?: string; metadata?: Record<string, unknown> };
+        const connection = findConnection(state, data);
+        return applyOps([updateConnectionOp(connection, data)]);
     }
     if (name === "canvas_select_nodes") return applyOps([{ type: "select_nodes", ids: (input as { ids: string[] }).ids }]);
     if (name === "canvas_set_viewport") return applyOps([{ type: "set_viewport", viewport: (input as { viewport: unknown }).viewport }]);
@@ -166,6 +171,48 @@ function generationTitle(mode: "text" | "image" | "video" | "audio") {
 /** 按节点 ID 查找当前画布节点。 */
 function findNode(state: CanvasSnapshot | null, id: string): CanvasNode | undefined {
     return (state?.nodes || []).find((node) => node.id === id);
+}
+
+/** 按 edgeId 或 (fromNodeId,toNodeId) 在当前画布定位连线；找不到时抛出可读错误。 */
+function findConnection(state: CanvasSnapshot | null, target: { edgeId?: string; fromNodeId?: string; toNodeId?: string }): CanvasConnection {
+    const connections = state?.connections || [];
+    if (!connections.length) throw new Error("当前画布没有可更新的连线");
+    const edgeId = String(target.edgeId || "").trim();
+    if (edgeId) {
+        const byId = connections.find((connection) => connection.id === edgeId);
+        if (!byId) throw new Error(`找不到要更新的连线：edgeId=${edgeId}`);
+        return byId;
+    }
+    const fromNodeId = String(target.fromNodeId || "").trim();
+    const toNodeId = String(target.toNodeId || "").trim();
+    if (!fromNodeId || !toNodeId) throw new Error("canvas_update_edge 需要 edgeId，或同时提供 fromNodeId 与 toNodeId");
+    const matches = connections.filter((connection) => connection.fromNodeId === fromNodeId && connection.toNodeId === toNodeId);
+    if (!matches.length) throw new Error(`找不到要更新的连线：${fromNodeId} -> ${toNodeId}`);
+    return matches[0];
+}
+
+/** 构造更新连线操作；只带需要修改的字段，metadata 与已有边局部合并。 */
+function updateConnectionOp(connection: CanvasConnection, patch: { edgeType?: CanvasEdgeType; label?: string; metadata?: Record<string, unknown> }) {
+    const op: Record<string, unknown> = { type: "update_connection", id: connection.id, fromNodeId: connection.fromNodeId, toNodeId: connection.toNodeId };
+    if (patch.edgeType) op.edgeType = patch.edgeType;
+    if (patch.label !== undefined) op.label = patch.label;
+    if (patch.metadata) op.metadata = mergeMetadata(connection.metadata, patch.metadata);
+    return op;
+}
+
+/** 局部合并 metadata：顶层键覆盖，嵌套纯对象递归合并，其余值直接替换。 */
+function mergeMetadata(base: Record<string, unknown> | undefined, patch: Record<string, unknown>): Record<string, unknown> {
+    const merged: Record<string, unknown> = { ...(base || {}) };
+    Object.entries(patch).forEach(([key, value]) => {
+        const current = merged[key];
+        merged[key] = isPlainRecord(current) && isPlainRecord(value) ? mergeMetadata(current, value) : value;
+    });
+    return merged;
+}
+
+/** 判断值是否为可合并的纯对象（排除数组与 null）。 */
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 /** 移除对象中未设置的生成参数。 */

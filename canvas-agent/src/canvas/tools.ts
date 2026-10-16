@@ -1,10 +1,12 @@
 import { toolInputSchemas, toolNames, type ToolName } from "./schemas.js";
-import type { CanvasNode, CanvasSnapshot } from "./types.js";
+import type { CanvasConnection, CanvasNode, CanvasSnapshot } from "./types.js";
 
 /** canvas_get_state 等列表工具返回的单节点内容预览上限（字符）。 */
 export const NODE_CONTENT_PREVIEW_LIMIT = 2000;
 /** canvas_get_node 返回单节点全文时的内容上限（字符）。 */
 export const NODE_CONTENT_FULL_LIMIT = 200000;
+/** canvas_get_state 返回单条边 metadata 的体积上限（字符）。 */
+export const EDGE_METADATA_PREVIEW_LIMIT = 2000;
 
 /** 判断传入名称是否为已注册的画布工具。 */
 export function isToolName(name: unknown): name is ToolName {
@@ -16,10 +18,10 @@ export function parseToolInput(name: ToolName, input: unknown) {
     return toolInputSchemas[name].parse(input ?? {});
 }
 
-/** 压缩画布快照，避免向 Agent 返回过长的节点内容。 */
+/** 压缩画布快照，避免向 Agent 返回过长的节点内容，并保留连线的边语义。 */
 export function compactCanvasState(state: CanvasSnapshot | null) {
     if (!state) throw new Error("当前没有已连接画布");
-    return { ...state, nodes: (state.nodes || []).map(compactNode) };
+    return { ...state, nodes: (state.nodes || []).map(compactNode), connections: (state.connections || []).map(compactConnection) };
 }
 
 /** 压缩单个画布节点的元数据内容，截断时用 contentTruncated 标记。 */
@@ -30,6 +32,37 @@ export function compactNode(node: CanvasNode) {
         metadata.contentTruncated = true;
     }
     return { id: node.id, type: node.type, title: node.title, position: node.position, width: node.width, height: node.height, metadata };
+}
+
+/**
+ * 压缩单条连线：保留 type/label/metadata 边语义，缺省 type 归一为 flow。
+ * metadata 序列化后超过上限时截断并标记 metadataTruncated（原对象不被修改）。
+ */
+export function compactConnection(connection: CanvasConnection) {
+    const metadata = connection.metadata;
+    const json = metadata === undefined ? "" : safeJson(metadata);
+    const compactedMetadata = metadata === undefined
+        ? undefined
+        : json.length > EDGE_METADATA_PREVIEW_LIMIT
+            ? { metadataTruncated: true, preview: `${json.slice(0, EDGE_METADATA_PREVIEW_LIMIT)}...` }
+            : metadata;
+    return {
+        id: connection.id,
+        fromNodeId: connection.fromNodeId,
+        toNodeId: connection.toNodeId,
+        type: connection.type || connection.edgeType || "flow",
+        ...(connection.label ? { label: connection.label } : {}),
+        ...(compactedMetadata ? { metadata: compactedMetadata } : {}),
+    };
+}
+
+/** 安全序列化为 JSON 字符串；不可序列化时返回空串。 */
+function safeJson(value: unknown) {
+    try {
+        return JSON.stringify(value) ?? "";
+    } catch {
+        return "";
+    }
 }
 
 /** 展开单个画布节点，保留完整内容供 canvas_get_node 读取。 */
