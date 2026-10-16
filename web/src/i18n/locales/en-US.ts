@@ -246,6 +246,7 @@ export default {
         miniMapClose: "Close minimap",
         resetView: "Reset view",
         zoom: "Zoom canvas",
+        timeline: { title: "Stage timeline", open: "Open stage timeline", close: "Close stage timeline", progress: "{{filled}}/{{total}} stages done", todo: "To do", next: "Next: {{stage}}", complete: "All six stages have nodes", unassigned: "Unassigned" },
         agentConnected: "Codex connected",
         agentConnecting: "Codex {{activity}}",
         agentDisconnected: "Codex disconnected",

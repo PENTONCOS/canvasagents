@@ -246,6 +246,7 @@ export default {
         miniMapClose: "关闭小地图",
         resetView: "重置视图",
         zoom: "放大/缩小画布",
+        timeline: { title: "阶段时间线", open: "打开阶段时间线", close: "关闭阶段时间线", progress: "已完成 {{filled}}/{{total}} 个阶段", todo: "待办", next: "下一步：{{stage}}", complete: "六个阶段都已有节点", unassigned: "未分配" },
         agentConnected: "Codex 已连接",
         agentConnecting: "Codex {{activity}}",
         agentDisconnected: "Codex 未连接",

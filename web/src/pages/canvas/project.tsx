@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Group, Video } from "lucide-react";
+import { Group, Milestone, Video } from "lucide-react";
 import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
@@ -42,6 +42,7 @@ import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "@/componen
 import { CanvasToolbar } from "@/components/canvas/canvas-toolbar";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { CanvasSidePanel } from "@/components/canvas/canvas-side-panel";
+import { CanvasTimelinePanel } from "@/components/canvas/canvas-timeline-panel";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
@@ -262,6 +263,7 @@ function InfiniteCanvasPage() {
     const [nodeCreatePosition, setNodeCreatePosition] = useState<Position | null>(null);
     const [runningNodeId, setRunningNodeId] = useState<string | null>(null);
     const [isMiniMapOpen, setIsMiniMapOpen] = useState(false);
+    const [timelineOpen, setTimelineOpen] = useState(false);
     const [backgroundMode, setBackgroundMode] = useState<CanvasBackgroundMode>("lines");
     const [showImageInfo, setShowImageInfo] = useState(false);
     const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
@@ -3432,6 +3434,20 @@ function InfiniteCanvasPage() {
                 />
 
                 {isMiniMapOpen ? <Minimap nodes={nodes} viewport={viewport} viewportSize={size} onViewportChange={setViewport} /> : null}
+
+                <button
+                    type="button"
+                    className="absolute right-5 top-20 z-[60] flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium shadow-lg backdrop-blur transition"
+                    style={{ background: timelineOpen ? theme.toolbar.activeBg : theme.toolbar.panel, borderColor: theme.toolbar.border, color: timelineOpen ? theme.toolbar.activeText : theme.toolbar.item }}
+                    onClick={() => setTimelineOpen((value) => !value)}
+                    aria-label={timelineOpen ? t("canvas.timeline.close") : t("canvas.timeline.open")}
+                    title={timelineOpen ? t("canvas.timeline.close") : t("canvas.timeline.open")}
+                >
+                    <Milestone className="size-4" />
+                    {t("canvas.timeline.title")}
+                </button>
+
+                {timelineOpen ? <CanvasTimelinePanel nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={focusNode} onClose={() => setTimelineOpen(false)} /> : null}
 
                 <CanvasZoomControls scale={viewport.k} onScaleChange={setZoomScale} onReset={resetViewport} isMiniMapOpen={isMiniMapOpen} onToggleMiniMap={() => setIsMiniMapOpen((value) => !value)} />
 
