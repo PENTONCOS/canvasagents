@@ -9,6 +9,7 @@ import { previewUrlFor, subscribeImagePreviews, getImagePreviewRevision } from "
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
 import { useThemeStore } from "@/stores/use-theme-store";
+import { CanvasNodeStageBadge } from "./canvas-node-stage-badge";
 import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
 import { CanvasNodeType, type CanvasNodeData, type CanvasNodeImage, type CanvasNodeText, type Position } from "@/types/canvas";
 import type { CanvasNodeContext, CanvasPluginHost } from "@/types/canvas-plugin";
@@ -392,6 +393,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                     setIsEditingContent(true);
                 }}
             >
+                {!isGroup ? <CanvasNodeStageBadge stage={data.metadata?.stage} /> : null}
                 <div
                     className={`relative flex h-full w-full items-center justify-center rounded-[inherit] ${isBatchRoot ? "overflow-visible" : "overflow-hidden"}`}
                     style={

@@ -134,6 +134,21 @@ export type AgentRepoTreeResponse = { ok?: boolean; entries?: AgentRepoTreeEntry
 export type AgentRepoFileResponse = { ok?: boolean; path?: string; content?: string; size?: number; truncated?: boolean; language?: string };
 export type AgentRepoDiffResponse = { ok?: boolean; path?: string; diff?: string };
 
+// M6: repo status powers the repo node summary (branch, dirty marker, last commit).
+export type AgentRepoLastCommit = { sha?: string; subject?: string; author?: string; date?: string };
+export type AgentRepoStatusResponse = {
+    ok?: boolean;
+    repoId?: string;
+    name?: string;
+    path?: string;
+    isGit?: boolean;
+    branch?: string;
+    dirty?: boolean;
+    ahead?: number;
+    behind?: number;
+    lastCommit?: AgentRepoLastCommit;
+};
+
 function repoAuthHeaders(token: string, json = false): Record<string, string> {
     return json ? { "content-type": "application/json", "x-canvas-agent-token": token } : { "x-canvas-agent-token": token };
 }
@@ -166,6 +181,13 @@ export function fetchAgentRepoDiff(endpoint: string, token: string, params: { re
     query.set("repoId", params.repoId);
     if (params.path) query.set("path", params.path);
     return fetchAgentJson<AgentRepoDiffResponse>(endpoint, token, `/repo/diff?${query.toString()}`, { headers: repoAuthHeaders(token) });
+}
+
+// M6: /repo/status returns the branch/dirty/lastCommit summary the repo node renders.
+export function fetchAgentRepoStatus(endpoint: string, token: string, params: { repoId: string }) {
+    const query = new URLSearchParams();
+    query.set("repoId", params.repoId);
+    return fetchAgentJson<AgentRepoStatusResponse>(endpoint, token, `/repo/status?${query.toString()}`, { headers: repoAuthHeaders(token) });
 }
 
 export async function discoverAgentConfig(endpoint: string) {

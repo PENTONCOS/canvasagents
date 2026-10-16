@@ -75,6 +75,9 @@ import { registerBuiltinNodes } from "@/components/canvas/nodes/builtin-nodes";
 import { registerTerminalNode } from "@/components/canvas/nodes/terminal-node";
 import { registerPreviewNode } from "@/components/canvas/nodes/preview-node";
 import { registerCodeNode } from "@/components/canvas/nodes/code-node";
+import { registerRepoNode } from "@/components/canvas/nodes/repo-node";
+import { registerServiceNode } from "@/components/canvas/nodes/service-node";
+import { CanvasConnectionPanel } from "@/components/canvas/canvas-connection-panel";
 import { CanvasPluginManagerModal } from "@/components/canvas/canvas-plugin-manager-modal";
 import { CanvasRefreshShell } from "@/components/canvas/canvas-refresh-shell";
 import { CanvasTopBar } from "@/components/canvas/canvas-top-bar";
@@ -103,6 +106,8 @@ registerBuiltinNodes();
 registerTerminalNode();
 registerPreviewNode();
 registerCodeNode();
+registerRepoNode();
+registerServiceNode();
 
 type CanvasClipboard = {
     nodes: CanvasNodeData[];
@@ -944,6 +949,11 @@ function InfiniteCanvasPage() {
         setConnections((prev) => prev.filter((conn) => conn.id !== connectionId));
         setSelectedConnectionId((current) => (current === connectionId ? null : current));
         setContextMenu((current) => (current?.type === "connection" && current.connectionId === connectionId ? null : current));
+    }, []);
+
+    // M6: edge semantics written back from the connection inspector panel.
+    const updateConnection = useCallback((connectionId: string, patch: Pick<CanvasConnection, "type" | "label" | "metadata">) => {
+        setConnections((prev) => prev.map((conn) => (conn.id === connectionId ? { ...conn, ...patch } : conn)));
     }, []);
 
     const disconnectNodeReference = useCallback((fromNodeId: string, toNodeId: string) => {
@@ -3171,6 +3181,8 @@ function InfiniteCanvasPage() {
         retainedPreviewRef.current = { video: hoverPreviewMedia.video, src: hoverPreviewMedia.src, title: hoverPreviewNode?.title || "", width: previewSize.width, height: previewSize.height };
     }
     const retainedPreview = retainedPreviewRef.current;
+    // M6: inspector target — set when an edge is clicked (node selection is cleared at that point).
+    const selectedConnection = selectedConnectionId ? connections.find((conn) => conn.id === selectedConnectionId) || null : null;
 
     if (!projectLoaded) return <CanvasRefreshShell />;
 
@@ -3318,6 +3330,16 @@ function InfiniteCanvasPage() {
                 </InfiniteCanvas>
 
                 {referencePickerNodeId ? <button type="button" className="absolute left-1/2 top-4 z-[90] -translate-x-1/2 rounded-full border px-4 py-2 text-sm font-medium shadow-lg backdrop-blur" style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border }} onClick={exitNodeReferenceSelection}>{t("canvas.references.selectingHint")}</button> : null}
+
+                {selectedConnection ? (
+                    <CanvasConnectionPanel
+                        connection={selectedConnection}
+                        fromTitle={nodeById.get(selectedConnection.fromNodeId)?.title || t("canvas.node.untitled")}
+                        toTitle={nodeById.get(selectedConnection.toNodeId)?.title || t("canvas.node.untitled")}
+                        onChange={(patch) => updateConnection(selectedConnection.id, patch)}
+                        onClose={() => setSelectedConnectionId(null)}
+                    />
+                ) : null}
 
                 <div
                     className="pointer-events-none absolute inset-0 z-[80] flex items-center justify-center transition-opacity duration-200 ease-out"

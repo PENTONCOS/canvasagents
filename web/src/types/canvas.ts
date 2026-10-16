@@ -54,6 +54,43 @@ export type CanvasNodeTimelineEntry = {
 // selected file next to the tree, and `diff` shows the unified diff of the active path.
 export type CanvasNodeCodeView = "tree" | "file" | "diff";
 
+// M6: edge semantics. Every connection carries a kind that decides its color and line style,
+// plus optional metadata documenting the contract it represents (http method/path, payloads).
+export type CanvasEdgeType = "flow" | "http" | "depends-on" | "event" | "db";
+export type CanvasEdgeContract = {
+    method?: string;
+    path?: string;
+    request?: string;
+    response?: string;
+    notes?: string;
+};
+export type CanvasEdgeMetadata = { contract?: CanvasEdgeContract };
+
+// M6: pipeline stage badge rendered in the node header (requirement -> ... -> runtime).
+export type CanvasNodeStage = "requirement" | "design" | "code" | "service" | "test" | "runtime";
+
+// M6: repo node binding. Mirrors the canvas-agent /repo/status payload so a node can render a
+// repository summary (name, branch, dirty marker, last commit) without re-querying on every render.
+export type CanvasNodeRepoMetadata = {
+    repoId?: string;
+    name?: string;
+    path?: string;
+    isGit?: boolean;
+    branch?: string;
+    dirty?: boolean;
+    lastCommit?: string;
+};
+
+// M6: service node binding. `port` + `healthPath` build the probe target; `status` caches the
+// last probe outcome ("probing" | "ready" | "failed") so the node can render before the first poll.
+export type CanvasNodeServiceStatus = "probing" | "ready" | "failed";
+export type CanvasNodeServiceMetadata = {
+    name?: string;
+    port?: number;
+    healthPath?: string;
+    status?: CanvasNodeServiceStatus;
+};
+
 export type CanvasNodeCodeMetadata = {
     repoId?: string; // canvas-agent /repos repo id bound to this node
     rootPath?: string; // absolute path reported by the agent when the repo was registered
@@ -62,6 +99,9 @@ export type CanvasNodeCodeMetadata = {
 };
 
 export type CanvasNodeMetadata = {
+    stage?: CanvasNodeStage; // M6: pipeline stage badge shown in the node header
+    repo?: CanvasNodeRepoMetadata; // M6: repo node binding (name/branch/dirty/last commit)
+    service?: CanvasNodeServiceMetadata; // M6: service node binding (port/health path/status)
     terminalSession?: string; // M2: bound canvas-agent terminal session id
     preview?: { url?: string; autoRefreshMs?: number }; // M4: web preview node iframe target + auto refresh interval (ms, 0 = off)
     code?: CanvasNodeCodeMetadata; // M5: code browser repo binding + tree/file/diff view state
@@ -122,6 +162,9 @@ export type CanvasConnection = {
     id: string;
     fromNodeId: string;
     toNodeId: string;
+    type?: CanvasEdgeType; // M6: edge semantics; defaults to "flow"
+    label?: string; // M6: free label rendered at the edge midpoint
+    metadata?: CanvasEdgeMetadata; // M6: contract documentation for this edge
 };
 
 export type CanvasAssistantReference = {
