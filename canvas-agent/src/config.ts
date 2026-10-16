@@ -12,7 +12,7 @@ const initializedWorkspaces = new Set<string>();
 
 export type SiteWorkspaceConfig = { workspacePath: string; activeThreadId?: string; pinnedThreadIds?: string[] };
 export type SiteRepo = { id: string; name: string; path: string };
-export type CanvasAgentConfig = { url: string; token: string; origins?: string[]; workspace?: SiteWorkspaceConfig; repos?: SiteRepo[]; activeRepoId?: string };
+export type CanvasAgentConfig = { url: string; token: string; origins?: string[]; workspace?: SiteWorkspaceConfig; repos?: SiteRepo[]; activeRepoId?: string; imageParseUrl?: string };
 export type RepoGitInfo = { isGit: boolean; branch?: string };
 
 /** 读取本地 Canvas Agent 配置，不存在时生成默认配置。 */

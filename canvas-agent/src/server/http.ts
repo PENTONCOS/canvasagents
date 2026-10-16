@@ -15,10 +15,13 @@ import { buildRepoTree, readRepoDiff, readRepoFile, readRepoStatus, RepoPathErro
 import { logger } from "../utils/logger.js";
 import { checkVersions } from "../version-check.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
+import { IMAGE_PARSE_BODY_LIMIT, requestUpstream, resolveImageParseUrl, truncateUpstreamText } from "./image-parse.js";
 import { terminalManager } from "./terminal.js";
 
-/** 启动仅监听本机的 Canvas Agent HTTP 服务。 */
-export function startHttpServer() {
+export type StartHttpServerOptions = { skipVersionCheck?: boolean };
+
+/** 启动仅监听本机的 Canvas Agent HTTP 服务，返回底层 HTTP server 以便测试收尾。 */
+export function startHttpServer(options: StartHttpServerOptions = {}) {
     const config = loadConfig(true);
     const port = Number(process.env.PORT) || Number(new URL(config.url).port) || DEFAULT_PORT;
     config.url = `http://127.0.0.1:${port}`;
@@ -118,6 +121,9 @@ export function startHttpServer() {
     };
     const app = express();
     app.disable("x-powered-by");
+    // /image/parse 需要把请求体逐字节透传给解析服务，先按 Buffer 原样收下，
+    // 这样 express.json 不会再解析它（body-parser 见到已解析的 body 会跳过）。
+    app.use("/image/parse", express.raw({ type: () => true, limit: IMAGE_PARSE_BODY_LIMIT }));
     app.use(express.json({ limit: "30mb" }));
     app.use((req, res, next) => {
         if (!logger.enabled) return next();
@@ -135,12 +141,27 @@ export function startHttpServer() {
         if (req.method === "OPTIONS") return void res.json({});
         next();
     });
-    app.get("/health", (_req, res) => res.json(session.health()));
+    app.get("/health", (_req, res) => res.json({ ...session.health(), imageParseUrl: resolveImageParseUrl(config) }));
     app.get("/config", (_req, res) => res.json({ ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, url: config.url, hasToken: true }));
     app.use((req, res, next) => {
         if (validToken(req, requestUrl(req, config), config.token)) return next();
         res.status(401).json({ ok: false, error: "invalid token" });
     });
+    // 桥侧代理：网页无 CORS 通道，只能经此转发到本地解析服务（该服务不返回 CORS 头）。
+    app.post("/image/parse", route(async (req, res) => {
+        const baseUrl = resolveImageParseUrl(config);
+        const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+        const contentType = typeof req.headers["content-type"] === "string" ? req.headers["content-type"] : "application/json";
+        const result = await requestUpstream(baseUrl, { method: "POST", path: "/parse", body, contentType });
+        if (!result.ok) return void res.status(502).json({ ok: false, error: result.error });
+        if (result.status < 200 || result.status >= 300) return void res.status(502).json({ ok: false, error: truncateUpstreamText(result.text) });
+        res.status(result.status).type(result.contentType || "application/json").send(result.text);
+    }));
+    app.get("/image/health", route(async (_req, res) => {
+        const result = await requestUpstream(resolveImageParseUrl(config), { method: "GET", path: "/health" });
+        if (!result.ok) return void res.status(502).json({ ok: false, error: result.error });
+        res.status(result.status).type(result.contentType || "application/json").send(result.text);
+    }));
     app.get("/events", (req, res) => {
         session.openEvents(requestUrl(req, config), res, ensureSiteWorkspace(config).activeThreadId || "");
     });
@@ -535,7 +556,7 @@ export function startHttpServer() {
 
     const server = app.listen(port, "127.0.0.1", () => {
         console.log("CanvasAgents Agent");
-        checkVersions();
+        if (!options.skipVersionCheck) checkVersions();
         console.log(`Local URL: ${config.url}`);
         console.log(`Connect token: ${config.token}`);
         console.log("Codex MCP is not installed by this command.");
@@ -554,6 +575,7 @@ export function startHttpServer() {
         }
     });
     terminalManager.registerHttp(server, (req, url) => validToken(req as unknown as Parameters<typeof validToken>[0], url, config.token));
+    return server;
 }
 
 /** 将异步 Express 路由异常交给统一错误处理中间件。 */
