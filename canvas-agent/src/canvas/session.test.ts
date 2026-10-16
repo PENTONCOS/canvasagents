@@ -577,6 +577,45 @@ test("切换活动线程会清除上一线程的实时快照", (t) => {
     assert.deepEqual(client.events("agent_event"), []);
 });
 
+test("canvas_get_node 返回指定节点的完整内容", async (t) => {
+    const session = new CanvasSession();
+    const client = connect(session, "first");
+    t.after(() => client.close());
+    const content = "需求正文".repeat(1000);
+    session.updateState({
+        projectId: "canvas-1",
+        nodes: [{ id: "doc-1", type: "text", title: "需求文档", position: { x: 0, y: 0 }, width: 320, height: 200, metadata: { content } }],
+        connections: [],
+        selectedNodeIds: [],
+        viewport: { x: 0, y: 0, k: 1 },
+    }, "first");
+
+    const result = (await session.callTool("canvas_get_node", { nodeId: "doc-1" })) as Record<string, unknown>;
+    assert.equal(result.ok, true);
+    const node = result.node as Record<string, unknown>;
+    assert.equal(field(node, "truncated"), false);
+    assert.equal(field(field(node, "metadata"), "content"), content);
+    assert.equal(field(node, "id"), "doc-1");
+
+    const preview = (await session.callTool("canvas_get_state", {})) as Record<string, unknown>;
+    const previewNode = (preview.nodes as Array<Record<string, unknown>>)[0];
+    assert.equal(field(field(previewNode, "metadata"), "contentTruncated"), true);
+});
+
+test("canvas_get_node 对不存在的节点返回错误", async (t) => {
+    const session = new CanvasSession();
+    const client = connect(session, "first");
+    t.after(() => client.close());
+    session.updateState(snapshot("canvas-1"), "first");
+
+    assert.deepEqual(await session.callTool("canvas_get_node", { nodeId: "missing" }), { ok: false, error: "节点不存在" });
+});
+
+test("canvas_get_node 在没有连接画布时报错", async () => {
+    const session = new CanvasSession();
+    await assert.rejects(() => session.callTool("canvas_get_node", { nodeId: "doc-1" }), /当前没有已连接画布/);
+});
+
 /** 创建用于测试的画布 SSE 连接。 */
 function connect(session: CanvasSession, clientId: string, activeThreadId = "") {
     const response = new FakeSseResponse();

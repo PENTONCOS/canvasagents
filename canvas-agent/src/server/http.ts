@@ -10,7 +10,8 @@ import { messageMetadataStore } from "../agent/message-metadata.js";
 import { buildTurnContextPrompt, turnContextAttachments } from "../agent/turn-context.js";
 import type { AgentAttachment, AgentPermissionMode } from "../agent/types.js";
 import { AGENT_PROTOCOL_VERSION, CanvasSession } from "../canvas/session.js";
-import { DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWorkspace, type CanvasAgentConfig } from "../config.js";
+import { DEFAULT_PORT, ensureSiteWorkspace, findRepo, loadConfig, readRepoGitInfo, removeRepo, saveConfig, updateSiteWorkspace, upsertRepo, type CanvasAgentConfig } from "../config.js";
+import { buildRepoTree, readRepoDiff, readRepoFile, RepoPathError } from "../repo/fs-ops.js";
 import { logger } from "../utils/logger.js";
 import { checkVersions } from "../version-check.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
@@ -60,14 +61,14 @@ export function startHttpServer() {
     };
     let draftThreadStart: ReturnType<typeof startCodexThread> | null = null;
     let skillDraftRunning = false;
-    const prepareDraftThread = (clientId: string, permission: AgentPermissionMode) => {
+    const prepareDraftThread = (clientId: string, permission: AgentPermissionMode, repoId = "") => {
         if (draftThreadStart) return draftThreadStart;
-        const workspace = ensureSiteWorkspace(config);
+        const cwd = resolveCodexCwd({ repoId });
         let prepared!: ReturnType<typeof startCodexThread>;
         prepared = (async () => {
             emit("agent_bootstrap", { type: "codex.preparing", sourceClientId: clientId });
             try {
-                const thread = await startCodexThread(emit, workspace.workspacePath, permission, true);
+                const thread = await startCodexThread(emit, cwd, permission, true);
                 if (draftThreadStart !== prepared) return thread;
                 const threadId = String((thread as Record<string, unknown>).id || "");
                 if (threadId && !ensureSiteWorkspace(config).activeThreadId) {
@@ -90,11 +91,10 @@ export function startHttpServer() {
         return prepared;
     };
     /** 恢复已有线程并等待完整 MCP 清单，供启动恢复和手动切换共用。 */
-    const prepareExistingThread = async (threadId: string, clientId = "", permission: AgentPermissionMode = "request") => {
-        const workspace = ensureSiteWorkspace(config);
+    const prepareExistingThread = async (threadId: string, clientId = "", permission: AgentPermissionMode = "request", repoId = "") => {
         session.beginConversation({ conversationId: threadId, threadId, sourceClientId: clientId || undefined });
         emit("agent_bootstrap", { type: "codex.preparing", threadId, sourceClientId: clientId || undefined });
-        const result = await resumeCodexThread(emit, threadId, workspace.workspacePath, permission, true);
+        const result = await resumeCodexThread(emit, threadId, resolveCodexCwd({ repoId }), permission, true);
         session.completeConversationPreparation(threadId);
         return result;
     };
@@ -102,6 +102,19 @@ export function startHttpServer() {
         const text = error instanceof Error ? error.message : String(error);
         session.failConversationPreparation(text);
         emit("agent_bootstrap", { type: "codex.prepare_failed", threadId, sourceClientId: clientId || undefined, error: text });
+    };
+    /** 按请求里的 repoId/cwd 解析 Codex 线程工作目录，未注册时回退站点工作空间。 */
+    const resolveCodexCwd = (input: { repoId?: unknown; cwd?: unknown } = {}) => {
+        const repoId = String(input.repoId || "");
+        const byId = findRepo(config, repoId);
+        if (byId) return byId.path;
+        const cwd = String(input.cwd || "");
+        if (cwd) {
+            const resolved = path.resolve(cwd);
+            const byPath = (config.repos || []).find((repo) => repo.path === resolved);
+            if (byPath) return byPath.path;
+        }
+        return ensureSiteWorkspace(config).workspacePath;
     };
     const app = express();
     app.disable("x-powered-by");
@@ -153,6 +166,44 @@ export function startHttpServer() {
     app.post("/terminal/sessions/:id/close", route(async (req, res) => {
         await terminalManager.remove(routeParam(req.params.id));
         res.json({ ok: true });
+    }));
+    app.get("/repos", route(async (_req, res) => {
+        const repos = (config.repos || []).map((repo) => ({ ...repo, ...readRepoGitInfo(repo.path) }));
+        res.json({ ok: true, repos, activeRepoId: config.activeRepoId || "" });
+    }));
+    app.post("/repos", route(async (req, res) => {
+        const repoPath = String(req.body?.path || "");
+        if (!path.isAbsolute(repoPath)) return void res.status(400).json({ ok: false, error: "仓库路径必须是绝对路径" });
+        const info = await stat(repoPath).catch(() => null);
+        if (!info || !info.isDirectory()) return void res.status(400).json({ ok: false, error: "仓库路径不存在或不是目录" });
+        const repo = upsertRepo(config, repoPath, String(req.body?.name || "") || undefined);
+        config.activeRepoId = repo.id;
+        saveConfig(config);
+        res.json({ ok: true, repo: { ...repo, ...readRepoGitInfo(repo.path) } });
+    }));
+    app.delete("/repos/:id", route(async (req, res) => {
+        if (!removeRepo(config, routeParam(req.params.id))) return void res.status(404).json({ ok: false, error: "仓库不存在" });
+        saveConfig(config);
+        res.json({ ok: true });
+    }));
+    app.get("/repo/tree", route(async (req, res) => {
+        const repo = repoForRequest(config, req.query.repoId);
+        if (!repo) return void res.status(404).json({ ok: false, error: "未注册的仓库" });
+        const tree = await buildRepoTree(repo.path, req.query.path, req.query.depth);
+        res.json({ ok: true, root: tree.root, entries: tree.entries, truncated: tree.truncated });
+    }));
+    app.get("/repo/file", route(async (req, res) => {
+        const repo = repoForRequest(config, req.query.repoId);
+        if (!repo) return void res.status(404).json({ ok: false, error: "未注册的仓库" });
+        const file = await readRepoFile(repo.path, req.query.path);
+        res.json({ ok: true, ...file });
+    }));
+    app.get("/repo/diff", route(async (req, res) => {
+        const repo = repoForRequest(config, req.query.repoId);
+        if (!repo) return void res.status(404).json({ ok: false, error: "未注册的仓库" });
+        if (!readRepoGitInfo(repo.path).isGit) return void res.json({ ok: false, error: "当前仓库不是 git 仓库，无法读取 diff" });
+        const result = await readRepoDiff(repo.path, req.query.path);
+        res.json({ ok: true, ...result });
     }));
     app.get("/agent/attachments/:attachmentId", route(async (req, res) => {
         const attachment = session.getTurnAttachment(String(req.query.clientId || ""), routeParam(req.params.attachmentId));
@@ -290,14 +341,14 @@ export function startHttpServer() {
         const clientId = String(req.body?.clientId || "");
         session.beginConversation({ sourceClientId: clientId });
         setActiveThread("", { emptyThread: true, draftThread: true, sourceClientId: clientId }, true);
-        const thread = await prepareDraftThread(clientId, permissionMode(req.body?.permissionMode));
+        const thread = await prepareDraftThread(clientId, permissionMode(req.body?.permissionMode), String(req.body?.repoId || ""));
         res.json({ ok: true, workspace: ensureSiteWorkspace(config), conversation: session.conversationStateSnapshot, thread: summarizeCodexThread(thread), messages: [] });
     }));
     app.post("/agent/codex/threads/reset", codexMutation(async (req, res) => {
         const clientId = String(req.body?.clientId || "");
         session.beginConversation({ sourceClientId: clientId });
         setActiveThread("", { emptyThread: true, draftThread: true, sourceClientId: clientId }, true);
-        await prepareDraftThread(clientId, permissionMode(req.body?.permissionMode));
+        await prepareDraftThread(clientId, permissionMode(req.body?.permissionMode), String(req.body?.repoId || ""));
         res.json({ ok: true, workspace: ensureSiteWorkspace(config), conversation: session.conversationStateSnapshot });
     }));
     app.get("/agent/codex/threads/:threadId", route(async (req, res) => {
@@ -315,7 +366,7 @@ export function startHttpServer() {
         const threadId = routeParam(req.params.threadId);
         const clientId = String(req.body?.clientId || "");
         try {
-            const result = await prepareExistingThread(threadId, clientId, permissionMode(req.body?.permissionMode));
+            const result = await prepareExistingThread(threadId, clientId, permissionMode(req.body?.permissionMode), String(req.body?.repoId || ""));
             const nextWorkspace = setActiveThread(threadId, { sourceClientId: clientId }, true);
             res.json({ ok: true, workspace: nextWorkspace, conversation: session.conversationStateSnapshot, ...result });
         } catch (error) {
@@ -353,6 +404,7 @@ export function startHttpServer() {
         const model = String(req.body?.model || "") || undefined;
         const effort = reasoningEffort(req.body?.effort);
         const skill = req.body?.skill === undefined ? undefined : await resolveCodexSkill(emit, workspace.workspacePath, skillSelector(req.body.skill), true);
+        const turnCwd = resolveCodexCwd({ repoId: req.body?.repoId, cwd: req.body?.cwd });
         const messageId = String(req.body?.messageId || Date.now());
         const messageText = String(req.body?.messageText || prompt || `发送了 ${attachments.length} 张图片`);
         const messageMetadata = await messageMetadataStore.recordPending(messageId, req.body?.messageMetadata);
@@ -385,7 +437,7 @@ export function startHttpServer() {
             };
             void runCodexTurn(buildTurnContextPrompt(prompt, turnContextAttachments(attachmentRefs), imageChannelReady), lifecycleEmit, [...attachments, ...canvasAttachments], {
                 threadId,
-                cwd: workspace.workspacePath,
+                cwd: turnCwd,
                 permissionMode: permissionMode(req.body?.permissionMode),
                 model,
                 effort,
@@ -471,6 +523,7 @@ export function startHttpServer() {
     app.use((error: Error, req: Request, res: Response, _next: NextFunction) => {
         logger.error("HTTP request failed", { method: req.method, path: req.path, error });
         if (error instanceof SkillStoreError || error instanceof CodexSkillLookupError) return void res.status(error.statusCode).json({ ok: false, error: error.message });
+        if (error instanceof RepoPathError) return void res.status(error.statusCode).json({ ok: false, error: error.message });
         res.status(500).json({ ok: false, error: error.message });
     });
 
@@ -500,6 +553,13 @@ export function startHttpServer() {
 /** 将异步 Express 路由异常交给统一错误处理中间件。 */
 function route(handler: (req: Request, res: Response) => Promise<unknown>) {
     return (req: Request, res: Response, next: NextFunction) => void handler(req, res).catch(next);
+}
+
+/** 从请求查询参数中解析已注册仓库；显式传入的 repoId 未注册时返回 undefined，缺省时回退 activeRepoId。 */
+function repoForRequest(config: CanvasAgentConfig, value: unknown) {
+    const repoId = String(value ?? "").trim();
+    if (repoId) return findRepo(config, repoId);
+    return findRepo(config, config.activeRepoId || "");
 }
 
 /** 从 Express 路由参数中读取单个字符串。 */
@@ -566,7 +626,7 @@ function setCors(req: Request, res: Response, url: URL, config: CanvasAgentConfi
     const origin = req.headers.origin;
     res.setHeader("Access-Control-Allow-Origin", origin || "*");
     res.setHeader("Access-Control-Allow-Headers", "content-type,x-canvas-agent-token");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
     res.setHeader("Access-Control-Allow-Private-Network", "true");
     if (!origin || req.method === "OPTIONS" || url.pathname === "/health" || url.pathname === "/config") return true;
     config.origins ||= [];
