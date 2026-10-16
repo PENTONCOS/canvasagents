@@ -123,6 +123,51 @@ export async function fetchAgentJson<T>(endpoint: string, token: string, path: s
     return data;
 }
 
+// M5: code browser endpoints. The agent authenticates these with the x-canvas-agent-token
+// header (same token the terminal bridge uses); fetchAgentJson still appends the query token
+// so both auth styles keep working.
+export type AgentRepoSummary = { id: string; name: string; path: string; isGit: boolean; branch?: string };
+export type AgentReposResponse = { ok?: boolean; repos?: AgentRepoSummary[]; activeRepoId?: string };
+export type AgentRepoResponse = { ok?: boolean; repo?: AgentRepoSummary };
+export type AgentRepoTreeEntry = { path: string; name: string; type: "file" | "dir"; size?: number };
+export type AgentRepoTreeResponse = { ok?: boolean; entries?: AgentRepoTreeEntry[]; truncated?: boolean };
+export type AgentRepoFileResponse = { ok?: boolean; path?: string; content?: string; size?: number; truncated?: boolean; language?: string };
+export type AgentRepoDiffResponse = { ok?: boolean; path?: string; diff?: string };
+
+function repoAuthHeaders(token: string, json = false): Record<string, string> {
+    return json ? { "content-type": "application/json", "x-canvas-agent-token": token } : { "x-canvas-agent-token": token };
+}
+
+export function fetchAgentRepos(endpoint: string, token: string) {
+    return fetchAgentJson<AgentReposResponse>(endpoint, token, "/repos", { headers: repoAuthHeaders(token) });
+}
+
+export function createAgentRepo(endpoint: string, token: string, body: { path: string; name?: string }) {
+    return fetchAgentJson<AgentRepoResponse>(endpoint, token, "/repos", { method: "POST", headers: repoAuthHeaders(token, true), body: JSON.stringify(body) });
+}
+
+export function fetchAgentRepoTree(endpoint: string, token: string, params: { repoId: string; path?: string; depth?: number }) {
+    const query = new URLSearchParams();
+    query.set("repoId", params.repoId);
+    if (params.path) query.set("path", params.path);
+    if (typeof params.depth === "number") query.set("depth", String(params.depth));
+    return fetchAgentJson<AgentRepoTreeResponse>(endpoint, token, `/repo/tree?${query.toString()}`, { headers: repoAuthHeaders(token) });
+}
+
+export function fetchAgentRepoFile(endpoint: string, token: string, params: { repoId: string; path: string }) {
+    const query = new URLSearchParams();
+    query.set("repoId", params.repoId);
+    query.set("path", params.path);
+    return fetchAgentJson<AgentRepoFileResponse>(endpoint, token, `/repo/file?${query.toString()}`, { headers: repoAuthHeaders(token) });
+}
+
+export function fetchAgentRepoDiff(endpoint: string, token: string, params: { repoId: string; path?: string }) {
+    const query = new URLSearchParams();
+    query.set("repoId", params.repoId);
+    if (params.path) query.set("path", params.path);
+    return fetchAgentJson<AgentRepoDiffResponse>(endpoint, token, `/repo/diff?${query.toString()}`, { headers: repoAuthHeaders(token) });
+}
+
 export async function discoverAgentConfig(endpoint: string) {
     try {
         const res = await fetch(`${endpoint}/config`);

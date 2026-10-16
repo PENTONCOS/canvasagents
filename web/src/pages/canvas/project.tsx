@@ -74,6 +74,7 @@ import { getNodeDefinition, isBuiltinNodeType as isBuiltinType, useNodeRegistryV
 import { registerBuiltinNodes } from "@/components/canvas/nodes/builtin-nodes";
 import { registerTerminalNode } from "@/components/canvas/nodes/terminal-node";
 import { registerPreviewNode } from "@/components/canvas/nodes/preview-node";
+import { registerCodeNode } from "@/components/canvas/nodes/code-node";
 import { CanvasPluginManagerModal } from "@/components/canvas/canvas-plugin-manager-modal";
 import { CanvasRefreshShell } from "@/components/canvas/canvas-refresh-shell";
 import { CanvasTopBar } from "@/components/canvas/canvas-top-bar";
@@ -101,6 +102,7 @@ import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 registerBuiltinNodes();
 registerTerminalNode();
 registerPreviewNode();
+registerCodeNode();
 
 type CanvasClipboard = {
     nodes: CanvasNodeData[];

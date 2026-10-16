@@ -50,9 +50,21 @@ export type CanvasNodeTimelineEntry = {
     detail?: string; // optional short human-readable detail (e.g. generation prompt)
 };
 
+// M5: code browser node view state. `tree` shows the file browser only, `file` shows the
+// selected file next to the tree, and `diff` shows the unified diff of the active path.
+export type CanvasNodeCodeView = "tree" | "file" | "diff";
+
+export type CanvasNodeCodeMetadata = {
+    repoId?: string; // canvas-agent /repos repo id bound to this node
+    rootPath?: string; // absolute path reported by the agent when the repo was registered
+    activePath?: string; // repo-relative path of the file shown in the viewer, "" for the repo root
+    view: CanvasNodeCodeView;
+};
+
 export type CanvasNodeMetadata = {
     terminalSession?: string; // M2: bound canvas-agent terminal session id
     preview?: { url?: string; autoRefreshMs?: number }; // M4: web preview node iframe target + auto refresh interval (ms, 0 = off)
+    code?: CanvasNodeCodeMetadata; // M5: code browser repo binding + tree/file/diff view state
     timeline?: CanvasNodeTimelineEntry[]; // M3: agent op history for this node, oldest first, capped at 50
     content?: string;
     composerContent?: string;
