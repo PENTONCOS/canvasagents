@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Group, Milestone, Video } from "lucide-react";
+import { Group, History, Milestone, Video } from "lucide-react";
 import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
@@ -19,6 +19,8 @@ import { useAssetStore } from "@/stores/use-asset-store";
 import { useCommandStore } from "@/stores/use-command-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { cropDataUrl, splitDataUrl, upscaleDataUrl } from "@/lib/canvas/canvas-image-data";
+import { commitCanvasJournal, restoreCanvasJournal } from "@/lib/canvas/canvas-journal-commit";
+import { buildHistoryTimeline, jumpHistoryStacks, planHistoryJump, resolveJournalLocation } from "@/lib/canvas/canvas-journal-steps";
 import { fitNodeSize, nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
 import { captureVideoFrame, type VideoFramePosition } from "@/lib/canvas/canvas-video-frame";
 import { App, Button, Modal } from "antd";
@@ -44,6 +46,7 @@ import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "@/componen
 import { CanvasToolbar } from "@/components/canvas/canvas-toolbar";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { CanvasSidePanel } from "@/components/canvas/canvas-side-panel";
+import { CanvasJournalPanel } from "@/components/canvas/canvas-journal-panel";
 import { CanvasTimelinePanel } from "@/components/canvas/canvas-timeline-panel";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { useAgentStore } from "@/stores/use-agent-store";
@@ -92,6 +95,8 @@ import {
     type CanvasAssistantImage,
     type CanvasAssistantSession,
     type CanvasConnection,
+    type CanvasJournalActor,
+    type CanvasJournalEntry,
     type CanvasNodeData,
     type CanvasNodeImage,
     type CanvasNodeText,
@@ -131,6 +136,11 @@ type CanvasHistoryEntry = Pick<CanvasClipboard, "nodes" | "connections"> & {
     activeChatId: string | null;
     backgroundMode: CanvasBackgroundMode;
     showImageInfo: boolean;
+    // Canvas Journal: the commit that produced this snapshot. One history commit stamps its id on the
+    // state it produced and on every journal entry that commit wrote, so an operations row can be
+    // mapped back to its position in the undo/redo timeline. Snapshots from before this wiring (and
+    // the initial load) simply have none, which the timeline treats as "no step behind it".
+    commitId?: string;
 };
 
 type CanvasGenerationRequest = {
@@ -150,6 +160,13 @@ const NODE_STATUS_IDLE = "idle" as const;
 const NODE_STATUS_LOADING = "loading" as const;
 const NODE_STATUS_SUCCESS = "success" as const;
 const NODE_STATUS_ERROR = "error" as const;
+
+// Canvas Journal actor for every commit this page records. This page has no marker separating a
+// human edit from an assistant one: the agent bridge (pages/canvas/hooks/use-agent-bridge) drives the
+// very same setNodes/setConnections this page does, so a commit cannot be attributed honestly.
+// Inventing a flag here would let the log claim provenance it does not have, so every commit is
+// recorded as the user until a real actor signal reaches these setters.
+const JOURNAL_ACTOR: CanvasJournalActor = { kind: "user" };
 
 function applyGeneratedVideo(item: CanvasNodeData, video: UploadedFile, extra: CanvasNodeData["metadata"] = {}): CanvasNodeData {
     const videoSize = fitNodeSize(video.width || item.width, video.height || item.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
@@ -209,6 +226,7 @@ function InfiniteCanvasPage() {
     const clipboardRef = useRef<CanvasClipboard | null>(null);
     const historyRef = useRef<{ past: CanvasHistoryEntry[]; future: CanvasHistoryEntry[] }>({ past: [], future: [] });
     const lastHistoryRef = useRef<CanvasHistoryEntry | null>(null);
+    const journalRef = useRef<CanvasJournalEntry[]>([]);
     const historyCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const viewportSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const applyingHistoryRef = useRef(false);
@@ -266,6 +284,7 @@ function InfiniteCanvasPage() {
     const [runningNodeId, setRunningNodeId] = useState<string | null>(null);
     const [isMiniMapOpen, setIsMiniMapOpen] = useState(false);
     const [timelineOpen, setTimelineOpen] = useState(false);
+    const [journalOpen, setJournalOpen] = useState(false);
     const [backgroundMode, setBackgroundMode] = useState<CanvasBackgroundMode>("lines");
     const [showImageInfo, setShowImageInfo] = useState(false);
     const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
@@ -318,6 +337,21 @@ function InfiniteCanvasPage() {
             showImageInfo,
         }),
         [activeChatId, backgroundMode, chatSessions, showImageInfo],
+    );
+
+    // Records the journal for one debounced history commit. It reads the mirror ref (never the project
+    // record), so it stays out of the commit effect's dependency list, and the store write cannot
+    // re-enter that effect: updateProject patches only `journal`, while the effect's inputs
+    // (nodes/connections/chatSessions/activeChatId/backgroundMode/showImageInfo) live in page state,
+    // not in the project record. A commit whose diff is empty returns no entries and skips the write.
+    const recordJournalCommit = useCallback(
+        (previous: CanvasHistoryEntry, next: CanvasHistoryEntry, commitId: string) => {
+            const result = commitCanvasJournal(previous, next, journalRef.current, JOURNAL_ACTOR, { commitId });
+            if (result.entries.length === 0) return;
+            journalRef.current = result.journal;
+            updateProject(projectId, { journal: result.journal });
+        },
+        [projectId, updateProject],
     );
 
     const cleanupCanvasFiles = useCallback(
@@ -492,11 +526,17 @@ function InfiniteCanvasPage() {
                 backgroundMode: project.backgroundMode,
                 showImageInfo: project.showImageInfo || false,
             };
+            // Canvas Journal: normalize whatever was persisted before the canvas goes live and only
+            // write it back when it was not already canonical (dirty data or over the cap). A clean
+            // project open therefore never re-persists, so this cannot feed a load/save loop.
+            const restoredJournal = restoreCanvasJournal(project.journal);
+            journalRef.current = restoredJournal.journal;
+            if (restoredJournal.needsRewrite) updateProject(projectId, { journal: restoredJournal.journal });
             setHistoryState({ canUndo: false, canRedo: false });
             setProjectLoaded(true);
         };
         void restore();
-    }, [hydrated, navigate, openProject, projectId]);
+    }, [hydrated, navigate, openProject, projectId, updateProject]);
 
     useEffect(() => {
         if (!projectLoaded) return;
@@ -526,14 +566,19 @@ function InfiniteCanvasPage() {
 
         if (historyCommitTimerRef.current) clearTimeout(historyCommitTimerRef.current);
         historyCommitTimerRef.current = setTimeout(() => {
-            const current = createHistoryEntry();
             const last = lastHistoryRef.current;
             if (!last) return;
+            // One commit -> one journal step: the id stamped on the snapshot this commit produces is the
+            // same id every entry of the commit carries, so an operations row can be located in the
+            // undo/redo timeline (buildHistoryTimeline / resolveJournalLocation) and jumped to.
+            const commitId = nanoid();
+            const current = { ...createHistoryEntry(), commitId };
             historyRef.current.past = [...historyRef.current.past.slice(-49), last];
             historyRef.current.future = [];
             setHistoryState({ canUndo: true, canRedo: false });
             lastHistoryRef.current = current;
             historyCommitTimerRef.current = null;
+            recordJournalCommit(last, current, commitId);
         }, 180);
 
         return () => {
@@ -542,7 +587,7 @@ function InfiniteCanvasPage() {
                 historyCommitTimerRef.current = null;
             }
         };
-    }, [activeChatId, backgroundMode, chatSessions, connections, createHistoryEntry, nodes, projectLoaded, showImageInfo]);
+    }, [activeChatId, backgroundMode, chatSessions, connections, createHistoryEntry, nodes, projectLoaded, recordJournalCommit, showImageInfo]);
 
     useEffect(() => {
         if (!projectLoaded || historyPausedRef.current) return;
@@ -1223,6 +1268,26 @@ function InfiniteCanvasPage() {
         historyRef.current.past.push(current);
         applyHistory(next);
     }, [applyHistory]);
+
+    // "Jump back to this step": projects the undo/redo stacks into one chronological timeline, resolves
+    // where the step sits, and replays the exact push/pop order the undo/redo callbacks use. The stacks
+    // are only ever reassigned wholesale (never resized by hand), so undo/redo keeps its semantics.
+    const jumpJournalToStep = useCallback(
+        (commitId: string) => {
+            const stacks = { past: historyRef.current.past, current: lastHistoryRef.current, future: historyRef.current.future };
+            const timeline = buildHistoryTimeline(stacks);
+            const location = resolveJournalLocation(timeline, commitId);
+            if (location.status === "out-of-window" || location.status === "current") return;
+            const plan = planHistoryJump(timeline.currentIndex, location.index);
+            if (plan.direction === "current") return;
+            const target = jumpHistoryStacks(stacks, location.index);
+            if (!target.current) return;
+            historyRef.current.past = target.past;
+            historyRef.current.future = target.future;
+            applyHistory(target.current);
+        },
+        [applyHistory],
+    );
 
     const createAndOpenProject = useCallback(() => {
         const id = createProject(t("canvas.defaultTitle", { count: useCanvasStore.getState().projects.length + 1 }));
@@ -3195,6 +3260,15 @@ function InfiniteCanvasPage() {
     // M6: inspector target — set when an edge is clicked (node selection is cleared at that point).
     const selectedConnection = selectedConnectionId ? connections.find((conn) => conn.id === selectedConnectionId) || null : null;
 
+    // Canvas Journal panel data: the journal is read from the store record (so an updateProject write
+    // re-renders this panel), while the timeline is projected from the mirror refs on each render (the
+    // refs change without a render, and any jump/undo re-renders through history state). Neither is
+    // memoized against a ref, which would go stale.
+    const journalEntries = currentProject?.journal ?? [];
+    const journalTimeline = buildHistoryTimeline({ past: historyRef.current.past, current: lastHistoryRef.current, future: historyRef.current.future });
+    const journalNodeTitles: Record<string, string> = {};
+    for (const node of nodes) journalNodeTitles[node.id] = node.title;
+
     if (!projectLoaded) return <CanvasRefreshShell />;
 
     return (
@@ -3454,6 +3528,20 @@ function InfiniteCanvasPage() {
                 </button>
 
                 {timelineOpen ? <CanvasTimelinePanel nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={focusNode} onClose={() => setTimelineOpen(false)} /> : null}
+
+                <button
+                    type="button"
+                    className="absolute right-5 top-32 z-[60] flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium shadow-lg backdrop-blur transition"
+                    style={{ background: journalOpen ? theme.toolbar.activeBg : theme.toolbar.panel, borderColor: theme.toolbar.border, color: journalOpen ? theme.toolbar.activeText : theme.toolbar.item }}
+                    onClick={() => setJournalOpen((value) => !value)}
+                    aria-label={t("canvas.journal.panelTitle")}
+                    title={t("canvas.journal.panelTitle")}
+                >
+                    <History className="size-4" />
+                    {t("canvas.journal.panelTitle")}
+                </button>
+
+                {journalOpen ? <CanvasJournalPanel entries={journalEntries} timeline={journalTimeline} nodeTitles={journalNodeTitles} onJump={jumpJournalToStep} onClose={() => setJournalOpen(false)} /> : null}
 
                 <CanvasZoomControls scale={viewport.k} onScaleChange={setZoomScale} onReset={resetViewport} isMiniMapOpen={isMiniMapOpen} onToggleMiniMap={() => setIsMiniMapOpen((value) => !value)} />
 

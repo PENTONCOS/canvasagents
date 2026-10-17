@@ -6,7 +6,7 @@ import { APP_ID } from "@/constant/brand";
 import i18n from "@/i18n";
 import { localForageStorage } from "@/lib/localforage-storage";
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
-import type { CanvasAssistantSession, CanvasConnection, CanvasNodeData, ViewportTransform } from "@/types/canvas";
+import type { CanvasAssistantSession, CanvasConnection, CanvasJournalEntry, CanvasNodeData, ViewportTransform } from "@/types/canvas";
 
 export type CanvasProject = {
     id: string;
@@ -20,6 +20,9 @@ export type CanvasProject = {
     backgroundMode: CanvasBackgroundMode;
     showImageInfo: boolean;
     viewport: ViewportTransform;
+    // Canvas Journal: append-only operation log. Optional so existing projects stay valid; it rides
+    // along with the whole project through persist with no extra plumbing.
+    journal?: CanvasJournalEntry[];
 };
 
 export type CanvasDeletedProject = {
@@ -37,7 +40,7 @@ type CanvasStore = {
     renameProject: (id: string, title: string) => void;
     deleteProjects: (ids: string[]) => void;
     replaceProjects: (projects: CanvasProject[], deletedProjects?: CanvasDeletedProject[]) => void;
-    updateProject: (id: string, patch: Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "viewport">>) => void;
+    updateProject: (id: string, patch: Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "viewport" | "journal">>) => void;
 };
 
 const initialViewport: ViewportTransform = { x: 0, y: 0, k: 1 };

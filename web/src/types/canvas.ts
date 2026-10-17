@@ -277,3 +277,38 @@ export type ContextMenuState =
           y: number;
           connectionId: string;
       };
+
+// Canvas Journal: an append-only, traceable log of what changed on a canvas and who did it. A
+// snapshot pair is diffed into human-readable entries (see lib/canvas/canvas-journal) so the UI can
+// later list "operations" and jump back to any step, with assistant turns/tool calls flowing into
+// the same stream. Entry summaries never carry literal text: `summary.key` is an i18n key.
+export type CanvasJournalActorKind = "user" | "agent" | "system";
+export type CanvasJournalActor = {
+    kind: CanvasJournalActorKind;
+    id?: string;
+    name?: string;
+};
+
+export type CanvasJournalKind = "node.add" | "node.remove" | "node.update" | "node.move" | "node.resize" | "node.content" | "node.image-edit" | "edge.add" | "edge.remove" | "edge.update" | "project.rename" | "agent.turn" | "agent.tool";
+
+export type CanvasJournalTargets = {
+    nodeIds?: string[];
+    edgeIds?: string[];
+};
+
+export type CanvasJournalSummary = {
+    key: string; // i18n key (e.g. canvas.journal.nodeAdd); never a literal human string
+    params?: Record<string, string | number>;
+};
+
+export type CanvasJournalEntry = {
+    seq: number; // monotonic position inside the journal (oldest first)
+    id: string; // stable entry id, unique inside the journal
+    at: number; // epoch ms
+    actor: CanvasJournalActor;
+    kind: CanvasJournalKind;
+    targets: CanvasJournalTargets;
+    summary: CanvasJournalSummary;
+    patch?: unknown; // optional before/after delta; large values are redacted
+    meta?: Record<string, unknown>;
+};
