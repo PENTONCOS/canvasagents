@@ -3,7 +3,26 @@ import { z } from "zod";
 const recordSchema = z.record(z.unknown());
 const positionSchema = z.object({ x: z.number(), y: z.number() });
 const viewportSchema = z.object({ x: z.number(), y: z.number(), k: z.number() });
-const nodeTypeSchema = z.enum(["image", "text", "config", "video", "audio"]);
+/**
+ * 可创建的节点类型：前 5 个为内置基础节点，其余为网页端已注册的扩展节点
+ * （code/repo/service/image-regions/editor/preview/terminal/group）。
+ * 网页端遇到未注册类型会退回 text，故此处保持与网页注册表一致即可。
+ */
+const nodeTypeSchema = z.enum([
+    "image",
+    "text",
+    "config",
+    "video",
+    "audio",
+    "code",
+    "repo",
+    "service",
+    "image-regions",
+    "editor",
+    "preview",
+    "terminal",
+    "group",
+]);
 const generationModeSchema = z.enum(["text", "image", "video", "audio"]);
 
 /** 边类型：缺省视为 flow。 */
@@ -172,7 +191,7 @@ export const toolDescriptions: Record<ToolName, string> = {
     canvas_get_node: "读取指定节点的完整内容，含 metadata.content 全文（上限 200000 字符，超出会截断并标 truncated:true）。需要读取上游节点（需求文档、代码等）全文时使用本工具，不要假设 canvas_get_state 返回的内容是完整的。",
     canvas_export_snapshot: "导出当前画布快照，用于理解布局。",
     canvas_apply_ops: "批量操作当前网页画布。ops 支持 add_node、update_node、delete_node、delete_connections、connect_nodes、update_connection、set_viewport、select_nodes、run_generation。connect_nodes 可带 edgeType（flow/http/depends-on/event/db，缺省 flow）、label、metadata（可含 contract）。",
-    canvas_create_node: "创建任意类型节点：text、image、config、video、audio。适合创建占位图、媒体占位、配置节点或自定义 metadata 节点。",
+    canvas_create_node: "创建任意类型节点。基础类型：text、image、config、video、audio；扩展类型：code（代码浏览）、repo（仓库绑定）、service（服务）、image-regions（图片结构）、editor（PS 编辑）、preview（网页预览）、terminal（终端）、group（分组）。也可用自定义 metadata 承载额外信息（如 stage、repo、regions）。",
     canvas_create_attachment_nodes: "把当前对话中用户上传的图片附件创建成真实画布图片节点。attachmentIds 使用本轮附件清单中的 ID；返回的节点 ID 可传给 canvas_create_generation_flow.referenceNodeIds 作为生成参考图。",
     canvas_create_text_node: "在当前画布创建单个文本节点。",
     canvas_create_text_nodes: "批量创建文本节点，适合生成标题、段落、脚本、说明等内容块。",

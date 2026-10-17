@@ -84,6 +84,20 @@ test("节点 metadata 的 stage 受枚举校验并在创建/更新路径透传",
     assert.equal(canvasOpSchema.safeParse({ type: "update_node", id: "n1", metadata: { stage: "deploy" } }).success, false);
 });
 
+test("canvas_create_node 接受网页端已注册的扩展节点类型并原样透传", () => {
+    const extended = ["code", "repo", "service", "image-regions", "editor", "preview", "terminal", "group"];
+    extended.forEach((nodeType) => {
+        assert.equal(toolInputSchemas.canvas_create_node.safeParse({ nodeType }).success, true, `${nodeType} 应被接受`);
+        const ops = field(buildCanvasToolRequest("canvas_create_node", parseToolInput("canvas_create_node", { nodeType, metadata: { stage: "code" } }), null).input, "ops") as Array<Record<string, unknown>>;
+        assert.equal(ops[0].nodeType, nodeType, `${nodeType} 应透传到 add_node`);
+        assert.deepEqual(ops[0].metadata, { stage: "code" });
+    });
+
+    assert.equal(toolInputSchemas.canvas_create_node.safeParse({ nodeType: "unknown-type" }).success, false);
+    assert.equal(canvasOpSchema.safeParse({ type: "add_node", nodeType: "unknown-type" }).success, false);
+    assert.equal(canvasOpSchema.safeParse({ type: "add_node", nodeType: "repo" }).success, true);
+});
+
 test("canvas_update_edge 按 from/to 定位并局部合并 metadata（不改动其他键）", () => {
     const state = snapshotWith([{
         id: "edge-1",

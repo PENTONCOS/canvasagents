@@ -3,7 +3,8 @@ import type { CanvasEdgeType } from "./schemas.js";
 /** 画布坐标。 */
 export type Position = { x: number; y: number };
 export type Viewport = { x: number; y: number; k: number };
-export type CanvasNodeType = "image" | "text" | "config" | "video" | "audio";
+/** 画布节点类型：内置基础类型 + 网页端已注册的扩展节点类型。 */
+export type CanvasNodeType = "image" | "text" | "config" | "video" | "audio" | "code" | "repo" | "service" | "image-regions" | "editor" | "preview" | "terminal" | "group";
 export type CanvasNode = { id: string; type: CanvasNodeType; title?: string; position: Position; width: number; height: number; metadata?: Record<string, unknown> };
 /**
  * 画布连线。除拓扑外还承载边语义：
