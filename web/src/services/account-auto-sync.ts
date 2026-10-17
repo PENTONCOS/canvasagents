@@ -2,6 +2,7 @@ import { create, type StoreApi } from "zustand";
 
 import { removeStoredValue } from "@/lib/brand-migration";
 import { CONFIG_SYNC_STATE_KEY, currentConfigData, hashData, syncAccountData, type AccountSyncResult } from "@/services/account-sync";
+import { planAccountChange, planBootSync } from "@/services/account-auto-sync-policy";
 import { imageLogStore, videoLogStore, type AppSyncProgress } from "@/services/app-sync";
 import { useAccountStore } from "@/stores/use-account-store";
 import { useAssetStore } from "@/stores/use-asset-store";
@@ -100,15 +101,7 @@ function currentRefs(): WatchedRefs {
 
 function sameRefs(a: WatchedRefs | null, b: WatchedRefs) {
     if (!a) return false;
-    return (
-        a.projects === b.projects &&
-        a.deletedProjects === b.deletedProjects &&
-        a.assets === b.assets &&
-        a.config === b.config &&
-        a.webdav === b.webdav &&
-        a.sources === b.sources &&
-        a.schedule === b.schedule
-    );
+    return a.projects === b.projects && a.deletedProjects === b.deletedProjects && a.assets === b.assets && a.config === b.config && a.webdav === b.webdav && a.sources === b.sources && a.schedule === b.schedule;
 }
 
 /**
@@ -266,11 +259,14 @@ export function resetLocalAccountData() {
 
 function handleAccountChange() {
     const { token, user } = useAccountStore.getState();
-    if (token === lastKnownToken) return;
     const previousToken = lastKnownToken;
+    const accountId = user?.id || "";
+    const storedAccountId = useAccountStore.getState().lastAccountId;
+    const action = planAccountChange(previousToken, token, accountId, storedAccountId);
+    if (action === "ignore") return;
     lastKnownToken = token;
 
-    if (!token) {
+    if (action === "cancel") {
         // Logout keeps local data on purpose; only pending work is cancelled.
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = null;
@@ -278,34 +274,48 @@ function handleAccountChange() {
         useAccountAutoSyncStore.getState().setStatus("idle");
         return;
     }
-    if (previousToken) return;
 
-    // A fresh session: if it is a different account, wipe the previous account's
-    // data before pulling so nothing bleeds across, then sync right away.
-    const accountId = user?.id || "";
-    if (accountId) {
-        const storedAccountId = useAccountStore.getState().lastAccountId;
-        if (storedAccountId && storedAccountId !== accountId) resetLocalAccountData();
-        useAccountStore.getState().setLastAccountId(accountId);
-    }
+    // A *different* account wipes the previous account's data before pulling so nothing bleeds
+    // across. A re-login (new token, same account) just pulls: a stale token on another device
+    // must not leave that device's canvas empty until someone presses "sync now".
+    if (action === "switch") resetLocalAccountData();
+    if (accountId) useAccountStore.getState().setLastAccountId(accountId);
     void performSync(true);
 }
 
 /**
- * Starts the coordinator. Call exactly once from the client root; a second call
- * is a no-op. On a page with an already-restored session nothing syncs until the
- * first change (or an explicit `requestAccountSync`), matching the login-driven
- * sync contract.
+ * Starts the coordinator. Call exactly once from the client root; a second call is a no-op. A
+ * restored session pulls once as soon as the canvas store has hydrated, so signing in on a new
+ * device shows the cloud copy without a first edit or pressing "sync now".
  */
 export function startAccountAutoSync() {
     if (started || typeof window === "undefined") return;
     started = true;
-    lastKnownToken = useAccountStore.getState().token;
+    const token = useAccountStore.getState().token;
+    lastKnownToken = token;
     subscribeDomain(useCanvasStore, (state, prev) => state.projects !== prev.projects || state.deletedProjects !== prev.deletedProjects);
     subscribeDomain(useAssetStore, (state, prev) => state.assets !== prev.assets);
     subscribeDomain(useConfigStore, (state, prev) => state.config !== prev.config || state.webdav !== prev.webdav);
     subscribeDomain(usePromptSourceStore, (state, prev) => state.sources !== prev.sources || state.schedule !== prev.schedule);
     useAccountStore.subscribe(handleAccountChange);
+
+    const plan = planBootSync(token, useCanvasStore.getState().hydrated);
+    if (plan === "none") return;
+    if (plan === "now") {
+        void performSync(true);
+        return;
+    }
+    // The canvas store restores from IndexedDB asynchronously. Pull as soon as it lands so an
+    // empty pre-hydration state is never merged over the cloud copy.
+    const unsubscribe = useCanvasStore.subscribe((state) => {
+        if (!state.hydrated) return;
+        unsubscribe();
+        if (useAccountStore.getState().token) void performSync(true);
+    });
+    if (useCanvasStore.getState().hydrated) {
+        unsubscribe();
+        void performSync(true);
+    }
 }
 
 /** Manual recovery entry point (the ghost "resync" button) and login-time sync. */

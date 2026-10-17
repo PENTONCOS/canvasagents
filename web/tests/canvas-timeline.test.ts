@@ -102,7 +102,7 @@ test("computeStageProgress never divides by zero for an empty stage list", () =>
 
 test("nextActionHint points at the earliest empty stage", () => {
     const timeline = buildStageTimeline([node("a", "requirement"), node("b", "requirement")]);
-    expect(nextActionHint(timeline)).toEqual({ stage: "design", count: 0, totalNodes: 2 });
+    expect(nextActionHint(timeline)).toEqual({ stage: "design" });
 });
 
 test("nextActionHint returns null once every stage holds a node", () => {
@@ -111,12 +111,12 @@ test("nextActionHint returns null once every stage holds a node", () => {
 });
 
 test("nextActionHint on an empty canvas asks for the first stage", () => {
-    expect(nextActionHint(buildStageTimeline([]))).toEqual({ stage: "requirement", count: 0, totalNodes: 0 });
+    expect(nextActionHint(buildStageTimeline([]))).toEqual({ stage: "requirement" });
 });
 
 test("nextActionHint skips a filled early stage to reach the first gap", () => {
     const timeline = buildStageTimeline([node("a", "requirement"), node("b", "design"), node("c", "design")]);
-    expect(nextActionHint(timeline)).toEqual({ stage: "code", count: 0, totalNodes: 3 });
+    expect(nextActionHint(timeline)).toEqual({ stage: "code" });
 });
 
 // --- dot export -----------------------------------------------------------------------------

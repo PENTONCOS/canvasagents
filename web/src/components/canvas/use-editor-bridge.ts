@@ -26,6 +26,10 @@ export type UseEditorBridgeOptions = {
     // Called with the exported bitmap after a successful export from the editor. The caller owns the
     // write-back; this hook only moves bytes across the frame boundary.
     onExport: (dataUrl: string, savedAt: number) => void | Promise<void>;
+    // Optional second export target: the same bytes go to a NEW artifact (a freshly created image
+    // node) instead of the node the editor was opened from. Omit it and the "save as a new node"
+    // action is simply not offered.
+    onExportAsNode?: (dataUrl: string, savedAt: number) => void | Promise<void>;
     readyTimeoutMs?: number;
 };
 
@@ -33,11 +37,12 @@ export function editorErrorMessage(cause: unknown) {
     return cause instanceof Error ? cause.message : String(cause);
 }
 
-export function useEditorBridge({ source, onExport, readyTimeoutMs = DEFAULT_EDITOR_READY_TIMEOUT_MS }: UseEditorBridgeOptions) {
+export function useEditorBridge({ source, onExport, onExportAsNode, readyTimeoutMs = DEFAULT_EDITOR_READY_TIMEOUT_MS }: UseEditorBridgeOptions) {
     const iframeRef = useRef<HTMLIFrameElement | null>(null);
     const pendingRef = useRef(new Map<string, PendingRequest>());
-    // Kept in a ref so an inline `onExport` arrow does not invalidate the callbacks below.
+    // Kept in refs so inline `onExport`/`onExportAsNode` arrows do not invalidate the callbacks below.
     const exportRef = useRef(onExport);
+    const exportAsNodeRef = useRef(onExportAsNode);
     // Same for the in-flight guard: `openImage`/`exportImage` stay identity-stable across renders so
     // a caller can put them in an effect dependency list without re-triggering a load on every state
     // change (which would clobber edits in progress).
@@ -51,6 +56,10 @@ export function useEditorBridge({ source, onExport, readyTimeoutMs = DEFAULT_EDI
     useEffect(() => {
         exportRef.current = onExport;
     }, [onExport]);
+
+    useEffect(() => {
+        exportAsNodeRef.current = onExportAsNode;
+    }, [onExportAsNode]);
 
     useEffect(() => {
         if (!notice) return;
@@ -145,25 +154,38 @@ export function useEditorBridge({ source, onExport, readyTimeoutMs = DEFAULT_EDI
         }
     }, [request, source]);
 
-    const exportImage = useCallback(async () => {
-        if (busyRef.current) return;
-        busyRef.current = true;
-        setBusy(true);
-        setError("");
-        try {
-            const result = await request(MESSAGES.exportImage);
-            const dataUrl = result.dataUrl || "";
-            if (!dataUrl) throw new Error(i18n.t("canvas.editor.exportEmpty"));
-            const savedAt = Date.now();
-            await exportRef.current(dataUrl, savedAt);
-            setNotice(i18n.t("canvas.editor.savedAt", { time: new Date(savedAt).toLocaleTimeString() }));
-        } catch (cause) {
-            setError(editorErrorMessage(cause) || i18n.t("canvas.editor.saveFailed"));
-        } finally {
-            busyRef.current = false;
-            setBusy(false);
-        }
-    }, [request]);
+    // One export routine for both targets: pull the bitmap out of the frame, then hand it to the
+    // caller's write-back. Only the target and the confirmation line differ.
+    const runExport = useCallback(
+        async (target: (dataUrl: string, savedAt: number) => void | Promise<void>, noticeKey: string) => {
+            if (busyRef.current) return;
+            busyRef.current = true;
+            setBusy(true);
+            setError("");
+            try {
+                const result = await request(MESSAGES.exportImage);
+                const dataUrl = result.dataUrl || "";
+                if (!dataUrl) throw new Error(i18n.t("canvas.editor.exportEmpty"));
+                const savedAt = Date.now();
+                await target(dataUrl, savedAt);
+                setNotice(i18n.t(noticeKey, { time: new Date(savedAt).toLocaleTimeString() }));
+            } catch (cause) {
+                setError(editorErrorMessage(cause) || i18n.t("canvas.editor.saveFailed"));
+            } finally {
+                busyRef.current = false;
+                setBusy(false);
+            }
+        },
+        [request],
+    );
 
-    return { iframeRef, reloadKey, status, error, notice, busy, handleFrameLoad, reload, openImage, exportImage };
+    const exportImage = useCallback(() => runExport((dataUrl, savedAt) => exportRef.current(dataUrl, savedAt), "canvas.editor.savedAt"), [runExport]);
+
+    const exportImageAsNode = useCallback(() => {
+        const target = exportAsNodeRef.current;
+        if (!target) return Promise.resolve();
+        return runExport(target, "canvas.editor.savedAsNode");
+    }, [runExport]);
+
+    return { iframeRef, reloadKey, status, error, notice, busy, handleFrameLoad, reload, openImage, exportImage, exportImageAsNode };
 }

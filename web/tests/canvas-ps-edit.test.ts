@@ -3,7 +3,7 @@
 // tests pin the pure parts of that contract plus the tool wiring, without a browser.
 import { describe, expect, test } from "bun:test";
 
-import { applyPsEditSave, buildPsEditMetadata } from "@/lib/canvas/canvas-node-ps-edit";
+import { PS_SAVE_AS_NODE_GAP_PX, applyPsEditSave, buildPsEditMetadata, buildPsSaveAsNodeMetadata, psSaveAsNodePosition } from "@/lib/canvas/canvas-node-ps-edit";
 import { IMAGE_QUICK_TOOLS_STORAGE_KEY, buildImageToolbarTools, defaultImageQuickToolIds, imageToolDefinitions, normalizeImageQuickToolIds, readImageQuickToolsConfig, type ImageToolHandlers } from "@/components/canvas/canvas-image-toolbar-tools";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import en from "@/i18n/locales/en-US";
@@ -140,5 +140,37 @@ describe("both locales expose the same keys", () => {
             expect(locale.canvas.imageTools.psEditTitle.length).toBeGreaterThan(0);
         }
         expect(Object.keys(zh.canvas.imageTools).sort()).toEqual(Object.keys(en.canvas.imageTools).sort());
+    });
+});
+
+// "Save as a new node" is the explicit alternative to save-back: the exported bitmap becomes its OWN
+// image node next to the source, and the source node keeps its pixels.
+describe("save as a new image node", () => {
+    test("the copy lands to the right of its source on the same row", () => {
+        const node = imageNode({ position: { x: 100, y: 40 }, width: 320 });
+        expect(psSaveAsNodePosition(node)).toEqual({ x: 100 + 320 + PS_SAVE_AS_NODE_GAP_PX, y: 40 });
+    });
+
+    test("placing the copy leaves the source node untouched", () => {
+        const node = imageNode({ position: { x: 10, y: 20 }, width: 200 });
+        const before = JSON.parse(JSON.stringify(node));
+        psSaveAsNodePosition(node);
+        expect(node).toEqual(before);
+    });
+
+    test("the copy keeps the fresh artifact handle and stamps the PS engine", () => {
+        const fresh = { content: "blob:new", storageKey: "image:new", status: "success" as const, naturalWidth: 512, naturalHeight: 256, bytes: 2048, mimeType: "image/png" };
+        const metadata = buildPsSaveAsNodeMetadata(fresh, savedAt);
+
+        expect(metadata.content).toBe("blob:new");
+        expect(metadata.storageKey).toBe("image:new");
+        expect(metadata.naturalWidth).toBe(512);
+        expect(metadata.editor?.engine).toBe("miniPaint");
+        expect(metadata.editor?.lastSavedAt).toBe(savedAt);
+    });
+
+    test("the copy carries no edit history: it is created, not edited", () => {
+        const metadata = buildPsSaveAsNodeMetadata({ content: "blob:new" }, savedAt);
+        expect(metadata.history).toBeUndefined();
     });
 });

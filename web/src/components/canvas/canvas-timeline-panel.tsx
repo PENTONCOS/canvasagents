@@ -8,7 +8,7 @@ import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
-import { stageColor, stageLabelKey } from "@/lib/canvas/canvas-stage-utils";
+import { CANVAS_NODE_STAGES, normalizeStage, stageColor, stageLabelKey } from "@/lib/canvas/canvas-stage-utils";
 import { buildNodeActivity, buildStageTimeline, computeStageProgress, nextActionHint } from "@/lib/canvas/canvas-timeline-utils";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { CanvasNodeData, CanvasNodeEditKind, CanvasNodeStage } from "@/types/canvas";
@@ -17,6 +17,9 @@ type CanvasTimelinePanelProps = {
     nodes: CanvasNodeData[];
     selectedNodeIds: Set<string>;
     onFocusNode: (nodeId: string) => void;
+    // Assigns (or clears, with `undefined`) a node's `metadata.stage`, which is what actually moves
+    // a node out of the "unassigned" bucket. Without this the timeline is read-only.
+    onAssignStage?: (nodeId: string, stage: CanvasNodeStage | undefined) => void;
     onClose: () => void;
 };
 
@@ -30,7 +33,7 @@ function activityLabel(kind: CanvasNodeEditKind, translate: (key: string) => str
     return translate(kind === "region-edit" ? "canvas.timeline.activityRegionEdit" : "canvas.timeline.activityPsEdit");
 }
 
-export function CanvasTimelinePanel({ nodes, selectedNodeIds, onFocusNode, onClose }: CanvasTimelinePanelProps) {
+export function CanvasTimelinePanel({ nodes, selectedNodeIds, onFocusNode, onAssignStage, onClose }: CanvasTimelinePanelProps) {
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
 
@@ -89,16 +92,29 @@ export function CanvasTimelinePanel({ nodes, selectedNodeIds, onFocusNode, onClo
                                         {entry.nodes.map((node) => {
                                             const selected = selectedNodeIds.has(node.id);
                                             return (
-                                                <button
-                                                    key={node.id}
-                                                    type="button"
-                                                    className="truncate rounded px-1 py-0.5 text-left text-[11px] transition"
-                                                    style={{ color: theme.node.text, background: selected ? theme.toolbar.activeBg : "transparent" }}
-                                                    title={node.title || t("canvas.node.untitled")}
-                                                    onClick={() => onFocusNode(node.id)}
-                                                >
-                                                    {node.title || t("canvas.node.untitled")}
-                                                </button>
+                                                <div key={node.id} className="group/stage flex items-center gap-1">
+                                                    <button
+                                                        type="button"
+                                                        className="min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-[11px] transition"
+                                                        style={{ color: theme.node.text, background: selected ? theme.toolbar.activeBg : "transparent" }}
+                                                        title={node.title || t("canvas.node.untitled")}
+                                                        onClick={() => onFocusNode(node.id)}
+                                                    >
+                                                        {node.title || t("canvas.node.untitled")}
+                                                    </button>
+                                                    {onAssignStage ? (
+                                                        <button
+                                                            type="button"
+                                                            className="shrink-0 rounded px-1 text-[10px] leading-4 opacity-0 transition group-hover/stage:opacity-100"
+                                                            style={{ color: theme.node.muted }}
+                                                            title={t("canvas.timeline.unassign")}
+                                                            aria-label={t("canvas.timeline.unassign")}
+                                                            onClick={() => onAssignStage(node.id, undefined)}
+                                                        >
+                                                            ×
+                                                        </button>
+                                                    ) : null}
+                                                </div>
                                             );
                                         })}
                                     </div>
@@ -121,16 +137,37 @@ export function CanvasTimelinePanel({ nodes, selectedNodeIds, onFocusNode, onClo
                                 {timeline.unassigned.map((node) => {
                                     const selected = selectedNodeIds.has(node.id);
                                     return (
-                                        <button
-                                            key={node.id}
-                                            type="button"
-                                            className="truncate rounded px-1 py-0.5 text-left text-[11px] transition"
-                                            style={{ color: theme.node.muted, background: selected ? theme.toolbar.activeBg : "transparent" }}
-                                            title={node.title || t("canvas.node.untitled")}
-                                            onClick={() => onFocusNode(node.id)}
-                                        >
-                                            {node.title || t("canvas.node.untitled")}
-                                        </button>
+                                        <div key={node.id} className="flex items-center gap-1">
+                                            <button
+                                                type="button"
+                                                className="min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-[11px] transition"
+                                                style={{ color: theme.node.muted, background: selected ? theme.toolbar.activeBg : "transparent" }}
+                                                title={node.title || t("canvas.node.untitled")}
+                                                onClick={() => onFocusNode(node.id)}
+                                            >
+                                                {node.title || t("canvas.node.untitled")}
+                                            </button>
+                                            {onAssignStage ? (
+                                                <select
+                                                    className="shrink-0 rounded border bg-transparent px-0.5 text-[10px]"
+                                                    style={{ borderColor: theme.toolbar.border, color: theme.node.muted }}
+                                                    value=""
+                                                    title={t("canvas.timeline.assign")}
+                                                    aria-label={t("canvas.timeline.assign")}
+                                                    onChange={(event) => {
+                                                        const stage = normalizeStage(event.target.value);
+                                                        if (stage) onAssignStage(node.id, stage);
+                                                    }}
+                                                >
+                                                    <option value="">{t("canvas.timeline.assign")}</option>
+                                                    {CANVAS_NODE_STAGES.map((stage) => (
+                                                        <option key={stage} value={stage}>
+                                                            {stageLabel(stage, t)}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            ) : null}
+                                        </div>
                                     );
                                 })}
                             </div>

@@ -3,13 +3,18 @@
 // (see lib/canvas/editor-bridge). Opening loads metadata.content into the editor; saving pulls the
 // edited canvas back out as an artifact (node content / image data URL) while keeping any existing
 // structure layer (metadata.regions) intact.
-import { AlertCircle, Hand, ImagePlus, Loader2, Move, PenTool, RefreshCw, Save } from "lucide-react";
+import { AlertCircle, Copy, Hand, ImagePlus, Loader2, Move, PenTool, RefreshCw, Save } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
 import { useEditorBridge } from "@/components/canvas/use-editor-bridge";
+import { fitNodeSize } from "@/lib/canvas/canvas-node-size";
+import { imageMetadata } from "@/lib/canvas/canvas-node-factory";
+import { buildPsSaveAsNodeMetadata, psSaveAsNodePosition } from "@/lib/canvas/canvas-node-ps-edit";
 import { EDITOR_ENGINE_NAME, EDITOR_ENGINE_VERSION, EDITOR_IFRAME_SRC, buildEditorSavePatch } from "@/lib/canvas/editor-bridge";
 import { registerNodeDefinitions } from "@/lib/canvas/node-registry";
+import { uploadImage } from "@/services/image-storage";
+import { CanvasNodeType } from "@/types/canvas";
 import type { CanvasNodeContext, CanvasNodeDefinition } from "@/types/canvas-plugin";
 
 export const EDITOR_NODE_TYPE = "editor";
@@ -23,9 +28,27 @@ function EditorView({ ctx }: { ctx: CanvasNodeContext }) {
     const source = ctx.node.metadata?.content || "";
     const engineVersion = ctx.node.metadata?.editor?.version || EDITOR_ENGINE_VERSION;
     // Artifact (node content) + structure (regions kept, parse timestamp bumped).
-    const { iframeRef, reloadKey, status, error, notice, busy, handleFrameLoad, reload, openImage, exportImage } = useEditorBridge({
+    const { iframeRef, reloadKey, status, error, notice, busy, handleFrameLoad, reload, openImage, exportImage, exportImageAsNode } = useEditorBridge({
         source,
         onExport: (dataUrl, savedAt) => ctx.updateMetadata(buildEditorSavePatch(ctx.node.metadata, dataUrl, savedAt)),
+        onExportAsNode: async (dataUrl, savedAt) => {
+            // Store the bitmap first so the new node keeps a storage handle instead of an inline blob
+            // (same path as the image-node save), then create a separate image node next to this one.
+            // This node keeps its own pixels: "save as" is the explicit way to keep a version.
+            const image = await uploadImage(dataUrl);
+            const size = fitNodeSize(image.width, image.height);
+            ctx.applyOps([
+                {
+                    type: "add_node",
+                    nodeType: CanvasNodeType.Image,
+                    title: t("canvas.editor.saveAsNodeTitle"),
+                    position: psSaveAsNodePosition(ctx.node),
+                    width: size.width,
+                    height: size.height,
+                    metadata: buildPsSaveAsNodeMetadata(imageMetadata(image), savedAt),
+                },
+            ]);
+        },
     });
 
     const statusText = status === "ready" ? "" : status === "connecting" ? t("canvas.editor.connecting") : "";
@@ -52,6 +75,10 @@ function EditorView({ ctx }: { ctx: CanvasNodeContext }) {
                     <Save className="size-3.5" />
                     {t("canvas.editor.saveBack")}
                 </button>
+                <button type="button" onClick={() => void exportImageAsNode()} disabled={busy || status !== "ready"} title={t("canvas.editor.saveAsNode")} className={`${STATUS_CLASS} flex items-center gap-1`}>
+                    <Copy className="size-3.5" />
+                    {t("canvas.editor.saveAsNode")}
+                </button>
                 <button type="button" onClick={reload} title={t("canvas.editor.retry")} className={STATUS_CLASS}>
                     <RefreshCw className="size-3.5" />
                 </button>
@@ -60,15 +87,7 @@ function EditorView({ ctx }: { ctx: CanvasNodeContext }) {
             {notice ? <div className="shrink-0 border-b border-stone-200 px-2 py-1 text-[11px] text-stone-500 dark:border-stone-800 dark:text-stone-400">{notice}</div> : null}
 
             <div className="relative min-h-0 flex-1 bg-stone-100 dark:bg-stone-950">
-                <iframe
-                    key={reloadKey}
-                    ref={iframeRef}
-                    src={EDITOR_IFRAME_SRC}
-                    title={t("canvas.nodeTypes.editor")}
-                    onLoad={handleFrameLoad}
-                    className="h-full w-full border-0 bg-white"
-                    style={{ pointerEvents: interactive ? "auto" : "none" }}
-                />
+                <iframe key={reloadKey} ref={iframeRef} src={EDITOR_IFRAME_SRC} title={t("canvas.nodeTypes.editor")} onLoad={handleFrameLoad} className="h-full w-full border-0 bg-white" style={{ pointerEvents: interactive ? "auto" : "none" }} />
 
                 {!source ? (
                     <div className="pointer-events-none absolute inset-x-2 top-2 flex items-center gap-1.5 rounded border border-stone-300 bg-white/85 px-2 py-1 text-[11px] text-stone-500 dark:border-stone-700 dark:bg-stone-900/85 dark:text-stone-400">

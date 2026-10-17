@@ -4,28 +4,17 @@
 // The iframe plumbing is the shared bridge hook, so a blocked/slow frame surfaces the same error and
 // retry affordances as the standalone editor node.
 import { useEffect, useState } from "react";
-import { AlertCircle, Loader2, RefreshCw, Save } from "lucide-react";
+import { AlertCircle, Loader2, Maximize2, Minimize2, RefreshCw, Save } from "lucide-react";
 import { Button, Modal, Space } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { useEditorBridge } from "@/components/canvas/use-editor-bridge";
 import { EDITOR_ENGINE_NAME, EDITOR_ENGINE_VERSION, EDITOR_IFRAME_SRC } from "@/lib/canvas/editor-bridge";
 
-export function CanvasNodePsEditDialog({
-    open,
-    source,
-    engineVersion,
-    onSave,
-    onClose,
-}: {
-    open: boolean;
-    source: string;
-    engineVersion?: string;
-    onSave: (dataUrl: string) => void | Promise<void>;
-    onClose: () => void;
-}) {
+export function CanvasNodePsEditDialog({ open, source, engineVersion, onSave, onClose }: { open: boolean; source: string; engineVersion?: string; onSave: (dataUrl: string) => void | Promise<void>; onClose: () => void }) {
     const { t } = useTranslation();
     const [saving, setSaving] = useState(false);
+    const [fullscreen, setFullscreen] = useState(false);
     const { iframeRef, reloadKey, status, error, notice, busy, handleFrameLoad, reload, openImage, exportImage } = useEditorBridge({
         source,
         onExport: async (dataUrl) => {
@@ -47,20 +36,41 @@ export function CanvasNodePsEditDialog({
         void openImage();
     }, [open, status, openImage]);
 
+    // Never reopen into a fullscreen dialog the user forgot they left.
+    useEffect(() => {
+        if (!open) setFullscreen(false);
+    }, [open]);
+
+    // Keyboard events never cross the iframe boundary, so the editor only receives its own shortcuts
+    // (undo/redo, copy/paste, zoom, brush size, …) once the frame owns focus. Claim it the moment the
+    // engine answers the handshake; the canvas' global keydown handlers stay out of the way.
+    useEffect(() => {
+        if (!open || status !== "ready") return;
+        iframeRef.current?.focus();
+    }, [open, status, iframeRef]);
+
     const version = engineVersion || EDITOR_ENGINE_VERSION;
 
     return (
         <Modal
             title={t("canvas.imageTools.psEdit")}
             open={open}
-            centered
-            width={1080}
+            centered={!fullscreen}
+            width={fullscreen ? "100vw" : 1080}
+            style={fullscreen ? { top: 0, maxWidth: "100vw", margin: 0, paddingBottom: 0 } : undefined}
+            styles={fullscreen ? { body: { padding: 8 } } : undefined}
             onCancel={onClose}
             destroyOnHidden
             footer={
                 <div className="flex items-center justify-between gap-3">
                     <span className="min-w-0 flex-1 truncate text-left text-xs opacity-60">{status === "ready" ? t("canvas.editor.engine", { engine: EDITOR_ENGINE_NAME, version }) : t("canvas.editor.connecting")}</span>
                     <Space>
+                        <Button
+                            icon={fullscreen ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+                            onClick={() => setFullscreen((value) => !value)}
+                            title={t(fullscreen ? "canvas.editor.exitFullscreen" : "canvas.editor.fullscreen")}
+                            aria-label={t(fullscreen ? "canvas.editor.exitFullscreen" : "canvas.editor.fullscreen")}
+                        />
                         <Button icon={<RefreshCw className="size-4" />} onClick={reload}>
                             {t("canvas.editor.retry")}
                         </Button>
@@ -72,7 +82,7 @@ export function CanvasNodePsEditDialog({
                 </div>
             }
         >
-            <div className="relative h-[min(68vh,640px)] min-h-[360px] overflow-hidden rounded-lg bg-stone-100 dark:bg-stone-950">
+            <div className={`relative min-h-[360px] overflow-hidden rounded-lg bg-stone-100 dark:bg-stone-950 ${fullscreen ? "h-[calc(100vh-176px)]" : "h-[min(68vh,640px)]"}`}>
                 <iframe key={reloadKey} ref={iframeRef} src={EDITOR_IFRAME_SRC} title={t("canvas.imageTools.psEdit")} onLoad={handleFrameLoad} className="h-full w-full border-0 bg-white" />
 
                 {notice ? (

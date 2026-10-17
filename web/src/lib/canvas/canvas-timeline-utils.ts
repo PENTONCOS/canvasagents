@@ -48,8 +48,6 @@ export type CanvasStageProgress = {
 
 export type CanvasNextActionHint = {
     stage: CanvasNodeStage;
-    count: number;
-    totalNodes: number;
 };
 
 function toTimelineNode(node: CanvasTimelineInputNode): CanvasTimelineNode {
@@ -95,14 +93,13 @@ export function computeStageProgress(timeline: CanvasTimeline): CanvasStageProgr
     return { stages, filledCount, total, completionRatio };
 }
 
-// Points at the earliest stage that still has no nodes, or null when every stage is filled. `count`
-// is that stage's node count (0 for the empty stage) and `totalNodes` is how many nodes the timeline
-// already holds, so the UI can render e.g. "Next: Design" next to the current coverage.
+// Points at the earliest stage that still has no nodes, or null when every stage is filled. The hint
+// carries only the stage: a stage is empty by definition here, so a node count would always read 0,
+// and the panel header already reports stage coverage.
 export function nextActionHint(timeline: CanvasTimeline): CanvasNextActionHint | null {
     const empty = timeline.stages.find((entry) => entry.count === 0);
     if (!empty) return null;
-    const totalNodes = timeline.stages.reduce((sum, entry) => sum + entry.count, 0);
-    return { stage: empty.stage, count: empty.count, totalNodes };
+    return { stage: empty.stage };
 }
 
 // Phase 3: one edit that happened to one node, flattened out of metadata.history for the timeline's

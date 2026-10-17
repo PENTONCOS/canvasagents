@@ -20,11 +20,7 @@ import enUS from "../src/i18n/locales/en-US";
 import zhCN from "../src/i18n/locales/zh-CN";
 
 const keyPaths = (value: unknown, prefix = ""): string[] =>
-    value && typeof value === "object" && !Array.isArray(value)
-        ? Object.entries(value as Record<string, unknown>).flatMap(([key, child]) => keyPaths(child, prefix ? `${prefix}.${key}` : key))
-        : prefix
-          ? [prefix]
-          : [];
+    value && typeof value === "object" && !Array.isArray(value) ? Object.entries(value as Record<string, unknown>).flatMap(([key, child]) => keyPaths(child, prefix ? `${prefix}.${key}` : key)) : prefix ? [prefix] : [];
 
 // --- protocol constants ----------------------------------------------------------------------
 
@@ -156,12 +152,17 @@ test("the injected bridge script re-declares the channel and probes miniPaint in
 test("canvas.editor keys exist on both locales with identical paths", () => {
     const en = keyPaths((enUS as Record<string, unknown>).canvas).filter((path) => path === "editor" || path.startsWith("editor.") || path.startsWith("nodeTypes.editor"));
     const zh = keyPaths((zhCN as Record<string, unknown>).canvas).filter((path) => path === "editor" || path.startsWith("editor.") || path.startsWith("nodeTypes.editor"));
-    expect(en.length).toBe(16);
+    expect(en.length).toBe(21);
     expect(en).toEqual(zh);
     expect(en).toContain("nodeTypes.editor");
     expect(en).toContain("editor.engine");
     expect(en).toContain("editor.openImage");
     expect(en).toContain("editor.saveBack");
+    expect(en).toContain("editor.saveAsNode");
+    expect(en).toContain("editor.saveAsNodeTitle");
+    expect(en).toContain("editor.fullscreen");
+    expect(en).toContain("editor.exitFullscreen");
+    expect(en).toContain("editor.savedAsNode");
     expect(en).toContain("editor.retry");
 });
 
