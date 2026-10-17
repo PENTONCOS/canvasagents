@@ -19,7 +19,9 @@ import { useAssetStore } from "@/stores/use-asset-store";
 import { useCommandStore } from "@/stores/use-command-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { cropDataUrl, splitDataUrl, upscaleDataUrl } from "@/lib/canvas/canvas-image-data";
-import { commitCanvasJournal, restoreCanvasJournal } from "@/lib/canvas/canvas-journal-commit";
+import { appendJournalEntry } from "@/lib/canvas/canvas-journal";
+import { commitCanvasJournal, nextJournalSeq, restoreCanvasJournal } from "@/lib/canvas/canvas-journal-commit";
+import { CANVAS_JOURNAL_AGENT_ATTRIBUTION_WINDOW_MS, collectAgentJournalEntries, resolveJournalActor } from "@/lib/canvas/canvas-journal-agent";
 import { buildHistoryTimeline, jumpHistoryStacks, planHistoryJump, resolveJournalLocation } from "@/lib/canvas/canvas-journal-steps";
 import { fitNodeSize, nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
 import { captureVideoFrame, type VideoFramePosition } from "@/lib/canvas/canvas-video-frame";
@@ -49,8 +51,9 @@ import { CanvasSidePanel } from "@/components/canvas/canvas-side-panel";
 import { CanvasJournalPanel } from "@/components/canvas/canvas-journal-panel";
 import { CanvasTimelinePanel } from "@/components/canvas/canvas-timeline-panel";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
-import { useAgentStore } from "@/stores/use-agent-store";
+import { useAgentStore, type AgentChatItem } from "@/stores/use-agent-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
+import type { CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
 import { buildNodeMentionReferences, getGroupResourceNodes, isCanvasReferenceNode, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -161,12 +164,15 @@ const NODE_STATUS_LOADING = "loading" as const;
 const NODE_STATUS_SUCCESS = "success" as const;
 const NODE_STATUS_ERROR = "error" as const;
 
-// Canvas Journal actor for every commit this page records. This page has no marker separating a
-// human edit from an assistant one: the agent bridge (pages/canvas/hooks/use-agent-bridge) drives the
-// very same setNodes/setConnections this page does, so a commit cannot be attributed honestly.
-// Inventing a flag here would let the log claim provenance it does not have, so every commit is
-// recorded as the user until a real actor signal reaches these setters.
-const JOURNAL_ACTOR: CanvasJournalActor = { kind: "user" };
+// Canvas Journal attribution. Human edits and the assistant share the exact same setNodes/setConnections
+// and no state change carries a source marker, so provenance is approximated by a clock: every
+// assistant/plugin canvas write (the only non-human write path — applyAgentOps in use-agent-bridge)
+// stamps agentOpAtRef, and a history commit that lands within CANVAS_JOURNAL_AGENT_ATTRIBUTION_WINDOW_MS
+// of that stamp is credited to the assistant. The window is intentionally just above the 180ms commit
+// debounce (see the commit effect below) so an assistant-triggered commit still sees its stamp, while
+// staying narrow enough not to swallow unrelated human edits. Honest limitation: a human edit landing
+// inside that window — or a human/assistant mix within one commit — is attributed to the assistant.
+// See lib/canvas/canvas-journal-agent for the window constant and the full note.
 
 function applyGeneratedVideo(item: CanvasNodeData, video: UploadedFile, extra: CanvasNodeData["metadata"] = {}): CanvasNodeData {
     const videoSize = fitNodeSize(video.width || item.width, video.height || item.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
@@ -227,6 +233,12 @@ function InfiniteCanvasPage() {
     const historyRef = useRef<{ past: CanvasHistoryEntry[]; future: CanvasHistoryEntry[] }>({ past: [], future: [] });
     const lastHistoryRef = useRef<CanvasHistoryEntry | null>(null);
     const journalRef = useRef<CanvasJournalEntry[]>([]);
+    // Canvas Journal attribution clock: epoch ms of the last assistant/plugin canvas write (0 = none
+    // yet). Read by recordJournalCommit to decide the actor; never part of an effect dependency.
+    const agentOpAtRef = useRef(0);
+    // Message ids already turned into agent.turn/agent.tool entries. A ref (not state) so it survives
+    // React strict mode's double-invoked effects and never re-renders the page.
+    const agentJournalSeenRef = useRef<Set<string>>(new Set());
     const historyCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const viewportSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const applyingHistoryRef = useRef(false);
@@ -344,15 +356,27 @@ function InfiniteCanvasPage() {
     // re-enter that effect: updateProject patches only `journal`, while the effect's inputs
     // (nodes/connections/chatSessions/activeChatId/backgroundMode/showImageInfo) live in page state,
     // not in the project record. A commit whose diff is empty returns no entries and skips the write.
+    //
+    // The actor is resolved from the attribution clock (agentOpAtRef): a commit close to the last
+    // assistant/plugin canvas write is credited to the assistant, everything else to the user. See the
+    // note on the window constant for the mixed human/assistant caveat.
     const recordJournalCommit = useCallback(
         (previous: CanvasHistoryEntry, next: CanvasHistoryEntry, commitId: string) => {
-            const result = commitCanvasJournal(previous, next, journalRef.current, JOURNAL_ACTOR, { commitId });
+            const actor: CanvasJournalActor = resolveJournalActor(agentOpAtRef.current, Date.now());
+            const result = commitCanvasJournal(previous, next, journalRef.current, actor, { commitId });
             if (result.entries.length === 0) return;
             journalRef.current = result.journal;
             updateProject(projectId, { journal: result.journal });
         },
         [projectId, updateProject],
     );
+
+    // Stamps the attribution clock. Called for every assistant/plugin canvas write, whether it enters
+    // through the agent store context or the plugin host (both route to this same callback), so no
+    // caller can record a canvas change without its actor signal.
+    const markAgentOp = useCallback(() => {
+        agentOpAtRef.current = Date.now();
+    }, []);
 
     const cleanupCanvasFiles = useCallback(
         (extra?: unknown) => {
@@ -609,6 +633,35 @@ function InfiniteCanvasPage() {
             if (viewportSaveTimerRef.current) clearTimeout(viewportSaveTimerRef.current);
         };
     }, [projectId, projectLoaded, updateProject, viewport]);
+
+    // Canvas Journal, assistant side: mirrors new assistant turns and tool calls from the agent store
+    // into the journal. It only appends log entries — it never touches agent behaviour or canvas state —
+    // and it writes through the same `journalRef` mirror + updateProject({ journal }) path the commit
+    // effect uses, so there is still exactly one journal storage path.
+    //
+    // Loop safety: this effect depends only on [projectId, projectLoaded, updateProject] (projectId is a
+    // route param and updateProject is a stable store action), so its own store write cannot re-enter
+    // it; `journal` is never an effect dependency anywhere on this page. Duplicate safety:
+    // agentJournalSeenRef records the message ids already turned into entries, so re-scanning the whole
+    // message list — including React strict mode's double-invoked effect — produces no second entry. A
+    // message that is still streaming or has no safe text yields no entry and is deliberately left out
+    // of `seen`, so it is retried once it finishes.
+    useEffect(() => {
+        if (!projectLoaded) return;
+        const flush = (messages: AgentChatItem[]) => {
+            const result = collectAgentJournalEntries(messages, agentJournalSeenRef.current, { seqStart: nextJournalSeq(journalRef.current) });
+            if (result.entries.length === 0) return;
+            agentJournalSeenRef.current = result.seen;
+            let journal = journalRef.current;
+            for (const entry of result.entries) journal = appendJournalEntry(journal, entry).entries;
+            journalRef.current = journal;
+            updateProject(projectId, { journal });
+        };
+        flush(useAgentStore.getState().messages);
+        return useAgentStore.subscribe((state, previous) => {
+            if (state.messages !== previous.messages) flush(state.messages);
+        });
+    }, [projectId, projectLoaded, updateProject]);
 
     useLayoutEffect(() => {
         nodesRef.current = nodes;
@@ -885,7 +938,19 @@ function InfiniteCanvasPage() {
         setSelectedConnectionId,
         setViewport,
         setContextMenu,
+        // The agent store's canvas context calls applyAgentOps directly, so the stamp lives inside the
+        // bridge (fired at the top of every apply) rather than only in the wrapper below.
+        onApplyOps: markAgentOp,
     });
+    // Plugin host canvas writes go through this wrapper, which stamps the same attribution clock before
+    // delegating to the real bridge. Plugin and assistant changes therefore both carry an actor signal.
+    const handleAgentOps = useCallback(
+        (ops?: CanvasAgentOp[]) => {
+            markAgentOp();
+            return applyAgentOps(ops);
+        },
+        [applyAgentOps, markAgentOp],
+    );
 
     const { pluginHost, renderPluginPanel, buildNodeToolbarItems } = usePluginHost({
         effectiveConfig,
@@ -897,7 +962,7 @@ function InfiniteCanvasPage() {
         viewportRef,
         setNodes,
         setDialogNodeId,
-        applyAgentOps,
+        applyAgentOps: handleAgentOps,
     });
     const createNode = useCallback(
         (type: CanvasNodeTypeId, position?: Position) => {
