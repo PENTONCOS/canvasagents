@@ -1,15 +1,17 @@
 // M3: pure helpers that turn a flat node list into a readable pipeline timeline. Nodes are bucketed
 // by their metadata.stage (see canvas-stage-utils) while preserving the caller's input order, so the
 // UI can render "requirement -> design -> code -> service -> test -> runtime" and highlight gaps.
+import { CANVAS_NODE_HISTORY_LIMIT, normalizeNodeEditLimit, normalizeNodeHistory } from "@/lib/canvas/canvas-node-history";
 import { CANVAS_NODE_STAGES, normalizeStage } from "@/lib/canvas/canvas-stage-utils";
-import type { CanvasNodeStage } from "@/types/canvas";
+import type { CanvasNodeEditKind, CanvasNodeStage } from "@/types/canvas";
 
 // Minimal structural input: any canvas node carrying an id, an optional title, and an optional
-// metadata.stage. CanvasNodeData satisfies this shape, and tests can build plain objects.
+// metadata.stage / metadata.history. CanvasNodeData satisfies this shape, and tests can build plain
+// objects.
 export type CanvasTimelineInputNode = {
     id: string;
     title?: string;
-    metadata?: { stage?: unknown };
+    metadata?: { stage?: unknown; history?: unknown };
 };
 
 // A node as it appears inside a timeline bucket. The stage is normalized, so a bucketed node always
@@ -101,6 +103,46 @@ export function nextActionHint(timeline: CanvasTimeline): CanvasNextActionHint |
     if (!empty) return null;
     const totalNodes = timeline.stages.reduce((sum, entry) => sum + entry.count, 0);
     return { stage: empty.stage, count: empty.count, totalNodes };
+}
+
+// Phase 3: one edit that happened to one node, flattened out of metadata.history for the timeline's
+// activity list. `nodeId` is what the UI focuses when the row is clicked; `nodeTitle` falls back to
+// the caller's untitled label. `stage` is the node's current normalized stage, kept for context.
+export type CanvasNodeActivityEvent = {
+    nodeId: string;
+    nodeTitle: string;
+    stage: CanvasNodeStage | undefined;
+    kind: CanvasNodeEditKind;
+    at: number;
+    engine?: string;
+    version?: string;
+    summary?: string;
+};
+
+// How many activity rows the timeline keeps by default (newest first).
+export const CANVAS_NODE_ACTIVITY_LIMIT = CANVAS_NODE_HISTORY_LIMIT;
+
+// Flattens every node's metadata.history into a single event stream, newest first, so the timeline
+// can show "this image was edited" independently of stage progress.
+// Determinism: primary key is `at` descending; ties break on `nodeId` ascending; remaining ties keep
+// the stream order (node order in the input, then record order inside a node) thanks to a stable
+// sort. Dirty records (non-array history, missing/non-finite `at`, unknown `kind`) are dropped.
+export function buildNodeActivity(nodes: readonly CanvasTimelineInputNode[] = [], limit: number = CANVAS_NODE_ACTIVITY_LIMIT): CanvasNodeActivityEvent[] {
+    const max = normalizeNodeEditLimit(limit, CANVAS_NODE_ACTIVITY_LIMIT);
+    if (max <= 0) return [];
+
+    const events: CanvasNodeActivityEvent[] = [];
+    for (const node of nodes) {
+        if (!node || typeof node.id !== "string" || !node.id) continue;
+        const nodeTitle = typeof node.title === "string" ? node.title : "";
+        const stage = normalizeStage(node.metadata?.stage);
+        for (const record of normalizeNodeHistory(node.metadata?.history)) {
+            events.push({ nodeId: node.id, nodeTitle, stage, kind: record.kind, at: record.at, engine: record.engine, version: record.version, summary: record.summary });
+        }
+    }
+
+    events.sort((left, right) => right.at - left.at || (left.nodeId < right.nodeId ? -1 : left.nodeId > right.nodeId ? 1 : 0));
+    return events.slice(0, max);
 }
 
 // Deterministic Graphviz DOT export of the timeline. Stage ids are fixed and edges follow stage

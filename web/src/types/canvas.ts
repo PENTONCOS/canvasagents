@@ -50,6 +50,19 @@ export type CanvasNodeTimelineEntry = {
     detail?: string; // optional short human-readable detail (e.g. generation prompt)
 };
 
+// Phase 3 follow-up: per-node edit history. Records the writes that changed an image node in place
+// (a save from the embedded PS-mode editor, or a structure/region edit) so the canvas timeline can
+// list "this image was edited with PS" next to the stage breakdown. The list is oldest first and is
+// capped when appended (see lib/canvas/canvas-node-history).
+export type CanvasNodeEditKind = "ps-edit" | "region-edit";
+export type CanvasNodeEditRecord = {
+    kind: CanvasNodeEditKind;
+    at: number; // epoch ms
+    engine?: string; // editing engine name (e.g. miniPaint)
+    version?: string; // engine version at save time
+    summary?: string; // optional short human-readable detail
+};
+
 // M5: code browser node view state. `tree` shows the file browser only, `file` shows the
 // selected file next to the tree, and `diff` shows the unified diff of the active path.
 export type CanvasNodeCodeView = "tree" | "file" | "diff";
@@ -141,6 +154,7 @@ export type CanvasNodeMetadata = {
     regions?: CanvasNodeRegionsMetadata; // M7: image structure layer (parsed regions + edits)
     editor?: CanvasNodeEditorMetadata; // Phase 3: PS-mode editor engine binding + last save time
     timeline?: CanvasNodeTimelineEntry[]; // M3: agent op history for this node, oldest first, capped at 50
+    history?: CanvasNodeEditRecord[]; // Phase 3: in-place edit history (PS-mode saves), oldest first, capped at 50
     content?: string;
     composerContent?: string;
     prompt?: string;

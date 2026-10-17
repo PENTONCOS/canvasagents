@@ -1,15 +1,17 @@
 // M3: stage timeline panel. A toggleable overlay (rendered on the canvas page, outside the node
 // layer) that lists the pipeline stages horizontally, shows how many nodes each one holds, and lets
-// the user focus a node through the canvas' existing selection mechanism.
+// the user focus a node through the canvas' existing selection mechanism. Below the stages it lists
+// the node edit history ("this image was edited with PS") so an in-place edit is visible on the
+// timeline even though it never creates a new node.
 import { useMemo } from "react";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { stageColor, stageLabelKey } from "@/lib/canvas/canvas-stage-utils";
-import { buildStageTimeline, computeStageProgress, nextActionHint } from "@/lib/canvas/canvas-timeline-utils";
+import { buildNodeActivity, buildStageTimeline, computeStageProgress, nextActionHint } from "@/lib/canvas/canvas-timeline-utils";
 import { useThemeStore } from "@/stores/use-theme-store";
-import type { CanvasNodeData, CanvasNodeStage } from "@/types/canvas";
+import type { CanvasNodeData, CanvasNodeEditKind, CanvasNodeStage } from "@/types/canvas";
 
 type CanvasTimelinePanelProps = {
     nodes: CanvasNodeData[];
@@ -23,6 +25,11 @@ function stageLabel(stage: CanvasNodeStage, translate: (key: string) => string):
     return key ? translate(key) : stage;
 }
 
+// "ps-edit" is the save-back from the embedded editor; "region-edit" is a structure-layer change.
+function activityLabel(kind: CanvasNodeEditKind, translate: (key: string) => string): string {
+    return translate(kind === "region-edit" ? "canvas.timeline.activityRegionEdit" : "canvas.timeline.activityPsEdit");
+}
+
 export function CanvasTimelinePanel({ nodes, selectedNodeIds, onFocusNode, onClose }: CanvasTimelinePanelProps) {
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
@@ -30,6 +37,7 @@ export function CanvasTimelinePanel({ nodes, selectedNodeIds, onFocusNode, onClo
     const timeline = useMemo(() => buildStageTimeline(nodes), [nodes]);
     const progress = useMemo(() => computeStageProgress(timeline), [timeline]);
     const hint = useMemo(() => nextActionHint(timeline), [timeline]);
+    const activity = useMemo(() => buildNodeActivity(nodes), [nodes]);
     const percent = Math.round(progress.completionRatio * 100);
 
     return (
@@ -128,6 +136,51 @@ export function CanvasTimelinePanel({ nodes, selectedNodeIds, onFocusNode, onClo
                             </div>
                         </div>
                     ) : null}
+                </div>
+
+                <div className="border-t px-3 py-2" style={{ borderColor: theme.toolbar.border }} data-canvas-timeline-activity>
+                    <div className="mb-1 flex items-center gap-2">
+                        <span className="text-xs font-medium" style={{ color: theme.node.muted }}>
+                            {t("canvas.timeline.activity")}
+                        </span>
+                        <span className="text-[11px] tabular-nums" style={{ color: theme.node.faint }}>
+                            {activity.length}
+                        </span>
+                    </div>
+                    {activity.length === 0 ? (
+                        <div className="text-[11px]" style={{ color: theme.node.faint }}>
+                            {t("canvas.timeline.activityEmpty")}
+                        </div>
+                    ) : (
+                        <div className="flex max-h-28 flex-col gap-0.5 overflow-y-auto">
+                            {activity.map((entry, index) => {
+                                const selected = selectedNodeIds.has(entry.nodeId);
+                                return (
+                                    <button
+                                        key={`${entry.nodeId}:${entry.at}:${entry.kind}:${index}`}
+                                        type="button"
+                                        className="flex items-center gap-2 rounded px-1 py-0.5 text-left text-[11px] transition"
+                                        style={{ color: theme.node.text, background: selected ? theme.toolbar.activeBg : "transparent" }}
+                                        title={entry.nodeTitle || t("canvas.node.untitled")}
+                                        onClick={() => onFocusNode(entry.nodeId)}
+                                    >
+                                        <span className="max-w-[14rem] truncate">{entry.nodeTitle || t("canvas.node.untitled")}</span>
+                                        <span className="shrink-0" style={{ color: theme.node.muted }}>
+                                            {activityLabel(entry.kind, t)}
+                                        </span>
+                                        {entry.stage ? (
+                                            <span className="shrink-0 text-[10px]" style={{ color: stageColor(entry.stage) }}>
+                                                {stageLabel(entry.stage, t)}
+                                            </span>
+                                        ) : null}
+                                        <span className="ml-auto shrink-0 tabular-nums" style={{ color: theme.node.faint }}>
+                                            {new Date(entry.at).toLocaleTimeString()}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
 
                 <div className="border-t px-3 py-1.5 text-xs" style={{ borderColor: theme.toolbar.border, color: theme.node.muted }}>

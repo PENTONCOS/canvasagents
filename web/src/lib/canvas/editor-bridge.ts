@@ -3,6 +3,7 @@
 // Everything here is DOM-free so the protocol, its validation, and the timeout wrapper can be
 // unit tested without a browser (see tests/editor-bridge.test.ts).
 
+import { appendNodeEdit } from "@/lib/canvas/canvas-node-history";
 import type { CanvasNodeMetadata } from "@/types/canvas";
 
 export const EDITOR_ENGINE_NAME = "miniPaint";
@@ -101,11 +102,14 @@ export function requestWithTimeout<T>(promise: Promise<T>, timeoutMs: number = D
 
 // Artifact + structure write-back for a save-from-editor round trip:
 // - artifact: the exported image becomes the node content, so re-opening the node shows the edit;
-// - structure: an existing regions layer keeps its data and only gets its parse timestamp bumped.
+// - structure: an existing regions layer keeps its data and only gets its parse timestamp bumped;
+// - history: the node itself records that this image went through PS, which is what the canvas
+//   timeline lists. The save always lands on the same node; no new node is ever created here.
 export function buildEditorSavePatch(metadata: CanvasNodeMetadata | undefined, dataUrl: string, savedAt: number): CanvasNodeMetadata {
     const patch: CanvasNodeMetadata = {
         content: dataUrl,
         editor: { engine: EDITOR_ENGINE_NAME, version: EDITOR_ENGINE_VERSION, lastSavedAt: savedAt },
+        history: appendNodeEdit(metadata?.history, { kind: "ps-edit", at: savedAt, engine: EDITOR_ENGINE_NAME, version: EDITOR_ENGINE_VERSION }),
     };
     if (metadata?.regions) patch.regions = { ...metadata.regions, parsedAt: savedAt };
     return patch;
