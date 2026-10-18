@@ -1367,6 +1367,13 @@ export default {
     agent: {
         queue: { title: "任务队列", refresh: "刷新", loading: "读取中…", empty: "当前没有任务", current: "当前", statuses: { waitingInput: "等待输入", approval: "权限确认", running: "干活中", idle: "空闲", failed: "失败" } },
         status: { failed: "连接失败", connected: "已连接", connecting: "连接中", disconnected: "未连接" },
+        window: {
+            defaultTitle: "会话 {{index}}",
+            new: "新建会话",
+            close: "关闭会话",
+            closeConfirm: "该会话正在运行，关闭会中断当前这一轮。确定关闭？",
+            unread: "{{count}} 条未读",
+        },
         state: { ready: "就绪", connectionRequired: "请填写 Local URL 和 Connect token", invalidUrl: "Local URL 格式不正确", offline: "离线", skillReadFailed: "读取 Skill 失败", skillParseFailed: "Skill 解析失败", requestFailed: "本地 Agent 请求失败" },
         siteTools: {
             canvasList: "画布列表",

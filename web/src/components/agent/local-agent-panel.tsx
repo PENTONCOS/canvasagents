@@ -68,6 +68,7 @@ import {
 import { AgentHistoryView } from "./agent-history-view";
 import { AgentLogView } from "./agent-log-view";
 import { AgentPanelTabs } from "./agent-panel-tabs";
+import { AgentWindowTabs } from "./agent-window-tabs";
 import { AgentSkillsView } from "./agent-skills-view";
 
 const MAX_ATTACHMENTS = 6;
@@ -1335,6 +1336,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     const connectionStatusColor = connectError ? "#dc2626" : connected ? "#16a34a" : enabled ? "#d97706" : theme.node.muted;
     const content = (
         <>
+            <AgentWindowTabs />
             <AgentPanelTabs
                 value={activeTab}
                 theme={theme}

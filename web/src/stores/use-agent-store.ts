@@ -3,6 +3,23 @@ import i18n from "@/i18n";
 
 import type { CanvasAgentOp, CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import {
+    AGENT_WINDOW_LIMIT,
+    appendAgentWindow,
+    clearUnread,
+    closeAgentWindowWithFallback,
+    createAgentWindow,
+    deriveWindowStatus,
+    nextActiveIdAfterClose,
+    updateAgentWindow,
+    withAppendedChatItem,
+    withAppendedEventLog,
+    type AgentWindow,
+    type AgentWindowStatus,
+} from "@/lib/agent/agent-windows";
+
+export { AGENT_WINDOW_LIMIT };
+export type { AgentWindow, AgentWindowStatus };
 
 export type AgentChatRole = "user" | "assistant" | "system" | "tool" | "error";
 export type AgentAttachment = { id: string; name: string; type: string; size: number; width: number; height: number; url: string; dataUrl: string };
@@ -39,9 +56,49 @@ export type AgentConversationState = {
 };
 export type AgentPanelTab = "chat" | "setup" | "history" | "skills" | "log";
 
+/**
+ * 「一条会话一份」的字段：这些字段的读写都会落到当前激活的会话窗上，
+ * 其余字段（连接、模型、面板尺寸等）保持全局共享。
+ */
+export const AGENT_WINDOW_FIELDS = [
+    "messages",
+    "eventLogs",
+    "attachments",
+    "canvasReferences",
+    "conversation",
+    "threads",
+    "activeThreadId",
+    "activeTurnId",
+    "workspacePath",
+    "tokenUsage",
+    "pendingTool",
+    "pendingApprovals",
+    "bootstrapStatus",
+    "mcpStartupStatuses",
+    "loadingThreads",
+    "activity",
+    "sending",
+    "waiting",
+] as const;
+export type AgentWindowField = (typeof AGENT_WINDOW_FIELDS)[number];
+
 const CONNECT_TIMEOUT_MS = 6000;
 let agentSource: EventSource | null = null;
 let connectTimer: ReturnType<typeof setTimeout> | null = null;
+let windowSequence = 0;
+
+function createWindowId(): string {
+    windowSequence += 1;
+    return `win-${Date.now().toString(36)}-${windowSequence.toString(36)}`;
+}
+
+function defaultWindowTitle(index: number): string {
+    return i18n.t("agent.window.defaultTitle", { index });
+}
+
+function createDefaultWindow(titleIndex: number): AgentWindow {
+    return createAgentWindow({ id: createWindowId(), title: defaultWindowTitle(titleIndex), activity: i18n.t("agent.state.ready") });
+}
 
 type AgentStore = {
     width: number;
@@ -82,19 +139,64 @@ type AgentStore = {
     pendingTool: AgentPendingToolCall | null;
     pendingApprovals: AgentPendingApproval[];
     queueOpen: boolean;
-    setAgentState: (patch: Partial<Omit<AgentStore, "setAgentState" | "connectAgent" | "disconnectAgent" | "addMessage" | "addEventLog" | "clearEventLogs" | "openPanel" | "closePanel" | "togglePanel" | "setCanvasContext">>) => void;
+    windows: AgentWindow[];
+    activeWindowId: string;
+    setAgentState: (patch: Partial<Omit<AgentStore, "setAgentState" | "connectAgent" | "disconnectAgent" | "addMessage" | "addEventLog" | "clearEventLogs" | "openPanel" | "closePanel" | "togglePanel" | "setCanvasContext" | "windows" | "activeWindowId" | "addWindow" | "removeWindow" | "selectWindow" | "renameWindow">>) => void;
     openPanel: () => void;
     closePanel: () => void;
     togglePanel: () => void;
     setCanvasContext: (context: AgentCanvasContext | null) => void;
     connectAgent: (options?: { silent?: boolean }) => void;
-    disconnectAgent: (patch?: Partial<Omit<AgentStore, "setAgentState" | "connectAgent" | "disconnectAgent" | "addMessage" | "addEventLog" | "clearEventLogs" | "openPanel" | "closePanel" | "togglePanel" | "setCanvasContext">>) => void;
+    disconnectAgent: (patch?: Partial<Omit<AgentStore, "setAgentState" | "connectAgent" | "disconnectAgent" | "addMessage" | "addEventLog" | "clearEventLogs" | "openPanel" | "closePanel" | "togglePanel" | "setCanvasContext" | "windows" | "activeWindowId" | "addWindow" | "removeWindow" | "selectWindow" | "renameWindow">>) => void;
     addMessage: (item: AgentChatItem) => void;
     addEventLog: (item: AgentEventLog) => void;
     clearEventLogs: () => void;
+    addWindow: () => boolean;
+    removeWindow: (id: string) => void;
+    selectWindow: (id: string) => void;
+    renameWindow: (id: string, title: string) => void;
 };
 
 export const CANVAS_AGENT_PANEL_MOTION_MS = 500;
+
+function activeAgentWindow(state: Pick<AgentStore, "windows" | "activeWindowId">): AgentWindow | undefined {
+    return state.windows.find((window) => window.id === state.activeWindowId) ?? state.windows[0];
+}
+
+function projectAgentWindow(window: AgentWindow): Pick<AgentStore, AgentWindowField> {
+    const projected: Record<string, unknown> = {};
+    for (const field of AGENT_WINDOW_FIELDS) projected[field] = window[field];
+    return projected as unknown as Pick<AgentStore, AgentWindowField>;
+}
+
+/** 把一次扁平 patch 拆成 per-window 与全局两半：per-window 的写进激活窗，再投影回来。 */
+function commitAgentPatch(state: AgentStore, patch: Record<string, unknown>): Partial<AgentStore> {
+    const windowPatch: Record<string, unknown> = {};
+    const globalPatch: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(patch)) {
+        if ((AGENT_WINDOW_FIELDS as readonly string[]).includes(key)) windowPatch[key] = value;
+        else globalPatch[key] = value;
+    }
+    if (!Object.keys(windowPatch).length) return globalPatch as Partial<AgentStore>;
+    const active = activeAgentWindow(state);
+    // 没有窗口时（理论上不会发生）退回直接写，保证不会丢数据。
+    if (!active) return { ...globalPatch, ...patch } as Partial<AgentStore>;
+    const patched: AgentWindow = { ...active, ...windowPatch } as AgentWindow;
+    patched.status = deriveWindowStatus(patched);
+    const windows = updateAgentWindow(state.windows, active.id, patched);
+    const next = windows.find((window) => window.id === active.id) ?? patched;
+    return { ...globalPatch, windows, ...projectAgentWindow(next) } as Partial<AgentStore>;
+}
+
+function patchActiveWindow(state: AgentStore, evolve: (window: AgentWindow) => AgentWindow): Partial<AgentStore> {
+    const active = activeAgentWindow(state);
+    if (!active) return {};
+    const patched = evolve(active);
+    const windows = updateAgentWindow(state.windows, active.id, patched);
+    return { windows, ...projectAgentWindow(patched) } as Partial<AgentStore>;
+}
+
+const initialWindow = createDefaultWindow(1);
 
 export const useAgentStore = create<AgentStore>((set, get) => ({
     width: typeof window === "undefined" ? 440 : Number(localStorage.getItem("canvas-agent-panel-width")) || 440,
@@ -109,33 +211,18 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     silentConnect: false,
     fragmentBootstrap: false,
     prompt: "",
-    attachments: [],
-    canvasReferences: [],
-    sending: false,
-    waiting: false,
-    messages: [],
-    tokenUsage: null,
-    eventLogs: [],
-    threads: [],
-    activeThreadId: "",
-    activeTurnId: "",
-    workspacePath: "",
-    loadingThreads: false,
     activeTab: "setup",
     confirmTools: false,
     permissionMode: typeof window === "undefined" ? "request" : (localStorage.getItem("canvas-agent-permission-mode") as AgentPermissionMode) || "request",
     models: [],
     model: typeof window === "undefined" ? "" : localStorage.getItem("canvas-agent-model") || "",
     reasoningEffort: typeof window === "undefined" ? "" : (localStorage.getItem("canvas-agent-reasoning-effort") as AgentReasoningEffort) || "",
-    activity: i18n.t("agent.state.ready"),
-    conversation: { revision: 0, conversationId: "", threadId: "", status: "idle", mcpStatuses: {} },
-    bootstrapStatus: null,
-    mcpStartupStatuses: {},
     connectError: "",
-    pendingTool: null,
-    pendingApprovals: [],
     queueOpen: false,
-    setAgentState: (patch) => set(patch),
+    windows: [initialWindow],
+    activeWindowId: initialWindow.id,
+    ...projectAgentWindow(initialWindow),
+    setAgentState: (patch) => set((state) => commitAgentPatch(state, patch as Record<string, unknown>)),
     openPanel: () => set({ panelOpen: true, panelMounted: true, panelClosing: false }),
     closePanel: () => {
         if (!get().panelMounted || get().panelClosing) return;
@@ -160,16 +247,53 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         localStorage.setItem("canvas-agent-url", endpoint);
         localStorage.setItem("canvas-agent-token", token);
         // Only set enabled here; LocalAgentPanel's effect owns SSE initialization.
-        set({ url: endpoint, token, enabled: true, silentConnect: silent, fragmentBootstrap: false, activity: i18n.t("agent.status.connecting"), connectError: "" });
+        set((state) => commitAgentPatch(state, { url: endpoint, token, enabled: true, silentConnect: silent, fragmentBootstrap: false, activity: i18n.t("agent.status.connecting"), connectError: "" }));
     },
     disconnectAgent: (patch = {}) => {
         agentSource?.close();
         agentSource = null;
         if (connectTimer) clearTimeout(connectTimer);
         connectTimer = null;
-        set({ enabled: false, connected: false, silentConnect: false, fragmentBootstrap: false, activity: i18n.t("agent.state.offline"), conversation: { revision: 0, conversationId: "", threadId: "", status: "idle", mcpStatuses: {} }, bootstrapStatus: null, mcpStartupStatuses: {}, ...patch });
+        set((state) => {
+            const next = commitAgentPatch(state, {
+                enabled: false,
+                connected: false,
+                silentConnect: false,
+                fragmentBootstrap: false,
+                activity: i18n.t("agent.state.offline"),
+                conversation: { revision: 0, conversationId: "", threadId: "", status: "idle", mcpStatuses: {} },
+                bootstrapStatus: null,
+                mcpStartupStatuses: {},
+                ...(patch as Record<string, unknown>),
+            });
+            return next;
+        });
     },
-    addMessage: (item) => set((state) => ({ messages: [...state.messages, item] })),
-    addEventLog: (item) => set((state) => ({ eventLogs: [...state.eventLogs.slice(-160), item] })),
-    clearEventLogs: () => set({ eventLogs: [] }),
+    addMessage: (item) => set((state) => patchActiveWindow(state, (window) => withAppendedChatItem(window, item, true))),
+    addEventLog: (item) => set((state) => patchActiveWindow(state, (window) => withAppendedEventLog(window, item))),
+    clearEventLogs: () => set((state) => patchActiveWindow(state, (window) => ({ ...window, eventLogs: [] }))),
+    addWindow: () => {
+        const state = get();
+        const fresh = createDefaultWindow(state.windows.length + 1);
+        const { windows, ok } = appendAgentWindow(state.windows, fresh);
+        if (!ok) return false;
+        set({ windows, activeWindowId: fresh.id, ...projectAgentWindow(fresh) });
+        return true;
+    },
+    removeWindow: (id) => set((state) => {
+        const fallback = createDefaultWindow(Math.max(1, state.windows.length));
+        const windows = closeAgentWindowWithFallback(state.windows, id, () => fallback);
+        const wasActive = state.activeWindowId === id;
+        const nextActiveId = wasActive ? nextActiveIdAfterClose(state.windows, id, state.activeWindowId) : state.activeWindowId;
+        const resolved = windows.find((window) => window.id === nextActiveId) ?? windows[0];
+        return { windows, activeWindowId: resolved.id, ...projectAgentWindow(resolved) };
+    }),
+    selectWindow: (id) => set((state) => {
+        if (!state.windows.some((window) => window.id === id)) return {};
+        const windows = clearUnread(state.windows, id);
+        const resolved = windows.find((window) => window.id === id);
+        if (!resolved) return {};
+        return { windows, activeWindowId: id, ...projectAgentWindow(resolved) };
+    }),
+    renameWindow: (id, title) => set((state) => ({ windows: updateAgentWindow(state.windows, id, { title: title.trim() || defaultWindowTitle(1) }) })),
 }));

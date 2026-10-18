@@ -1432,6 +1432,13 @@ export default {
     agent: {
         queue: { title: "Task queue", refresh: "Refresh", loading: "Loading…", empty: "No tasks", current: "Current", statuses: { waitingInput: "Waiting for input", approval: "Approval needed", running: "Running", idle: "Idle", failed: "Failed" } },
         status: { failed: "Connection failed", connected: "Connected", connecting: "Connecting", disconnected: "Disconnected" },
+        window: {
+            defaultTitle: "Session {{index}}",
+            new: "New session",
+            close: "Close session",
+            closeConfirm: "This session is running. Closing it will interrupt the current turn. Close anyway?",
+            unread: "{{count}} unread",
+        },
         state: {
             ready: "Ready",
             connectionRequired: "Enter the Local URL and Connect token",
