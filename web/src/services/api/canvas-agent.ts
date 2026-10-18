@@ -123,6 +123,30 @@ export async function fetchAgentJson<T>(endpoint: string, token: string, path: s
     return data;
 }
 
+// G3: 产物墙。桥用 screencapture 截取画布窗口，落盘 ~/.canvasagents/wall，网页只做读取与手动触发。
+export type AgentWallItem = { file: string; url: string; nodeId?: string; tag?: string; bytes: number; createdAt: number };
+export type AgentWallResponse = { ok?: boolean; items?: AgentWallItem[] };
+export type AgentCaptureResponse = { ok?: boolean; code?: string; error?: string; file?: string; url?: string; bytes?: number };
+
+export function fetchAgentWall(endpoint: string, token: string) {
+    return fetchAgentJson<AgentWallResponse>(endpoint, token, "/agent/wall", { headers: repoAuthHeaders(token) });
+}
+
+export function requestAgentCapture(endpoint: string, token: string, body: { nodeId?: string; tag?: string; windowTitle?: string; force?: boolean }) {
+    return fetchAgentJson<AgentCaptureResponse>(endpoint, token, "/agent/capture", { method: "POST", headers: repoAuthHeaders(token, true), body: JSON.stringify(body) });
+}
+
+/** 画布侧自动沉淀：截图是旁路，失败不能影响 agent turn，所以静默吞错。 */
+export function requestAgentCaptureSilently(endpoint: string, token: string, body: { nodeId?: string; tag?: string; windowTitle?: string; force?: boolean }) {
+    if (!endpoint || !token) return;
+    void requestAgentCapture(endpoint, token, body).catch(() => undefined);
+}
+
+export function resolveAgentWallFileUrl(endpoint: string, token: string, file: string) {
+    const baseUrl = endpoint.trim().replace(/\/$/, "");
+    return baseUrl && token ? `${baseUrl}/agent/wall/${encodeURIComponent(file)}?token=${encodeURIComponent(token)}` : "";
+}
+
 // M5: code browser endpoints. The agent authenticates these with the x-canvas-agent-token
 // header (same token the terminal bridge uses); fetchAgentJson still appends the query token
 // so both auth styles keep working.

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { App, Button, Tooltip } from "antd";
 import dayjs from "dayjs";
-import { Bot, History, MessageSquare, PanelRightClose, PlugZap, Plus, Sparkles, Terminal } from "lucide-react";
+import { Bot, History, Images, MessageSquare, PanelRightClose, PlugZap, Plus, Sparkles, Terminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { APP_ID } from "@/constant/brand";
@@ -24,7 +24,7 @@ import { useAgentStore, type AgentAttachment, type AgentBootstrapStatus, type Ag
 import { type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import { referenceConnectionOps } from "@/lib/canvas/canvas-reference-links";
 import { isSiteTool, runSiteTool } from "@/lib/agent/agent-site-tools";
-import { acknowledgeCodexHistory, activateAgentClient, AgentApiError, discoverAgentConfig, fetchAgentJson, interruptCodexTurn, postCodexApproval, postState, postToolResult } from "@/services/api/canvas-agent";
+import { acknowledgeCodexHistory, activateAgentClient, AgentApiError, discoverAgentConfig, fetchAgentJson, interruptCodexTurn, postCodexApproval, postState, postToolResult, requestAgentCaptureSilently } from "@/services/api/canvas-agent";
 import { AgentChatTimeline, AgentTaskProgress, AgentUsageBar } from "./agent-chat";
 import { AgentChatComposer } from "./agent-chat-composer";
 import { AgentConnectView } from "./agent-connect-view";
@@ -70,6 +70,7 @@ import { AgentLogView } from "./agent-log-view";
 import { AgentPanelTabs } from "./agent-panel-tabs";
 import { AgentWindowTabs } from "./agent-window-tabs";
 import { AgentSkillsView } from "./agent-skills-view";
+import { AgentWallView } from "./agent-wall-view";
 
 const MAX_ATTACHMENTS = 6;
 const MAX_ATTACHMENT_PAYLOAD_BYTES = 28 * 1024 * 1024;
@@ -1292,6 +1293,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                     const links = referenceConnectionOps(turnReferenceNodeIdsRef.current, newNodeIds, context.snapshot.nodes.map((node) => node.id));
                     const result = context.applyOps([...ops, ...links]);
                     void postState(endpoint, token, clientIdRef.current, result);
+                    requestAgentCaptureSilently(endpoint, token, { nodeId: newNodeIds[0], tag: "generate" });
                 }
                 addEventLog(rt("importGeneratedImages"), rt(context ? "addedToSourceCanvas" : "imageGenerated"));
             }
@@ -1358,6 +1360,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                     { value: "history", label: t("agent.panel.history"), icon: <History className="size-3.5" />, count: threads.length },
                     { value: "skills", label: t("agent.panel.skills"), icon: <Sparkles className="size-3.5" />, count: skillCount },
                     { value: "log", label: t("agent.panel.logs"), icon: <Terminal className="size-3.5" />, count: eventLogs.length },
+                    { value: "wall", label: t("agent.panel.wall"), icon: <Images className="size-3.5" /> },
                 ]}
                 onChange={(activeTab) => {
                     setAgentState({ activeTab });
@@ -1406,6 +1409,8 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                     onResumeThread={(threadId) => void resumeThread(threadId)}
                     onDeleteThreads={confirmDeleteThreads}
                 />
+            ) : activeTab === "wall" ? (
+                <AgentWallView theme={theme} endpoint={endpoint} token={token} connected={connected} />
             ) : activeTab === "log" ? (
                 <AgentLogView
                     logs={eventLogs}

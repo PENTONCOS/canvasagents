@@ -3,7 +3,7 @@
 // auto-refreshes the frame after code edits, and feeds a real screen capture back to the
 // agent panel. URL/interval live in node metadata (metadata.preview), mirroring how M2
 // stores terminalSession.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Camera, ExternalLink, Globe, Hand, Move, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -12,6 +12,7 @@ import i18n from "@/i18n";
 import { registerNodeDefinitions } from "@/lib/canvas/node-registry";
 import { randomId } from "@/lib/utils";
 import { useAgentStore, type AgentAttachment } from "@/stores/use-agent-store";
+import { requestAgentCaptureSilently } from "@/services/api/canvas-agent";
 import type { CanvasNodeData } from "@/types/canvas";
 import type { CanvasNodeContext, CanvasNodeDefinition } from "@/types/canvas-plugin";
 
@@ -89,6 +90,8 @@ function PreviewView({ ctx }: { ctx: CanvasNodeContext }) {
     const [status, setStatus] = useState<ProbeStatus>("unknown");
     const [busy, setBusy] = useState(false);
     const [notice, setNotice] = useState("");
+    // G3: 只在 dev server 由不可达转可达（= 部署/重启成功）时沉淀一张产物截图。
+    const previousStatusRef = useRef<ProbeStatus>("unknown");
     // The interaction toggle gates iframe pointer events; the toolbar and URL field stay usable.
     const interactive = Boolean(ctx.node.metadata?.interactive);
 
@@ -111,9 +114,19 @@ function PreviewView({ ctx }: { ctx: CanvasNodeContext }) {
             const timeout = window.setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
             try {
                 await probeDevServer(url, controller.signal);
-                if (!disposed) setStatus("reachable");
+                if (!disposed) {
+                    setStatus("reachable");
+                    if (previousStatusRef.current === "unreachable") {
+                        const { url: endpoint, token } = useAgentStore.getState();
+                        requestAgentCaptureSilently(endpoint, token, { tag: "preview" });
+                    }
+                    previousStatusRef.current = "reachable";
+                }
             } catch {
-                if (!disposed) setStatus("unreachable");
+                if (!disposed) {
+                    setStatus("unreachable");
+                    previousStatusRef.current = "unreachable";
+                }
             } finally {
                 window.clearTimeout(timeout);
             }

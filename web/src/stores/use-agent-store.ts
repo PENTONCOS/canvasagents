@@ -54,7 +54,7 @@ export type AgentConversationState = {
     sourceClientId?: string;
     error?: string;
 };
-export type AgentPanelTab = "chat" | "setup" | "history" | "skills" | "log";
+export type AgentPanelTab = "chat" | "setup" | "history" | "skills" | "log" | "wall";
 
 /**
  * 「一条会话一份」的字段：这些字段的读写都会落到当前激活的会话窗上，
