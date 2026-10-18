@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { App, Button, Tooltip } from "antd";
+import { App, Button, Segmented, Tooltip } from "antd";
 import dayjs from "dayjs";
 import { Bot, History, Images, MessageSquare, PanelRightClose, PlugZap, Plus, Sparkles, Terminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -71,6 +71,7 @@ import { AgentPanelTabs } from "./agent-panel-tabs";
 import { AgentWindowTabs } from "./agent-window-tabs";
 import { AgentSkillsView } from "./agent-skills-view";
 import { AgentWallView } from "./agent-wall-view";
+import { EmbeddedTerminal } from "./embedded-terminal";
 
 const MAX_ATTACHMENTS = 6;
 const MAX_ATTACHMENT_PAYLOAD_BYTES = 28 * 1024 * 1024;
@@ -139,7 +140,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     // canvasContext is intentionally excluded because project updates it every frame during dragging and resizing.
     // The panel uses it only for ref synchronization and debounced postState calls, never during rendering.
     // Subscribing here would rerender the panel every frame and amplify the #185 crash, so it is observed imperatively below.
-    const { width, url, token, connected, enabled, prompt, attachments, sending, waiting, tokenUsage, eventLogs, threads, activeThreadId, workspacePath, loadingThreads, activeTab, confirmTools, permissionMode, models, model, reasoningEffort, activity, conversation, connectError, pendingTool, pendingApprovals } = useAgentStore(
+    const { width, url, token, connected, enabled, prompt, attachments, sending, waiting, tokenUsage, eventLogs, threads, activeThreadId, workspacePath, loadingThreads, activeTab, confirmTools, permissionMode, models, model, reasoningEffort, activity, conversation, connectError, pendingTool, pendingApprovals, cliMode, cliSession, activeWindowId } = useAgentStore(
         useShallow((state) => ({
             width: state.width,
             url: state.url,
@@ -167,6 +168,9 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             connectError: state.connectError,
             pendingTool: state.pendingTool,
             pendingApprovals: state.pendingApprovals,
+            cliMode: state.cliMode,
+            cliSession: state.cliSession,
+            activeWindowId: state.activeWindowId,
         })),
     );
     const setAgentState = useAgentStore((state) => state.setAgentState);
@@ -1368,6 +1372,16 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 }}
                 right={
                     <>
+                        <Segmented
+                            size="small"
+                            value={cliMode ? "cli" : "gui"}
+                            aria-label={t("agent.panel.viewMode")}
+                            onChange={(value) => setAgentState({ cliMode: value === "cli" })}
+                            options={[
+                                { label: t("agent.panel.gui"), value: "gui" },
+                                { label: t("agent.panel.cli"), value: "cli" },
+                            ]}
+                        />
                         <Tooltip title={t("agent.history.newThread")} placement="bottom">
                             <Button size="small" type="text" className="!h-8 !w-8 !min-w-8 !px-0 @min-[560px]:!w-auto @min-[560px]:!min-w-0 @min-[560px]:!px-[7px]" aria-label={t("agent.history.newThread")} disabled={!connected || loadingThreads || sending || waiting || conversationBusy} icon={<Plus className="size-3.5" />} onClick={startNewThread}>
                                 <span className="hidden @min-[560px]:inline">{t("agent.history.newThread")}</span>
@@ -1380,7 +1394,9 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 }
             />
 
-            {activeTab === "setup" ? (
+            {cliMode ? (
+                <EmbeddedTerminal agentUrl={endpoint} agentToken={token} canvasId={`agent-panel-${activeWindowId}`} session={cliSession} onSession={(id) => setAgentState({ cliSession: id })} />
+            ) : activeTab === "setup" ? (
                 <AgentConnectView
                     theme={theme}
                     url={url}

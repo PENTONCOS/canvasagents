@@ -1575,6 +1575,9 @@ export default {
             mcpInitializing: "MCP 初始化中，完成后即可发送",
             initFailed: "Codex 对话初始化失败，请新建或恢复对话",
             placeholder: "询问 Codex，输入 / 使用技能，@ 引用画布素材",
+            gui: "GUI",
+            cli: "CLI",
+            viewMode: "切换 CLI / GUI 形态",
         },
         chat: { latestMessages: "查看最新消息", latestCall: "最新调用", input: "输入", cached: "缓存", output: "输出" },
         wall: {

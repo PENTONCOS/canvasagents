@@ -79,6 +79,8 @@ export const AGENT_WINDOW_FIELDS = [
     "activity",
     "sending",
     "waiting",
+    "cliMode",
+    "cliSession",
 ] as const;
 export type AgentWindowField = (typeof AGENT_WINDOW_FIELDS)[number];
 
@@ -138,6 +140,8 @@ type AgentStore = {
     connectError: string;
     pendingTool: AgentPendingToolCall | null;
     pendingApprovals: AgentPendingApproval[];
+    cliMode: boolean;
+    cliSession: string;
     queueOpen: boolean;
     windows: AgentWindow[];
     activeWindowId: string;

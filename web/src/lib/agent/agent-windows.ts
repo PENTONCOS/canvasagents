@@ -35,6 +35,10 @@ export type AgentWindow = {
     activity: string;
     sending: boolean;
     waiting: boolean;
+    /** G-CLI：该会话窗的呈现形态；true = 内嵌终端（CLI），false = 对话（GUI）。 */
+    cliMode: boolean;
+    /** CLI 形态复用的终端会话 id（持久化后可跨刷新/切模式续上同一 shell）。 */
+    cliSession: string;
 };
 
 export function emptyAgentConversation(): AgentConversationState {
@@ -64,6 +68,8 @@ export function createAgentWindow(patch: Partial<AgentWindow> & { id: string; ti
         activity: "",
         sending: false,
         waiting: false,
+        cliMode: false,
+        cliSession: "",
         ...patch,
     };
 }

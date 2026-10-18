@@ -1655,6 +1655,9 @@ export default {
             mcpInitializing: "MCP is initializing. You can send messages when it is ready.",
             initFailed: "Codex conversation initialization failed. Start or resume a conversation.",
             placeholder: "Ask Codex, type / for Skills, or @ to reference canvas assets",
+            gui: "GUI",
+            cli: "CLI",
+            viewMode: "Switch between CLI and GUI view",
         },
         chat: { latestMessages: "View latest messages", latestCall: "Latest call", input: "Input", cached: "Cached", output: "Output" },
         wall: {
