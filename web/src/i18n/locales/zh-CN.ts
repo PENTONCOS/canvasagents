@@ -723,6 +723,7 @@ export default {
             zoomOut: "缩小",
             zoomIn: "放大",
             uploadImage: "上传图片",
+    locate: "引用画布节点",
             replaceVideo: "替换视频",
             uploadVideo: "上传视频",
             replaceAudio: "替换音频",

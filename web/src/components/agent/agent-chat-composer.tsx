@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Button, Dropdown, Tooltip } from "antd";
 import { ArrowUp, Check, ChevronUp, Cpu, Gauge, Hand, ImagePlus, LoaderCircle, RefreshCw, ShieldAlert, ShieldCheck, ShieldOff, Square, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -6,6 +6,8 @@ import { useTranslation } from "react-i18next";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useAgentStore, type AgentModel, type AgentPermissionMode, type AgentReasoningEffort } from "@/stores/use-agent-store";
+import { buildCanvasResourceReferences, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import { Crosshair } from "lucide-react";
 import type { AgentChatAttachment } from "./agent-chat-message";
 import { AgentChatPromptInput } from "./agent-chat-prompt-input";
 
@@ -57,6 +59,17 @@ export function AgentChatComposer({
     const { t } = useTranslation();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const canvasReferences = useAgentStore((state) => state.canvasReferences);
+    const canvasContext = useAgentStore((state) => state.canvasContext);
+    const [locateOpen, setLocateOpen] = useState(false);
+    const locateNodes = useMemo(
+        () => buildCanvasResourceReferences(canvasContext?.snapshot.nodes || []).filter((item, index, all) => all.findIndex((other) => other.nodeId === item.nodeId) === index),
+        [canvasContext],
+    );
+    const addLocateReference = (reference: CanvasResourceReference) => {
+        const current = useAgentStore.getState().canvasReferences;
+        if (!current.some((item) => item.nodeId === reference.nodeId)) useAgentStore.getState().setAgentState({ canvasReferences: [...current, reference] });
+        setLocateOpen(false);
+    };
     const canSubmit = !disabled && !sending && Boolean(prompt.trim() || attachments.length || canvasReferences.length);
     return (
         <div className="px-2 pb-2 pt-2" onWheelCapture={(event) => event.stopPropagation()}>
@@ -89,6 +102,19 @@ export function AgentChatComposer({
                                 </Tooltip>
                             </>
                         ) : null}
+                        {locateNodes.length? (
+                            <Dropdown open={locateOpen} onOpenChange={setLocateOpen} trigger={["click"]} menu={{
+                                items: locateNodes.slice(0, 30).map((item) => ({ key: item.nodeId, icon: <Crosshair className="size-3.5 opacity-60" />, label: item.title || item.label })),
+                                onClick: ({ key }) => {
+                                    const reference = locateNodes.find((item) => item.nodeId === key);
+                                    if (reference) addLocateReference(reference);
+                                },
+                            }}>
+                                <Tooltip title={t("agent.composer.locate")} placement="top">
+                                    <Button type="text" size="small" aria-label={t("agent.composer.locate")} icon={<Crosshair className="size-3.5" />} />
+                                </Tooltip>
+                            </Dropdown>
+                        ): null}
                         {onConfirmToolsChange ? <ToolConfirmationMenu confirmTools={Boolean(confirmTools)} theme={theme} onChange={onConfirmToolsChange} /> : null}
                         {permissionMode && onPermissionModeChange ? <PermissionModeMenu permissionMode={permissionMode} theme={theme} onChange={onPermissionModeChange} /> : null}
                         {models?.length && model && reasoningEffort && onModelChange && onReasoningEffortChange ? <AgentModelControls models={models} model={model} reasoningEffort={reasoningEffort} onModelChange={onModelChange} onReasoningEffortChange={onReasoningEffortChange} /> : null}

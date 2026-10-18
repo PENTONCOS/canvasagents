@@ -752,6 +752,7 @@ export default {
             zoomOut: "Smaller",
             zoomIn: "Larger",
             uploadImage: "Upload image",
+    locate: "Reference canvas node",
             replaceVideo: "Replace video",
             uploadVideo: "Upload video",
             replaceAudio: "Replace audio",
