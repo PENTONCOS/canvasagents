@@ -391,7 +391,7 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
         session.acknowledgeCodexHistory(threadId, turnIds);
         res.json({ ok: true });
     });
-    app.post("/agent/codex/threads/:threadId/resume", codexMutation(async (req, res) => {
+    app.post("/agent/codex/threads/:threadId/resume", codexThreadMutation((req: Request) => routeParam(req.params.threadId), async (req: Request, res: Response) => {
         const threadId = routeParam(req.params.threadId);
         const clientId = String(req.body?.clientId || "");
         try {
@@ -410,7 +410,7 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
         const nextWorkspace = setActiveThread(workspace.activeThreadId === threadId ? "" : workspace.activeThreadId || "", { sourceClientId: String(req.body?.clientId || "") });
         res.json({ ok: true, workspace: nextWorkspace, conversation: session.conversationStateSnapshot });
     }));
-    app.post("/agent/codex/turn", codexMutation(async (req, res) => {
+    app.post("/agent/codex/turn", codexThreadMutation((req: Request) => String(req.body?.threadId || ""), async (req: Request, res: Response) => {
         const attachments = Array.isArray(req.body?.attachments) ? (req.body.attachments as AgentAttachment[]) : [];
         const canvasAttachments = Array.isArray(req.body?.canvasAttachments) ? (req.body.canvasAttachments as AgentAttachment[]) : [];
         const imageChannelReady = req.body?.imageChannelReady !== false;
@@ -526,15 +526,19 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
     }));
 
     /** 将 Codex 写操作串行化，避免多窗口在异步请求期间交叉修改会话。 */
-    function codexMutation(handler: (req: Request, res: Response) => unknown | Promise<unknown>) {
+    function codexMutation(handler: (req: Request, res: Response) => unknown | Promise<unknown>, threadIdOf?: (req: Request) => string) {
         return route(async (req, res) => {
-            if (!session.beginCodexMutation()) return res.status(409).json({ ok: false, code: "CONVERSATION_BUSY", error: "Codex 正在运行或正在切换会话，请稍后重试", state: session.conversationStateSnapshot });
+            if (!session.beginCodexMutation(threadIdOf?.(req) || undefined)) return res.status(409).json({ ok: false, code: "CONVERSATION_BUSY", error: "Codex 正在运行或正在切换会话，请稍后重试", state: session.conversationStateSnapshot });
             try {
                 return await handler(req, res);
             } finally {
                 session.endCodexMutation();
             }
         });
+    }
+    /** 同 codexMutation，但先按请求线程判锁，供 turn / resume 等按线程并行的端点使用。 */
+    function codexThreadMutation(threadIdOf: (req: Request) => string, handler: (req: Request, res: Response) => unknown | Promise<unknown>) {
+        return codexMutation(handler, threadIdOf);
     }
     app.post("/agent/codex/approval", route(async (req, res) => {
         const decision = String(req.body?.decision || "");
