@@ -51,7 +51,8 @@ export class CodexSkillLookupError extends Error {
     }
 }
 
-let codexQueue: Promise<unknown> = Promise.resolve();
+const codexQueues = new Map<string, Promise<unknown>>();
+let codexGlobalQueue: Promise<unknown> = Promise.resolve();
 let codexApp: CodexAppClient | null = null;
 let codexAppStart: Promise<CodexAppClient> | null = null;
 /** 仅表示最近主动加载/选择的线程；运行中的 turn 身份由 CodexAppClient 自己维护。 */
@@ -59,17 +60,37 @@ let loadedThreadId = "";
 
 export { summarizeCodexThread } from "./codex-history.js";
 
-/** 将 Codex turn 加入串行队列并等待执行完成。 */
-export async function runCodexTurn(prompt: string, lifecycleEmit: AgentEmit, attachments: AgentAttachment[] = [], options: CodexRunOptions = {}) {
-    if (!prompt.trim()) return;
-    codexQueue = codexQueue.catch(() => undefined).then(() => runCodexTurnNow(prompt, lifecycleEmit, attachments, options));
-    await codexQueue;
+/** 取指定线程的串行队列；不同线程互不阻塞。 */
+function threadQueue(threadId: string): Promise<unknown> {
+    return codexQueues.get(threadId) || codexGlobalQueue;
 }
 
-/** 从当前对话或指定网页画布生成可编辑草稿，不写入 Skill 文件。 */
+function setThreadQueue(threadId: string, queued: Promise<unknown>) {
+    codexQueues.set(threadId, queued);
+    void queued.catch(() => undefined).then(() => {
+        if (codexQueues.get(threadId) === queued) codexQueues.delete(threadId);
+    });
+}
+
+/** 将 Codex turn 加入线程级串行队列并等待执行完成；不同线程可并行。 */
+export async function runCodexTurn(prompt: string, lifecycleEmit: AgentEmit, attachments: AgentAttachment[] = [], options: CodexRunOptions = {}) {
+    if (!prompt.trim()) return;
+    const threadId = options.threadId || "";
+    if (!threadId) {
+        // 无线程上下文的调用保持全局串行，行为与旧版一致。
+        codexGlobalQueue = codexGlobalQueue.catch(() => undefined).then(() => runCodexTurnNow(prompt, lifecycleEmit, attachments, options));
+        await codexGlobalQueue;
+        return;
+    }
+    const queued = threadQueue(threadId).catch(() => undefined).then(() => runCodexTurnNow(prompt, lifecycleEmit, attachments, options));
+    setThreadQueue(threadId, queued);
+    await queued;
+}
+
+/** 从当前对话或指定网页画布生成可编辑草稿，不写入 Skill 文件（走全局队列，避免与任意线程任务争抢 app-server）。 */
 export async function generateCodexSkillDraft(emit: AgentEmit, cwd: string, input: CodexSkillDraftInput): Promise<AgentSkillDraft> {
-    const queued = codexQueue.catch(() => undefined).then(() => generateCodexSkillDraftNow(emit, cwd, input));
-    codexQueue = queued;
+    const queued = codexGlobalQueue.catch(() => undefined).then(() => generateCodexSkillDraftNow(emit, cwd, input));
+    codexGlobalQueue = queued.catch(() => undefined);
     return await queued;
 }
 

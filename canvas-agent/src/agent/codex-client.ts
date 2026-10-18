@@ -34,9 +34,9 @@ export class CodexReportedError extends Error {
 export class CodexAppClient {
     private nextId = 1;
     private buffer = "";
-    private currentThreadId = "";
-    private currentTurnId = "";
-    private pendingTurnStart?: PendingTurnStart;
+    private lastThreadId = "";
+    private lastTurnIdByThread = new Map<string, string>();
+    private pendingTurnStarts = new Map<string, PendingTurnStart>();
     private startedTurnKeys = new Set<string>();
     private textByItem = new Map<string, string>();
     private reasoningTextByItem = new Map<string, Map<number, string>>();
@@ -220,17 +220,17 @@ export class CodexAppClient {
     /** 启动一个 Codex turn 并等待完成通知。 */
     async startTurn(threadId: string, prompt: string, images: string[], permissionMode: AgentPermissionMode, model?: string, effort?: CodexReasoningEffort, onTurn?: (turnId: string) => void, skill?: CodexSkillSelector, messageText?: string, outputSchema?: JsonRecord) {
         this.preheatingThreadIds.delete(threadId);
-        this.currentThreadId = threadId;
-        this.currentTurnId = "";
+        this.lastThreadId = threadId;
+        this.lastTurnIdByThread.delete(threadId);
         this.lastUsage = null;
         const pendingStart: PendingTurnStart = { threadId, prompt, messageText, onTurn };
-        this.pendingTurnStart = pendingStart;
+        this.pendingTurnStarts.set(threadId, pendingStart);
         try {
             const { turn } = await this.request("turn/start", { threadId, input: codexInput(prompt, images, skill), ...(outputSchema ? skillDraftTurnSettings() : turnSettings(permissionMode)), ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(outputSchema ? { outputSchema } : {}) }, Boolean(outputSchema));
             const turnId = turn.id;
             if (!turnId) throw new Error("Codex app-server 没有返回 turn id");
             pendingStart.turnId = turnId;
-            this.currentTurnId = turnId;
+            this.lastTurnIdByThread.set(threadId, turnId);
             this.notifyTurnStarted(threadId, turnId, pendingStart);
             const turnKey = turnCacheKey(threadId, turnId);
             const completed = this.completedTurns.get(turnKey);
@@ -238,17 +238,16 @@ export class CodexAppClient {
                 this.completedTurns.delete(turnKey);
                 const result = this.completedTurnResults.get(turnKey);
                 this.completedTurnResults.delete(turnKey);
-                this.currentThreadId = "";
-                this.currentTurnId = "";
+                this.clearTurnPointers(threadId, turnId);
                 if (completed) throw completed;
                 return result;
             }
             return await new Promise((resolve, reject) => this.activeTurns.set(turnKey, { resolve, reject, threadId, turnId, prompt, messageText }));
         } catch (error) {
-            if (!this.currentTurnId) this.currentThreadId = "";
+            if (!this.lastTurnIdByThread.get(threadId)) this.clearTurnPointers(threadId, "");
             throw error;
         } finally {
-            if (this.pendingTurnStart === pendingStart) this.pendingTurnStart = undefined;
+            if (this.pendingTurnStarts.get(threadId) === pendingStart) this.pendingTurnStarts.delete(threadId);
             if (pendingStart.turnId) this.startedTurnKeys.delete(turnCacheKey(threadId, pendingStart.turnId));
         }
     }
@@ -264,9 +263,9 @@ export class CodexAppClient {
 
     /** 中断当前正在运行且属于指定线程的 Codex turn。 */
     async interruptCurrentTurn(requestedThreadId?: string) {
-        const threadId = this.currentThreadId;
-        const turnId = this.currentTurnId;
-        if (!threadId || !turnId || (requestedThreadId && requestedThreadId !== threadId)) return false;
+        const threadId = requestedThreadId || this.lastThreadId;
+        const turnId = this.lastTurnIdByThread.get(threadId) || "";
+        if (!threadId || !turnId) return false;
         try {
             logger.warn("Interrupting active Codex turn", { threadId, turnId });
             await this.request("turn/interrupt", { threadId, turnId });
@@ -380,7 +379,7 @@ export class CodexAppClient {
         }
         if (method === "mcpServer/startupStatus/updated") {
             const value = params as unknown as CodexNotificationParams<"mcpServer/startupStatus/updated">;
-            const threadId = value.threadId || this.currentThreadId;
+            const threadId = value.threadId || this.lastThreadId;
             this.emit("agent_bootstrap", {
                 type: "mcp.startup",
                 phase: this.pendingPreheatThreadStarts > 0 || this.preheatingThreadIds.has(threadId) ? "preheat" : "runtime",
@@ -394,11 +393,11 @@ export class CodexAppClient {
         }
         const turnEvent = method.startsWith("turn/") || method.startsWith("item/") || method === "thread/tokenUsage/updated" || method === "error";
         if (turnEvent) {
-            const threadId = String(field(params, "threadId") || this.currentThreadId);
-            const turnId = String(field(params, "turnId") || field(field(params, "turn"), "id") || this.currentTurnId);
+            const threadId = String(field(params, "threadId") || this.lastThreadId);
+            const turnId = String(field(params, "turnId") || field(field(params, "turn"), "id") || this.lastTurnIdByThread.get(threadId) || "");
             if (method === "turn/started") {
-                this.currentThreadId = threadId;
-                this.currentTurnId = turnId;
+                this.lastThreadId = threadId;
+                this.lastTurnIdByThread.set(threadId, turnId);
                 this.notifyTurnStarted(threadId, turnId);
             }
             params = { ...params, ...(threadId ? { threadId } : {}), ...(turnId ? { turnId } : {}) };
@@ -427,8 +426,8 @@ export class CodexAppClient {
         if (event.type === "item.started" || event.type === "item.completed") {
             const item = field(event, "item") as JsonRecord | undefined;
             const id = String(field(item, "id") || "");
-            const threadId = String(field(event, "thread_id") || this.currentThreadId);
-            const turnId = String(field(event, "turn_id") || this.currentTurnId);
+            const threadId = String(field(event, "thread_id") || this.lastThreadId);
+            const turnId = String(field(event, "turn_id") || this.lastTurnIdByThread.get(threadId) || "");
             const key = itemCacheKey({ threadId, turnId, itemId: id });
             if (id && threadId && turnId && event.type === "item.started") {
                 this.assignItemSequence(threadId, turnId, id);
@@ -443,14 +442,15 @@ export class CodexAppClient {
         if (event.type === "item.completed") {
             const item = field(event, "item") as JsonRecord | undefined;
             const id = String(field(item, "id") || "");
-            const key = itemCacheKey({ threadId: String(field(event, "thread_id") || this.currentThreadId), turnId: String(field(event, "turn_id") || this.currentTurnId), itemId: id });
+            const eventThreadId = String(field(event, "thread_id") || this.lastThreadId);
+            const key = itemCacheKey({ threadId: eventThreadId, turnId: String(field(event, "turn_id") || this.lastTurnIdByThread.get(eventThreadId) || ""), itemId: id });
             this.flushDelta(key);
             const streamedText = this.textByItem.get(key);
             if ((item?.type === "agent_message" || item?.type === "plan") && streamedText && !String(item.text || "").trim()) item.text = streamedText;
             if (item?.type === "reasoning" && streamedText && !readableCodexText(field(item, "summary"))) item.summary = streamedText;
             if (item?.type === "command_execution" && streamedText && !String(item.aggregatedOutput || "").trim()) item.aggregatedOutput = streamedText;
-            const threadId = String(field(event, "thread_id") || this.currentThreadId);
-            const turnId = String(field(event, "turn_id") || this.currentTurnId);
+            const threadId = String(field(event, "thread_id") || this.lastThreadId);
+            const turnId = String(field(event, "turn_id") || this.lastTurnIdByThread.get(threadId) || "");
             if (id && threadId && turnId && item && supplementalItemTypes.has(String(item.type || ""))) {
                 const sequence = this.assignItemSequence(threadId, turnId, id);
                 void this.eventHistory.record({ threadId, turnId, itemId: id, sequence, item }).catch((error) => logger.warn("Failed to persist Codex event history", { threadId, turnId, itemId: id, error }));
@@ -469,7 +469,8 @@ export class CodexAppClient {
             const plan = this.plansByTurn.get(planKey);
             if (plan) this.plansByTurn.set(planKey, { ...plan, turnStatus: String(field(turn, "status") || "completed") });
             if (threadId && turnId) {
-                const pendingStart = this.pendingTurnStart?.threadId === threadId && (!this.pendingTurnStart.turnId || this.pendingTurnStart.turnId === turnId) ? this.pendingTurnStart : undefined;
+                const pendingStartCandidate = this.pendingTurnStarts.get(threadId);
+                const pendingStart = pendingStartCandidate && (!pendingStartCandidate.turnId || pendingStartCandidate.turnId === turnId) ? pendingStartCandidate : undefined;
                 const turnRecord = {
                     ...(turn && typeof turn === "object" && !Array.isArray(turn) ? turn as JsonRecord : { id: turnId, status: field(turn, "status") || "completed" }),
                     ...(pendingStart?.prompt ? { input: pendingStart.prompt } : {}),
@@ -507,12 +508,12 @@ export class CodexAppClient {
             return true;
         }
         if (!(method === "error" || method.startsWith("turn/") || method.startsWith("item/") || method === "thread/tokenUsage/updated")) return false;
-        const threadId = String(field(params, "threadId") || this.currentThreadId);
+        const threadId = String(field(params, "threadId") || this.lastThreadId);
         if (!threadId || !this.silentThreadIds.has(threadId)) return false;
-        const turnId = String(field(params, "turnId") || field(field(params, "turn"), "id") || this.currentTurnId);
+        const turnId = String(field(params, "turnId") || field(field(params, "turn"), "id") || this.lastTurnIdByThread.get(threadId) || "");
         if (method === "turn/started") {
-            this.currentThreadId = threadId;
-            this.currentTurnId = turnId;
+            this.lastThreadId = threadId;
+            this.lastTurnIdByThread.set(threadId, turnId);
             this.notifyTurnStarted(threadId, turnId);
             return true;
         }
@@ -552,10 +553,7 @@ export class CodexAppClient {
             this.completedTurns.set(turnKey, failure);
             this.completedTurnResults.set(turnKey, result);
         }
-        if (completedTurnId === this.currentTurnId) {
-            this.currentThreadId = "";
-            this.currentTurnId = "";
-        }
+        if (completedTurnId === this.lastTurnIdByThread.get(threadId)) this.clearTurnPointers(threadId, completedTurnId);
         return true;
     }
 
@@ -569,7 +567,8 @@ export class CodexAppClient {
     private completeTurn(event: AgentEvent, params: JsonRecord, eventScope: ReturnType<typeof codexEventScope>) {
         const turn = (params as unknown as CodexNotificationParams<"turn/completed">).turn;
         const turnId = turn.id;
-        const turnKey = turnCacheKey(String(field(params, "threadId") || field(event, "thread_id") || ""), turnId);
+        const completedThreadId = String(field(params, "threadId") || field(event, "thread_id") || "");
+        const turnKey = turnCacheKey(completedThreadId, turnId);
         this.finalizingTurns.delete(turnKey);
         this.emit("agent_event", { agent: "codex", ...event });
         const pending = this.activeTurns.get(turnKey);
@@ -581,16 +580,20 @@ export class CodexAppClient {
         } else if (turnId) {
             this.completedTurns.set(turnKey, failure);
         }
-        if (turnId === this.currentTurnId) {
-            this.currentThreadId = "";
-            this.currentTurnId = "";
-        }
+        if (turnId === this.lastTurnIdByThread.get(completedThreadId)) this.clearTurnPointers(completedThreadId, turnId);
         this.emit("agent_done", { agent: "codex", usage: event.usage, ...eventScope });
+    }
+
+    /** 清掉属于某线程的最后指针（仅当仍指向给定 turn）。 */
+    private clearTurnPointers(threadId: string, turnId: string) {
+        if (this.lastThreadId === threadId && this.lastTurnIdByThread.get(threadId) === turnId) this.lastThreadId = "";
+        if (!turnId || this.lastTurnIdByThread.get(threadId) === turnId) this.lastTurnIdByThread.delete(threadId);
     }
 
     /** 合并并广播 Agent 文本或执行输出增量。 */
     private emitDelta(itemType: string, params: ItemDeltaParams) {
-        params = { ...params, threadId: params.threadId || this.currentThreadId, turnId: params.turnId || this.currentTurnId };
+        const deltaThreadId = params.threadId || this.lastThreadId;
+        params = { ...params, threadId: deltaThreadId, turnId: params.turnId || this.lastTurnIdByThread.get(deltaThreadId) || "" };
         const key = itemCacheKey(params);
         this.textByItem.set(key, itemType === "reasoning" ? this.appendReasoningText(key, params) : `${this.textByItem.get(key) || ""}${params.delta}`);
         const pending = this.pendingDeltas.get(key);
@@ -650,8 +653,8 @@ export class CodexAppClient {
     /** 在通知或 turn/start 响应到达时回调一次 turn 启动状态。 */
     private notifyTurnStarted(threadId: string, turnId: string, fallback?: PendingTurnStart) {
         if (!threadId || !turnId) return;
-        const pending = this.pendingTurnStart;
-        const registration = pending?.threadId === threadId && (!pending.turnId || pending.turnId === turnId) ? pending : fallback;
+        const pending = this.pendingTurnStarts.get(threadId);
+        const registration = pending && (!pending.turnId || pending.turnId === turnId) ? pending : fallback;
         if (registration && !registration.turnId) registration.turnId = turnId;
         const key = turnCacheKey(threadId, turnId);
         if (this.startedTurnKeys.has(key)) return;
@@ -664,7 +667,7 @@ export class CodexAppClient {
     private answerServerRequest(message: JsonRecord) {
         const method = String(message.method);
         const params = (field(message, "params") as JsonRecord) || {};
-        const threadId = String(field(params, "threadId") || this.currentThreadId);
+        const threadId = String(field(params, "threadId") || this.lastThreadId);
         if (this.silentThreadIds.has(threadId)) {
             const result = method === "item/permissions/requestApproval" ? { permissions: {}, scope: "turn" } : { decision: "decline" };
             this.write({ id: message.id, result });
@@ -704,11 +707,11 @@ export class CodexAppClient {
             if (this.silentThreadIds.has(threadId)) return;
             if (!this.finalizingTurns.has(key)) failedTurns.set(key, { threadId, turnId, prompt, messageText });
         });
-        const pendingStart = this.pendingTurnStart;
-        if (pendingStart?.turnId && !this.silentThreadIds.has(pendingStart.threadId)) {
+        this.pendingTurnStarts.forEach((pendingStart) => {
+            if (!pendingStart.turnId || this.silentThreadIds.has(pendingStart.threadId)) return;
             const key = turnCacheKey(pendingStart.threadId, pendingStart.turnId);
             if (!this.finalizingTurns.has(key) && !failedTurns.has(key)) failedTurns.set(key, { threadId: pendingStart.threadId, turnId: pendingStart.turnId, prompt: pendingStart.prompt, messageText: pendingStart.messageText });
-        }
+        });
         const finalizing = [...this.finalizingTurns.values()];
         const persistence = [...failedTurns.values()].map(({ threadId, turnId, prompt, messageText }) => {
             const turn = { id: turnId, status: "failed", error: { message }, ...(prompt ? { input: prompt } : {}), ...(messageText ? { messageText } : {}) };
@@ -730,11 +733,11 @@ export class CodexAppClient {
         this.pendingSilentThreadStarts.clear();
         this.pendingThreadStartedNotifications.length = 0;
         this.structuredOutputByTurn.clear();
-        this.pendingTurnStart = undefined;
+        this.pendingTurnStarts.clear();
         this.startedTurnKeys.clear();
         this.lastUsage = null;
-        this.currentThreadId = "";
-        this.currentTurnId = "";
+        this.lastThreadId = "";
+        this.lastTurnIdByThread.clear();
         void Promise.all([...finalizing, ...persistence]).then(() => {
             failedTurns.forEach(({ threadId, turnId, prompt, messageText }) => {
                 const turn = { id: turnId, status: "failed", error: { message }, ...(prompt ? { input: prompt } : {}), ...(messageText ? { messageText } : {}) };

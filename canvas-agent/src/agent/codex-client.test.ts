@@ -5,8 +5,8 @@ import { CodexAppClient } from "./codex-client.js";
 import { assertDraftHasNoSensitiveValues, canvasSkillSource } from "./codex.js";
 
 type TestClient = {
-    currentThreadId: string;
-    currentTurnId: string;
+    lastThreadId: string;
+    lastTurnIdByThread: Map<string, string>;
     skillDraftActive: boolean;
     completedTurns: Map<string, Error | null>;
     plansByTurn: Map<string, unknown>;
@@ -46,8 +46,8 @@ test("中断请求只作用于当前运行线程", async () => {
     const child = { stdin: { write: (line: string) => (writes.push(JSON.parse(line)), true) } };
     const client = Reflect.construct(CodexAppClient, [child, () => undefined, emptyEventHistory]) as CodexAppClient;
     const testClient = client as unknown as TestClient;
-    testClient.currentThreadId = "thread-1";
-    testClient.currentTurnId = "turn-1";
+    testClient.lastThreadId = "thread-1";
+    testClient.lastTurnIdByThread.set("thread-1", "turn-1");
 
     assert.equal(await client.interruptCurrentTurn("thread-2"), false);
     assert.equal(writes.length, 0);
@@ -58,8 +58,8 @@ test("中断请求只作用于当前运行线程", async () => {
     testClient.handle({ id: request.id, result: {} });
     assert.equal(await interrupt, true);
 
-    testClient.currentThreadId = "draft-thread";
-    testClient.currentTurnId = "draft-turn";
+    testClient.lastThreadId = "draft-thread";
+    testClient.lastTurnIdByThread.set("draft-thread", "draft-turn");
     const draftInterrupt = client.interruptCurrentTurn();
     const draftRequest = writes.at(-1);
     assert.deepEqual(draftRequest?.params, { threadId: "draft-thread", turnId: "draft-turn" });

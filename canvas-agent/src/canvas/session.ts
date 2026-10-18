@@ -53,6 +53,8 @@ export class CanvasSession {
     private boundClientId = "";
     private focusSequence = 0;
     private codexState: CodexState = { busy: false, threadId: "", turnId: "" };
+    /** 按线程记帐的运行中 turn；单线程行为与旧版 codexState.busy 一致。 */
+    private busyThreads = new Map<string, { turnId: string; sourceClientId: string }>();
     private conversationState: ConversationState;
     private conversationInventoryComplete = false;
     private preparedConversationThreadId = "";
@@ -82,9 +84,14 @@ export class CanvasSession {
         return { ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, hasCanvas: Boolean(this.canvasState), clients: this.clients.size, codexBusy: this.codexState.busy, conversation: this.conversationStateSnapshot };
     }
 
-    /** 返回 Codex 是否正在执行任务。 */
+    /** 返回 Codex 是否正在执行任务（任意线程）。 */
     get codexBusy() {
-        return this.codexState.busy;
+        return this.busyThreads.size > 0;
+    }
+
+    /** 指定线程是否有正在运行的 turn。 */
+    isThreadBusy(threadId: string) {
+        return this.busyThreads.has(threadId);
     }
 
     get codexThreadId() {
@@ -198,9 +205,10 @@ export class CanvasSession {
         return this.clients.has(clientId) ? this.canvasStates.get(clientId) || null : null;
     }
 
-    /** 原子取得 Codex 写操作权限，避免多个网页并发切换或修改会话。 */
-    beginCodexMutation() {
-        if (this.codexState.busy || this.codexMutationBusy) return false;
+    /** 原子取得 Codex 写操作权限，避免多个网页并发切换或修改会话。传入 threadId 时只阻塞该线程。 */
+    beginCodexMutation(threadId?: string) {
+        if (this.codexMutationBusy) return false;
+        if (threadId ? this.busyThreads.has(threadId) : this.busyThreads.size > 0) return false;
         this.codexMutationBusy = true;
         return true;
     }
@@ -212,10 +220,11 @@ export class CanvasSession {
 
     /** 返回当前 Codex turn 的线程、turn 和发起网页。 */
     get codexEventScope() {
+        const busy = this.codexState.busy && this.busyThreads.has(this.codexState.threadId);
         return {
             threadId: this.codexState.threadId,
-            turnId: this.codexState.busy ? this.codexState.turnId : "",
-            sourceClientId: this.codexState.busy ? this.boundClientId : "",
+            turnId: busy ? this.codexState.turnId : "",
+            sourceClientId: busy ? this.busyThreads.get(this.codexState.threadId)?.sourceClientId || this.boundClientId : "",
         };
     }
 
@@ -235,6 +244,9 @@ export class CanvasSession {
     /** 更新并广播 Codex 运行状态；静默后台活动可保留上一 turn 的断线重放。 */
     setCodexState(patch: Partial<CodexState>, options: { preserveReplay?: boolean } = {}) {
         const next = { ...this.codexState, ...patch };
+        // 线程级运行记帐：busy 置位/清除都归属于 patch 里的 threadId。
+        if (patch.busy === true && next.threadId) this.busyThreads.set(next.threadId, { turnId: next.turnId, sourceClientId: this.boundClientId });
+        if (patch.busy === false && next.threadId) this.busyThreads.delete(next.threadId);
         const threadChanged = next.threadId !== this.codexState.threadId;
         const turnChanged = Boolean(this.codexState.turnId && next.turnId && next.turnId !== this.codexState.turnId);
         const nextTurnStarted = !this.codexState.busy && next.busy;
@@ -395,8 +407,10 @@ export class CanvasSession {
         const data: Record<string, unknown> = { ...payload, threadId };
         const replayKey = codexReplayKey(type, data);
         const eventTurnId = String(data.turnId || data.turn_id || "");
-        const currentScope = threadId === this.codexState.threadId && (!this.codexState.turnId || !eventTurnId || eventTurnId === this.codexState.turnId);
-        if (this.codexState.busy && currentScope && replayKey) {
+        const busyEntry = this.busyThreads.get(threadId);
+        const lastActiveScope = threadId === this.codexState.threadId && (!this.codexState.turnId || !eventTurnId || eventTurnId === this.codexState.turnId);
+        const threadScope = Boolean(busyEntry && (!eventTurnId || !busyEntry.turnId || busyEntry.turnId === eventTurnId));
+        if ((this.codexState.busy && lastActiveScope || threadScope) && replayKey) {
             const item = recordValue(data.item);
             const eventType = String(data.type || "");
             if (type === "agent_event" && item.id && (eventType === "item.started" || eventType === "item.updated")) this.codexReplayActiveItems.add(replayKey);
