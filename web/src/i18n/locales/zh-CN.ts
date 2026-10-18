@@ -1637,6 +1637,8 @@ export default {
             commandsRunning: "正在执行 {{count}} 条命令",
             commandRunning: "正在执行命令",
             commandsCompleted: "已执行 {{count}} 条命令{{failed}}",
+    toolGroup: "{{count}} 项操作",
+    toolGroupFailed: "{{count}} 项操作（{{failed}} 项失败）",
             commandsFailed: " · {{count}} 条失败",
             failed: "执行失败",
             running: "进行中",

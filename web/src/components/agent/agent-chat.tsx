@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { motion, useSpring, useTransform } from "motion/react";
 import { useTranslation } from "react-i18next";
 
@@ -80,7 +81,7 @@ export function AgentChatTimeline({
             <div ref={listRef} className="thin-scrollbar h-full select-text overflow-y-auto" onScroll={updateScrollState}>
                 <div ref={contentRef} className="space-y-4 px-4 pt-4">
                     {timeline.map((entry) => entry.type === "commands"
-                        ? <AgentCommandGroupRow key={entry.id} items={entry.items} theme={theme} />
+                        ? <AgentCommandGroupRow key={entry.id} items={entry.items} theme={theme} />: entry.type === "tools"? <AgentToolGroupRow key={entry.id} items={entry.items} theme={theme} />
                         : <AgentChatMessageRow key={entry.item.id} item={entry.item} theme={theme} />)}
                     {pendingTool ? (
                         <AgentPendingToolCard
@@ -123,6 +124,22 @@ const AgentChatMessageRow = memo(function AgentChatMessageRow({ item, theme }: {
     );
 });
 
+const AgentToolGroupRow = memo(function AgentToolGroupRow({ items, theme }: { items: AgentChatItem[]; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
+    const { t } = useTranslation();
+    const failed = items.filter((item) => item.role === "error").length;
+    return (
+        <details className="group min-w-0" style={historyMessageStyle}>
+            <summary className="flex w-full cursor-pointer list-none items-center gap-1.5 py-1 text-left text-xs" style={{ color: theme.node.muted }}>
+                <ChevronRight className="size-3.5 shrink-0 transition-transform group-open:rotate-90" />
+                {failed? t("agent.message.toolGroupFailed", { count: items.length, failed }): t("agent.message.toolGroup", { count: items.length })}
+            </summary>
+            <div className="flex flex-col gap-1.5">
+                {items.map((item) => <AgentChatMessageRow key={item.id} item={item} theme={theme} />)}
+            </div>
+        </details>
+    );
+});
+
 const AgentCommandGroupRow = memo(function AgentCommandGroupRow({ items, theme }: { items: AgentChatItem[]; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
     return (
         <div style={items.some((item) => item.streamId) ? undefined : historyMessageStyle}>
@@ -131,7 +148,7 @@ const AgentCommandGroupRow = memo(function AgentCommandGroupRow({ items, theme }
     );
 });
 
-type AgentTimelineEntry = { type: "message"; item: AgentChatItem } | { type: "commands"; id: string; items: AgentChatItem[] };
+type AgentTimelineEntry = { type: "message"; item: AgentChatItem } | { type: "commands"; id: string; items: AgentChatItem[] } | { type: "tools"; id: string; items: AgentChatItem[] };
 
 function groupTimelineMessages(messages: AgentChatItem[]) {
     const timeline: AgentTimelineEntry[] = [];
@@ -143,20 +160,41 @@ function groupTimelineMessages(messages: AgentChatItem[]) {
         commands = [];
         commandScope = "";
     };
+    let tools: AgentChatItem[] = [];
+    const flushTools = () => {
+        if (!tools.length) return;
+        if (tools.length === 1) timeline.push({ type: "message", item: tools[0] });
+        else timeline.push({ type: "tools", id: `tools:${tools[0].id}`, items: tools });
+        tools = [];
+    };
     messages.forEach((item) => {
         if (isPlanMessage(item)) return;
         if (isCommandMessage(item)) {
-            const scope = item.threadId && item.turnId ? `${item.threadId}\0${item.turnId}` : item.id;
-            if (commands.length && scope !== commandScope) flushCommands();
+            flushTools();
+            const scope = item.threadId && item.turnId? `${item.threadId}\0${item.turnId}`: item.id;
+            if (commands.length && scope!== commandScope) flushCommands();
             commands.push(item);
             commandScope = scope;
             return;
         }
+        if (isGroupableToolMessage(item)) {
+            tools.push(item);
+            return;
+        }
         flushCommands();
+        flushTools();
         timeline.push({ type: "message", item });
     });
     flushCommands();
+    flushTools();
     return timeline;
+}
+
+function isGroupableToolMessage(item: AgentChatItem) {
+    if (item.role!== "tool" || item.streamId) return false;
+    const detail = item.detail as { kind?: unknown } | undefined;
+    const kind = typeof detail?.kind === "string"? detail.kind: "";
+    return kind!== "command" && kind!== "reasoning" && kind!== "plan";
 }
 
 function isCommandMessage(item: AgentChatItem) {

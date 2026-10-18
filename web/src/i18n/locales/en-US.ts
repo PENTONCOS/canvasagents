@@ -1717,6 +1717,8 @@ export default {
             commandsRunning: "Running {{count}} commands",
             commandRunning: "Running command",
             commandsCompleted: "Ran {{count}} commands{{failed}}",
+    toolGroup: "{{count}} tool operations",
+    toolGroupFailed: "{{count}} tool operations ({{failed}} failed)",
             commandsFailed: " · {{count}} failed",
             failed: "Failed",
             running: "In progress",
