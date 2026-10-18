@@ -731,6 +731,8 @@ export default {
             noPrompt: "No prompt to copy",
             infoTitle: "View node information",
             info: "Info",
+            renameTitle: "Rename node",
+            rename: "Rename",
             removeTitle: "Remove node",
             retryTitle: "Generate again",
             queryVideoTask: "Get task status",

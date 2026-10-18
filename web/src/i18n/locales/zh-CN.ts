@@ -702,6 +702,8 @@ export default {
             noPrompt: "暂无可复制的提示词",
             infoTitle: "查看节点信息",
             info: "信息",
+            renameTitle: "重命名节点",
+            rename: "重命名",
             removeTitle: "移除节点",
             retryTitle: "重新生成",
             queryVideoTask: "获取任务状态",
