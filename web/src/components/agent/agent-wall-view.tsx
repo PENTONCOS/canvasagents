@@ -44,7 +44,8 @@ export function AgentWallView({ theme, endpoint, token, connected }: { theme: (t
             } else if (response.code === "SCREEN_PERMISSION") {
                 message.warning(t("agent.wall.needPermission"));
             } else if (response.code === "WINDOW_NOT_FOUND") {
-                message.warning(t("agent.wall.noWindow"));
+                // 桥会带出「当前可见的浏览器窗口标题」，直接透出便于用户判断是标题漂了还是画布没开。
+                message.warning(response.error ? `${t("agent.wall.noWindow")}\n${response.error}` : t("agent.wall.noWindow"));
             } else if (response.code === "HELPER_UNAVAILABLE") {
                 message.warning(t("agent.wall.noHelper"));
             } else {
