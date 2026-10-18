@@ -768,6 +768,10 @@ export default {
             groupTitle: "Wrap selected nodes in a group",
             ungroup: "Ungroup",
             ungroupTitle: "Remove grouping from selected nodes",
+    followTitle: "Make this node follow an agent window",
+    follow: "Follow window",
+    unfollowTitle: "Stop following the agent window",
+    unfollow: "Unfollow",
         },
         configNode: {
             title: "Generation config",

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { App, Modal, Segmented, Tooltip } from "antd";
-import { Download, Ellipsis, FolderPlus, Image as ImageIcon, Info, MessageSquare, Minus, Music2, Pencil, Plus, RefreshCw, Settings2, Trash2, Ungroup, Upload, Video } from "lucide-react";
+import { App, Modal, Popover, Segmented, Tooltip } from "antd";
+import { Download, Ellipsis, FolderPlus, Image as ImageIcon, Info, Link2, MessageSquare, Minus, Music2, Pencil, Plus, RefreshCw, Settings2, Trash2, Ungroup, Unlink, Upload, Video } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -40,6 +40,10 @@ type CanvasNodeHoverToolbarProps = {
     onToggleFreeResize: (node: CanvasNodeData) => void;
     onDelete: (node: CanvasNodeData) => void;
     onUngroup?: (node: CanvasNodeData) => void;
+    followWindowId?: string;
+    followOptions: { id: string; index: number; title: string }[];
+    onFollow: (node: CanvasNodeData, windowId: string) => void;
+    onUnfollow: (node: CanvasNodeData) => void;
     extraTools?: CanvasNodeToolbarItem[];
 };
 
@@ -80,6 +84,10 @@ export function CanvasNodeHoverToolbar({
     onToggleFreeResize,
     onDelete,
     onUngroup,
+    followWindowId,
+    followOptions,
+    onFollow,
+    onUnfollow,
     extraTools = [],
 }: CanvasNodeHoverToolbarProps) {
     const [quickImageToolIds, setQuickImageToolIds] = useState<ImageQuickToolId[]>(defaultImageQuickToolIds);
@@ -275,6 +283,31 @@ export function CanvasNodeHoverToolbar({
                     />
                 ) : (
                     <>
+                        {followWindowId && node ? (
+                            <ToolbarAction id="unfollowWindow" title={t("canvas.nodeToolbar.unfollowTitle")} label={t("canvas.nodeToolbar.unfollow")} icon={<Unlink className="size-4" />} onClick={() => onUnfollow(node)} showLabel={isImage ? showImageToolLabels : true} />
+                        ) : node && followOptions.length ? (
+                            <Popover
+                                trigger="click"
+                                placement="bottom"
+                                content={
+                                    <div className="flex max-h-64 min-w-44 flex-col overflow-y-auto">
+                                        {followOptions.map((option) => (
+                                            <button
+                                                key={option.id}
+                                                type="button"
+                                                className="flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-black/5 dark:hover:bg-white/10"
+                                                onClick={() => onFollow(node, option.id)}
+                                            >
+                                                <span className="font-mono text-[10px] opacity-60">{option.index}</span>
+                                                <span className="truncate">{option.title}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                }
+                            >
+                                <ToolbarAction id="followWindow" title={t("canvas.nodeToolbar.followTitle")} label={t("canvas.nodeToolbar.follow")} icon={<Link2 className="size-4" />} onClick={() => {}} showLabel={isImage ? showImageToolLabels : true} />
+                            </Popover>
+                        ) : null}
                         {toolbarTools.map((tool) => (
                             <ToolbarAction key={tool.id} {...tool} showLabel={isImage ? showImageToolLabels : true} />
                         ))}

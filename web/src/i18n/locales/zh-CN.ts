@@ -739,6 +739,10 @@ export default {
             groupTitle: "用组节点包住选中节点",
             ungroup: "解散组",
             ungroupTitle: "取消节点分组",
+    followTitle: "让这个节点跟随某个会话窗",
+    follow: "跟随会话",
+    unfollowTitle: "解除会话跟随",
+    unfollow: "解除跟随",
         },
         configNode: {
             title: "生成配置",

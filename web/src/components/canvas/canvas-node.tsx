@@ -22,6 +22,7 @@ const selectionBlue = "#2f80ff";
 
 type CanvasNodeProps = {
     data: CanvasNodeData;
+    followIndex?: number;
     scale: number;
     isSelected: boolean;
     isRelated: boolean;
@@ -104,6 +105,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     groupChildCount = 0,
     isGroupDropTarget = false,
     batchExpanded = false,
+    followIndex = 0,
     onMouseDown,
     onSelectCapture,
     onHoverStart,
@@ -300,7 +302,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     return (
         <div
             data-node-id={data.id}
-            className={`node-element group/node absolute flex select-none flex-col transition-shadow duration-200 ${isGroup ? "z-[5]" : isSelected ? "z-50" : "z-10"} ${referenceSelectionState === "available" ? "cursor-pointer" : referenceSelectionState ? "cursor-not-allowed" : ""}`}
+            className={`node-element group/node absolute flex select-none flex-col transition-shadow duration-200 ${followIndex > 0 ? "ring-2 ring-violet-500/80" : ""} ${isGroup ? "z-[5]" : isSelected ? "z-50" : "z-10"} ${referenceSelectionState === "available" ? "cursor-pointer" : referenceSelectionState ? "cursor-not-allowed" : ""}`}
             style={{
                 transform: `translate(${data.position.x}px, ${data.position.y}px)`,
                 width: data.width,
@@ -407,6 +409,9 @@ export const CanvasNode = React.memo(function CanvasNode({
                 }}
             >
                 {!isGroup ? <CanvasNodeStageBadge stage={data.metadata?.stage} /> : null}
+                {followIndex > 0 ? (
+                    <span className="pointer-events-none absolute -top-2 -left-2 z-20 flex h-5 min-w-5 items-center justify-center rounded-full bg-violet-500 px-1 font-mono text-[10px] font-semibold text-white shadow">{followIndex}</span>
+                ) : null}
                 <div
                     className={`relative flex h-full w-full items-center justify-center rounded-[inherit] ${isBatchRoot ? "overflow-visible" : "overflow-hidden"}`}
                     style={

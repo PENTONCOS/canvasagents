@@ -149,6 +149,7 @@ export type CanvasNodeMetadata = {
     repo?: CanvasNodeRepoMetadata; // M6: repo node binding (name/branch/dirty/last commit)
     service?: CanvasNodeServiceMetadata; // M6: service node binding (port/health path/status)
     terminalSession?: string; // M2: bound canvas-agent terminal session id
+    followWindowId?: string; // M2: agent window this node follows (badge + accent outline; cleared when the window closes)
     preview?: { url?: string; autoRefreshMs?: number }; // M4: web preview node iframe target + auto refresh interval (ms, 0 = off)
     code?: CanvasNodeCodeMetadata; // M5: code browser repo binding + tree/file/diff view state
     regions?: CanvasNodeRegionsMetadata; // M7: image structure layer (parsed regions + edits)

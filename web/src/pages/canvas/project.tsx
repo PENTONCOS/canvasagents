@@ -54,6 +54,7 @@ import { CanvasJournalPanel } from "@/components/canvas/canvas-journal-panel";
 import { CanvasTimelinePanel } from "@/components/canvas/canvas-timeline-panel";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { useAgentStore, type AgentChatItem } from "@/stores/use-agent-store";
+import { followWindow as followWindowNodes, pruneFollowBindings, unfollowWindow as unfollowWindowNodes } from "@/lib/canvas/node-follow-window";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import type { CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
@@ -238,6 +239,7 @@ function InfiniteCanvasPage() {
     const localAgentEnabled = useAgentStore((state) => state.enabled);
     const fragmentBootstrap = useAgentStore((state) => state.fragmentBootstrap);
     const agentPanelOpen = useAgentStore((state) => state.panelOpen);
+ const agentWindows = useAgentStore((state) => state.windows);
     const toggleAgentPanel = useAgentStore((state) => state.togglePanel);
     const openAgentPanel = useAgentStore((state) => state.openPanel);
     const pendingNodeType = useCommandStore((state) => state.pendingNodeType);
@@ -293,6 +295,14 @@ function InfiniteCanvasPage() {
     const currentProject = useCanvasStore((state) => state.projects.find((project) => project.id === projectId));
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const [nodes, setNodes] = useState<CanvasNodeData[]>([]);
+ // M2: agent window 集合变化时，清掉指向已关窗的悬空跟随绑定
+ useEffect(() => {
+     const valid = new Set(agentWindows.map((w) => w.id));
+     setNodes((prev) => {
+         const next = pruneFollowBindings(prev, valid);
+         return next === prev ? prev : next;
+     });
+ }, [agentWindows]);
     const [connections, setConnections] = useState<CanvasConnection[]>([]);
     const [chatSessions, setChatSessions] = useState<CanvasAssistantSession[]>([]);
     const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -3537,6 +3547,7 @@ function InfiniteCanvasPage() {
                         <CanvasNode
                             key={node.id}
                             data={node}
+                            followIndex={node.metadata?.followWindowId ? agentWindows.findIndex((w) => w.id === node.metadata?.followWindowId) + 1 : 0}
                             scale={viewport.k}
                             isSelected={selectedNodeIds.has(node.id)}
                             isRelated={relatedHighlight.nodeIds.has(node.id)}
@@ -3678,6 +3689,10 @@ function InfiniteCanvasPage() {
                     onToggleFreeResize={(node) => toggleNodeFreeResize(node.id)}
                     onDelete={(node) => deleteNodes(new Set([node.id]))}
                     onUngroup={(node) => ungroupSelection(new Set([node.id]))}
+                    followWindowId={toolbarNode?.metadata?.followWindowId}
+                    followOptions={agentWindows.map((win, index) => ({ id: win.id, index: index + 1, title: win.title }))}
+                    onFollow={(node, windowId) => setNodes((prev) => followWindowNodes(prev, node.id, windowId))}
+                    onUnfollow={(node) => setNodes((prev) => unfollowWindowNodes(prev, node.id))}
                 />
 
                 {hasMultipleSelectedNodes && !selectionBox ? (
