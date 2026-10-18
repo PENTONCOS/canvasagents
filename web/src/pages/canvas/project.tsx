@@ -54,6 +54,7 @@ import { CanvasJournalPanel } from "@/components/canvas/canvas-journal-panel";
 import { CanvasTimelinePanel } from "@/components/canvas/canvas-timeline-panel";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { useAgentStore, type AgentChatItem } from "@/stores/use-agent-store";
+import { buildCanvasResourceReferences } from "@/lib/canvas/canvas-resource-references";
 import { followWindow as followWindowNodes, pruneFollowBindings, unfollowWindow as unfollowWindowNodes } from "@/lib/canvas/node-follow-window";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import type { CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
@@ -3346,6 +3347,14 @@ function InfiniteCanvasPage() {
     const handleNodeHoverEnd = useCallback((nodeId: string) => {
         setHoveredNodeId((current) => (current === nodeId ? null : current));
     }, []);
+const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
+    const reference = buildCanvasResourceReferences([node])[0];
+    if (!reference) return;
+    const current = useAgentStore.getState().canvasReferences;
+    if (!current.some((item) => item.nodeId === reference.nodeId)) useAgentStore.getState().setAgentState({ canvasReferences: [...current, reference] });
+}, []);
+
+
     const handleNodeViewImage = useCallback((node: CanvasNodeData, imageId?: string) => {
         setPreviewNodeId(node.id);
         setPreviewImageId(imageId || null);
@@ -3684,6 +3693,7 @@ function InfiniteCanvasPage() {
                     onSuperResolve={(node) => setSuperResolveNodeId(node.id)}
                     onAngle={(node) => setAngleNodeId(node.id)}
                     onViewImage={handleNodeViewImage}
+                    onUseAsHd={handleNodeUseAsHd}
                     onReversePrompt={createImageReversePromptNodes}
                     onRetry={(node) => void handleRetryNode(node)}
                     onToggleFreeResize={(node) => toggleNodeFreeResize(node.id)}

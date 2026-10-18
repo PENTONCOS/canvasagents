@@ -35,6 +35,7 @@ type CanvasNodeHoverToolbarProps = {
     onSuperResolve: (node: CanvasNodeData) => void;
     onAngle: (node: CanvasNodeData) => void;
     onViewImage: (node: CanvasNodeData) => void;
+    onUseAsHd: (node: CanvasNodeData) => void;
     onReversePrompt: (node: CanvasNodeData) => void;
     onRetry: (node: CanvasNodeData) => void;
     onToggleFreeResize: (node: CanvasNodeData) => void;
@@ -79,6 +80,7 @@ export function CanvasNodeHoverToolbar({
     onSuperResolve,
     onAngle,
     onViewImage,
+    onUseAsHd,
     onReversePrompt,
     onRetry,
     onToggleFreeResize,
@@ -150,7 +152,7 @@ export function CanvasNodeHoverToolbar({
         }
         copyText(prompt, t("common.promptCopied"));
     };
-    const imageTools = buildImageToolbarTools(node, { onUpload, onToggleFreeResize, onMaskEdit, onPsEdit, onCrop, onSplit, onUpscale, onSuperResolve, onAngle, onViewImage, onCopyPrompt: copyImagePrompt, onReversePrompt });
+    const imageTools = buildImageToolbarTools(node, { onUpload, onToggleFreeResize, onMaskEdit, onPsEdit, onCrop, onSplit, onUpscale, onSuperResolve, onAngle, onViewImage, onUseAsHd, onCopyPrompt: copyImagePrompt, onReversePrompt });
 
     function openImageToolSettings() {
         onKeep(activeNode.id);

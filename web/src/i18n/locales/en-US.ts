@@ -720,6 +720,8 @@ export default {
             angle: "Multi-angle",
             angleTitle: "Generate another angle",
             view: "View image",
+            useAsHd: "Use as HD image",
+            useAsHdTitle: "Attach this image as an HD reference to the session",
             viewTitle: "View image details",
             more: "More",
             configure: "Configure quick tools",

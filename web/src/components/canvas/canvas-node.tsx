@@ -58,6 +58,7 @@ type CanvasNodeProps = {
     onDeleteBatchImage?: (nodeId: string, imageId: string) => void;
     onRetry?: (node: CanvasNodeData) => void;
     onViewImage?: (node: CanvasNodeData, imageId?: string) => void;
+    onUseAsHd?: (node: CanvasNodeData) => void;
     onSelectReference?: (nodeId: string) => void;
     onContextMenu: (event: React.MouseEvent, nodeId: string) => void;
 };
@@ -124,6 +125,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     onDeleteBatchImage,
     onRetry,
     onViewImage,
+    onUseAsHd,
     onSelectReference,
     onContextMenu,
 }: CanvasNodeProps) {

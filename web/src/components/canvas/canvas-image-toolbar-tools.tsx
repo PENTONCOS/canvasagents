@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
-import { Brush, Camera, Copy, FileText, Grid2x2, Lock, LockOpen, Maximize2, Palette, Scissors, Sparkles, Upload, ZoomIn } from "lucide-react";
+import { Brush, Camera, Copy, FileText, Grid2x2, Lock, LockOpen, Maximize2, MonitorUp, Palette, Scissors, Sparkles, Upload, ZoomIn } from "lucide-react";
 
 import type { CanvasNodeData } from "@/types/canvas";
 import i18n from "@/i18n";
 
-export type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "maskEdit" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "view" | "psEdit";
+export type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "maskEdit" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "view" | "psEdit" | "useAsHd";
 export type ImageQuickToolId = "info" | "delete" | "saveAsset" | "download" | ImageNodeActionToolId;
 
 export type ImageToolHandlers = {
@@ -19,6 +19,7 @@ export type ImageToolHandlers = {
     onSuperResolve: (node: CanvasNodeData) => void;
     onAngle: (node: CanvasNodeData) => void;
     onViewImage: (node: CanvasNodeData) => void;
+    onUseAsHd: (node: CanvasNodeData) => void;
     onCopyPrompt: (node: CanvasNodeData) => void;
     onReversePrompt: (node: CanvasNodeData) => void;
 };
@@ -143,6 +144,14 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
         title: () => i18n.t("canvas.imageTools.viewTitle"),
         icon: () => <Maximize2 className="size-4" />,
         run: (node, handlers) => handlers.onViewImage(node),
+    },
+    {
+        id: "useAsHd",
+        defaultVisible: false,
+        label: () => i18n.t("canvas.imageTools.useAsHd"),
+        title: () => i18n.t("canvas.imageTools.useAsHdTitle"),
+        icon: () => <MonitorUp className="size-4" />,
+        run: (node, handlers) => handlers.onUseAsHd(node),
     },
 ];
 

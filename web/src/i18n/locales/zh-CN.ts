@@ -692,6 +692,8 @@ export default {
             angleTitle: "生成角度",
             view: "查看大图",
             viewTitle: "查看图片详情",
+            useAsHd: "作为高清图",
+            useAsHdTitle: "把这张图作为高清参考发给会话",
             more: "更多",
             configure: "配置快捷工具",
             customize: "自定义工具栏",
