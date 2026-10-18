@@ -17,7 +17,7 @@ import { checkVersions } from "../version-check.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
 import { IMAGE_PARSE_BODY_LIMIT, requestUpstream, resolveImageParseUrl, truncateUpstreamText } from "./image-parse.js";
 import { terminalManager } from "./terminal.js";
-import { captureWall, listWall, readWallFile } from "./capture.js";
+import { captureWall, listWall, listWindows, pickCaptureWindow, readWallFile } from "./capture.js";
 
 export type StartHttpServerOptions = { skipVersionCheck?: boolean };
 
@@ -256,8 +256,16 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
         res.json({ ok: true });
     }));
     app.post("/agent/capture", route(async (req, res) => {
-        const result = await captureWall({ nodeId: req.body?.nodeId, tag: req.body?.tag, windowTitle: req.body?.windowTitle, force: req.body?.force === true });
+        const result = await captureWall({ nodeId: req.body?.nodeId, tag: req.body?.tag, windowTitle: req.body?.windowTitle, requireTitle: req.body?.requireTitle, force: req.body?.force === true });
         res.status(result.ok ? 200 : 200).json(result);
+    }));
+    // 诊断用：列出候选窗口与最终选中项，方便确认「抓到的是不是画布那个窗」。
+    app.get("/agent/windows", route(async (req, res) => {
+        const title = String(req.query.title || "") || undefined;
+        const requireTitle = String(req.query.require || "") === "1";
+        const windows = await listWindows();
+        const picked = pickCaptureWindow(windows, { title, requireTitle });
+        res.json({ ok: true, strategy: picked.strategy, chosen: picked.window, candidates: picked.candidates.slice(0, 10) });
     }));
     app.get("/agent/wall", route(async (_req, res) => res.json({ ok: true, items: await listWall() })));
     app.get("/agent/wall/:file", route(async (req, res) => {
