@@ -58,6 +58,8 @@ export class CanvasSession {
     private conversationState: ConversationState;
     private conversationInventoryComplete = false;
     private preparedConversationThreadId = "";
+    /** 已完成预热、可直接接收 turn 的线程；多窗并发靠它放宽站点级 turn 守卫。 */
+    private readyThreadIds = new Set<string>();
 
     constructor(activeThreadId = "") {
         this.conversationState = {
@@ -161,6 +163,16 @@ export class CanvasSession {
             status: hasPending ? "preparing" : requiredFailure ? "failed" : hasFailure ? "warning" : "ready",
             error: requiredFailure ? `CanvasAgents MCP 初始化失败${requiredFailureDetail ? `：${requiredFailureDetail}` : ""}` : undefined,
         });
+    }
+
+    /** 指定线程是否已就绪且没有正在运行的 turn（多窗并发 turn 的守卫）。 */
+    isThreadReadyForTurn(threadId: string) {
+        return Boolean(threadId) && this.readyThreadIds.has(threadId) && !this.busyThreads.has(threadId);
+    }
+
+    /** 标记指定线程已就绪（resume 或预热完成后调用）。 */
+    markThreadReady(threadId: string) {
+        if (threadId) this.readyThreadIds.add(threadId);
     }
 
     /** 将创建线程或读取 MCP 清单的失败保存为不可发送状态。 */

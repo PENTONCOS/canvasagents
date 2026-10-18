@@ -76,6 +76,7 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
                 const threadId = String((thread as Record<string, unknown>).id || "");
                 if (threadId && !ensureSiteWorkspace(config).activeThreadId) {
                     session.completeConversationPreparation(threadId);
+                    session.markThreadReady(threadId);
                     setActiveThread(threadId, { emptyThread: true, draftThread: true, sourceClientId: clientId }, true);
                 }
                 return thread;
@@ -99,6 +100,7 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
         emit("agent_bootstrap", { type: "codex.preparing", threadId, sourceClientId: clientId || undefined });
         const result = await resumeCodexThread(emit, threadId, resolveCodexCwd({ repoId }), permission, true);
         session.completeConversationPreparation(threadId);
+        session.markThreadReady(threadId);
         return result;
     };
     const failPreparedConversation = (error: unknown, threadId: string, clientId = "") => {
@@ -422,10 +424,12 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
         const conversation = session.conversationStateSnapshot;
         const requestedConversationId = String(req.body?.conversationId || "");
         const expectedRevision = Number(req.body?.expectedRevision || 0);
-        if (requestedThreadId !== activeThreadId || conversation.threadId !== activeThreadId || (requestedConversationId && requestedConversationId !== conversation.conversationId) || (expectedRevision && expectedRevision !== conversation.revision)) {
+        const activeThreadTurn = requestedThreadId === activeThreadId && conversation.threadId === activeThreadId;
+        const backgroundThreadTurn = requestedThreadId !== activeThreadId && session.isThreadReadyForTurn(requestedThreadId);
+        if (!activeThreadTurn && !backgroundThreadTurn) {
             return res.status(409).json({ ok: false, code: "CONVERSATION_STALE", error: "当前会话已切换，已同步最新状态，请确认后重试", state: conversation });
         }
-        if (!activeThreadId || !["ready", "warning"].includes(conversation.status)) {
+        if (activeThreadTurn && (!activeThreadId || !["ready", "warning"].includes(conversation.status))) {
             return res.status(409).json({ ok: false, code: "CONVERSATION_NOT_READY", error: "Codex 对话仍在初始化，请等待 MCP 加载完成", state: conversation });
         }
         const model = String(req.body?.model || "") || undefined;
@@ -435,7 +439,7 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
         const messageId = String(req.body?.messageId || Date.now());
         const messageText = String(req.body?.messageText || prompt || `发送了 ${attachments.length} 张图片`);
         const messageMetadata = await messageMetadataStore.recordPending(messageId, req.body?.messageMetadata);
-        let threadId = activeThreadId;
+        let threadId = backgroundThreadTurn ? requestedThreadId : activeThreadId;
         logger.info("Codex turn accepted", { threadId: req.body?.threadId, model: model || "default", reasoningEffort: effort || "default", promptLength: prompt.length, attachmentCount: attachments.length });
         session.bindClient(clientId);
         session.markConversationRunning(threadId);
