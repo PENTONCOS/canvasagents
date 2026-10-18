@@ -1446,6 +1446,14 @@ export default {
             closeConfirm: "This session is running. Closing it will interrupt the current turn. Close anyway?",
             unread: "{{count}} unread",
         },
+        repo: {
+            badgeLabel: "Latest code",
+            badgeTooltip: "Latest code: {{name}}",
+            branch: "Branch {{branch}}",
+            clean: "Working tree clean",
+            dirty: "Uncommitted changes",
+            locateHint: "Click to locate the repo node",
+        },
         state: {
             ready: "Ready",
             connectionRequired: "Enter the Local URL and Connect token",

@@ -20,6 +20,8 @@ type AgentBridgeParams = {
     selectedNodeIdsRef: MutableRefObject<Set<string>>;
     viewportRef: MutableRefObject<ViewportTransform>;
     generateNodeRef: GenerateNodeRef;
+    // G8：面板头部徽标点击后跳到对应画布节点。页面持有真正的 focusNode，这里只透传。
+    focusNodeRef?: MutableRefObject<((nodeId: string) => void) | null>;
     setNodes: Dispatch<SetStateAction<CanvasNodeData[]>>;
     setConnections: Dispatch<SetStateAction<CanvasConnection[]>>;
     setSelectedNodeIds: Dispatch<SetStateAction<Set<string>>>;
@@ -49,6 +51,7 @@ export function useAgentBridge(params: AgentBridgeParams) {
         selectedNodeIdsRef,
         viewportRef,
         generateNodeRef,
+        focusNodeRef,
         setNodes,
         setConnections,
         setSelectedNodeIds,
@@ -121,9 +124,9 @@ export function useAgentBridge(params: AgentBridgeParams) {
     }, [agentUndoSnapshot, projectTitle, projectId]);
 
     useEffect(() => {
-        setAgentCanvasContext({ snapshot: agentSnapshot, applyOps: applyAgentOps, undoOps: undoAgentOps, canUndo: Boolean(agentUndoSnapshot) });
+        setAgentCanvasContext({ snapshot: agentSnapshot, applyOps: applyAgentOps, undoOps: undoAgentOps, canUndo: Boolean(agentUndoSnapshot), focusNode: (nodeId: string) => focusNodeRef?.current?.(nodeId) });
         return () => setAgentCanvasContext(null);
-    }, [agentSnapshot, applyAgentOps, agentUndoSnapshot, setAgentCanvasContext, undoAgentOps]);
+    }, [agentSnapshot, applyAgentOps, agentUndoSnapshot, setAgentCanvasContext, undoAgentOps, focusNodeRef]);
 
     return { applyAgentOps };
 }

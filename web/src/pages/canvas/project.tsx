@@ -369,6 +369,8 @@ function InfiniteCanvasPage() {
     const selectedNodeIdsRef = useRef(selectedNodeIds);
     const viewportRef = useRef(viewport);
     const focusAnimRef = useRef<number | null>(null);
+    // G8：暴露给 Agent 面板的「定位到节点」入口（面板头部徽标点击时用）。
+    const agentFocusNodeRef = useRef<((nodeId: string) => void) | null>(null);
     const generateNodeRef = useRef<((nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => Promise<void>) | null>(null);
     const connectingParamsRef = useRef(connectingParams);
     const connectionTargetNodeIdRef = useRef(connectionTargetNodeId);
@@ -992,6 +994,7 @@ function InfiniteCanvasPage() {
         selectedNodeIdsRef,
         viewportRef,
         generateNodeRef,
+        focusNodeRef: agentFocusNodeRef,
         setNodes,
         setConnections,
         setSelectedNodeIds,
@@ -1337,6 +1340,7 @@ function InfiniteCanvasPage() {
     const focusNodeRef = useRef(focusNode);
     useEffect(() => {
         focusNodeRef.current = focusNode;
+        agentFocusNodeRef.current = focusNode;
     }, [focusNode]);
 
     const focusSelectedNode = useCallback(() => {

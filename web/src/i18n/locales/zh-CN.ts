@@ -1381,6 +1381,14 @@ export default {
             closeConfirm: "该会话正在运行，关闭会中断当前这一轮。确定关闭？",
             unread: "{{count}} 条未读",
         },
+        repo: {
+            badgeLabel: "同步最新代码",
+            badgeTooltip: "同步最新代码：{{name}}",
+            branch: "分支 {{branch}}",
+            clean: "工作区干净",
+            dirty: "有未提交改动",
+            locateHint: "点击定位到仓库节点",
+        },
         state: { ready: "就绪", connectionRequired: "请填写 Local URL 和 Connect token", invalidUrl: "Local URL 格式不正确", offline: "离线", skillReadFailed: "读取 Skill 失败", skillParseFailed: "Skill 解析失败", requestFailed: "本地 Agent 请求失败" },
         siteTools: {
             canvasList: "画布列表",

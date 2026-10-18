@@ -69,6 +69,7 @@ import { AgentHistoryView } from "./agent-history-view";
 import { AgentLogView } from "./agent-log-view";
 import { AgentPanelTabs } from "./agent-panel-tabs";
 import { AgentWindowTabs } from "./agent-window-tabs";
+import { AgentRepoBadge } from "./agent-repo-badge";
 import { AgentSkillsView } from "./agent-skills-view";
 import { AgentWallView } from "./agent-wall-view";
 import { EmbeddedTerminal } from "./embedded-terminal";
@@ -1372,6 +1373,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 }}
                 right={
                     <>
+                        <AgentRepoBadge />
                         <Segmented
                             size="small"
                             value={cliMode ? "cli" : "gui"}
