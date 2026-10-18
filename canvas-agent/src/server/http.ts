@@ -17,6 +17,7 @@ import { checkVersions } from "../version-check.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
 import { IMAGE_PARSE_BODY_LIMIT, requestUpstream, resolveImageParseUrl, truncateUpstreamText } from "./image-parse.js";
 import { terminalManager } from "./terminal.js";
+import { captureWall, listWall, readWallFile } from "./capture.js";
 
 export type StartHttpServerOptions = { skipVersionCheck?: boolean };
 
@@ -253,6 +254,17 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
         const file = await stat(filePath);
         await revealLocalFile(filePath, file.isDirectory());
         res.json({ ok: true });
+    }));
+    app.post("/agent/capture", route(async (req, res) => {
+        const result = await captureWall({ nodeId: req.body?.nodeId, tag: req.body?.tag, windowTitle: req.body?.windowTitle, force: req.body?.force === true });
+        res.status(result.ok ? 200 : 200).json(result);
+    }));
+    app.get("/agent/wall", route(async (_req, res) => res.json({ ok: true, items: await listWall() })));
+    app.get("/agent/wall/:file", route(async (req, res) => {
+        const data = await readWallFile(routeParam(req.params.file));
+        if (!data) return void res.status(404).json({ ok: false, error: "产物图片不存在" });
+        res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
+        res.type("png").send(data);
     }));
     app.post("/agent/local-image", route(async (req, res) => {
         const filePath = String(req.body?.path || "");
