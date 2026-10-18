@@ -1,12 +1,13 @@
 import type { CSSProperties } from "react";
-import { Tooltip } from "antd";
-import { Keyboard, Puzzle, Settings2 } from "lucide-react";
+import { Dropdown, Tooltip } from "antd";
+import { Keyboard, Palette, Puzzle, Settings2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { VersionReleaseModal } from "@/components/layout/version-release-modal";
 import { changeAppLocale, type AppLocale } from "@/i18n";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { ACCENT_PRESETS, accentIdOf, accentValueOf } from "@/lib/theme-accent";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 
@@ -16,6 +17,29 @@ type UserStatusActionsProps = {
     onOpenShortcuts?: () => void;
     onOpenPlugins?: () => void;
 };
+
+function AccentPicker({ className, style }: { className: string; style?: CSSProperties }) {
+    const { t } = useTranslation();
+    const accent = useThemeStore((state) => state.accent);
+    const setAccent = useThemeStore((state) => state.setAccent);
+    const items = ACCENT_PRESETS.map((preset) => ({
+        key: preset.id,
+        label: (
+            <span className="inline-flex items-center gap-2">
+                <span className="size-3 shrink-0 rounded-full border border-black/15 dark:border-white/25" style={preset.value ? { background: preset.value } : { background: "linear-gradient(135deg,#fafaf9 50%,#1c1917 50%)" }} />
+                <span>{t(`topNav.accent.${preset.id}`)}</span>
+            </span>
+        ),
+    }));
+    const label = t("topNav.accent.label");
+    return (
+        <Dropdown menu={{ items, selectable: true, selectedKeys: [accentIdOf(accent)], onClick: ({ key }) => setAccent(accentValueOf(key)) }} trigger={["click"]} placement="bottomRight">
+            <button type="button" className={className} style={style} aria-label={label} title={label}>
+                <Palette className="size-4" />
+            </button>
+        </Dropdown>
+    );
+}
 
 export function UserStatusActions({ showConfig = true, variant = "default", onOpenShortcuts, onOpenPlugins }: UserStatusActionsProps) {
     const { i18n, t } = useTranslation();
@@ -47,6 +71,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                     {locale === "zh-CN" ? "中" : "EN"}
                 </button>
             </Tooltip>
+            <AccentPicker className={naturalIconClass} style={iconStyle} />
             <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={naturalIconClass} style={iconStyle} aria-label={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} title={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} />
             {/* The canvas toolbar keeps only icons — the version chip is page furniture there,
                 and the library page + settings dialog already expose it. */}

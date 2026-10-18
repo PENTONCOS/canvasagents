@@ -981,6 +981,7 @@ export default {
         settings: "设置",
     },
     topNav: {
+        accent: { label: "强调色", default: "跟随主题", violet: "紫罗兰", blue: "蓝", emerald: "翠绿", amber: "琥珀", rose: "玫红" },
         openMenu: "打开导航菜单",
         menu: "导航菜单",
         navigation: "导航",
@@ -1388,6 +1389,9 @@ export default {
             clean: "工作区干净",
             dirty: "有未提交改动",
             locateHint: "点击定位到仓库节点",
+        },
+        entry: {
+            open: "打开助手",
         },
         state: { ready: "就绪", connectionRequired: "请填写 Local URL 和 Connect token", invalidUrl: "Local URL 格式不正确", offline: "离线", skillReadFailed: "读取 Skill 失败", skillParseFailed: "Skill 解析失败", requestFailed: "本地 Agent 请求失败" },
         siteTools: {

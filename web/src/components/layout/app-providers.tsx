@@ -27,6 +27,7 @@ const queryClient = new QueryClient({
 export function AppProviders({ children }: { children: ReactNode }) {
     const { i18n, t } = useTranslation();
     const theme = useThemeStore((state) => state.theme);
+    const accent = useThemeStore((state) => state.accent);
     const dark = theme === "dark";
     const locale = i18n.resolvedLanguage as AppLocale;
 
@@ -34,6 +35,13 @@ export function AppProviders({ children }: { children: ReactNode }) {
         document.documentElement.classList.toggle("dark", dark);
         document.documentElement.style.colorScheme = theme;
     }, [dark, theme]);
+
+    // G9：强调色写进根上的 CSS 变量，画布侧用 var(--canvas-accent) 读（空串=跟主题默认）。
+    useEffect(() => {
+        const root = document.documentElement;
+        if (accent) root.style.setProperty("--canvas-accent", accent);
+        else root.style.removeProperty("--canvas-accent");
+    }, [accent]);
 
     useEffect(() => {
         document.documentElement.lang = locale;
@@ -43,7 +51,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
     }, [locale, t]);
 
     return (
-        <ConfigProvider locale={locale === "zh-CN" ? zhCN : enUS} theme={getAntThemeConfig(dark)}>
+        <ConfigProvider locale={locale === "zh-CN" ? zhCN : enUS} theme={getAntThemeConfig(dark, accent)}>
             <ProConfigProvider dark={dark}>
                 <App>
                     <QueryClientProvider client={queryClient}>

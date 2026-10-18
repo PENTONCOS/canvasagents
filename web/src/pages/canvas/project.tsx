@@ -101,6 +101,7 @@ import { registerBuiltinNodes } from "@/components/canvas/nodes/builtin-nodes";
 import { registerTerminalNode } from "@/components/canvas/nodes/terminal-node";
 import { registerPreviewNode } from "@/components/canvas/nodes/preview-node";
 import { registerCodeNode } from "@/components/canvas/nodes/code-node";
+import { CanvasAgentEntry } from "@/components/canvas/canvas-agent-entry";
 import { registerRepoNode } from "@/components/canvas/nodes/repo-node";
 import { registerServiceNode } from "@/components/canvas/nodes/service-node";
 import { registerImageRegionsNode } from "@/components/canvas/nodes/image-regions-node";
@@ -3871,6 +3872,7 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
                 </Modal>
 
                 <AssetPickerModal open={assetPickerOpen} onInsert={handleAssetInsert} onClose={() => setAssetPickerOpen(false)} />
+                <CanvasAgentEntry />
             </section>
         </main>
     );

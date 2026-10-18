@@ -30,18 +30,20 @@ const neutral = {
     },
 };
 
-export function getAntThemeConfig(dark: boolean): ThemeConfig {
+export function getAntThemeConfig(dark: boolean, accent?: string): ThemeConfig {
     const color = dark ? neutral.dark : neutral.light;
+    // G9：设了强调色就用它接管 antd 的主色系（按钮/开关/滑杆/选中态），否则沿用中性色。
+    const primary = accent || color.primary;
 
     return {
         algorithm: dark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
         cssVar: { key: dark ? `${APP_ID}-dark` : `${APP_ID}-light` },
         token: {
-            colorPrimary: color.primary,
-            colorInfo: color.primary,
-            colorLink: color.primary,
-            colorLinkHover: color.primaryHover,
-            colorLinkActive: color.primary,
+            colorPrimary: primary,
+            colorInfo: primary,
+            colorLink: primary,
+            colorLinkHover: accent ? primary : color.primaryHover,
+            colorLinkActive: primary,
             colorTextLightSolid: color.primaryText,
             colorBgElevated: color.elevatedBg,
             controlItemBgHover: color.itemHoverBg,

@@ -9,6 +9,9 @@ export type ThemeName = "light" | "dark";
 type ThemeStore = {
     theme: ThemeName;
     setTheme: (theme: ThemeName) => void;
+    /** G9：强调色（hex 字符串）；空串 = 跟随主题默认。 */
+    accent: string;
+    setAccent: (accent: string) => void;
 };
 
 export const useThemeStore = create<ThemeStore>()(
@@ -16,6 +19,8 @@ export const useThemeStore = create<ThemeStore>()(
         (set) => ({
             theme: "dark",
             setTheme: (theme) => set({ theme }),
+            accent: "",
+            setAccent: (accent) => set({ accent }),
         }),
         { name: `${APP_ID}:theme_store`, storage: createJSONStorage(() => createBrandStorage()) },
     ),

@@ -1034,6 +1034,7 @@ export default {
         settings: "Settings",
     },
     topNav: {
+        accent: { label: "Accent color", default: "Theme default", violet: "Violet", blue: "Blue", emerald: "Emerald", amber: "Amber", rose: "Rose" },
         openMenu: "Open navigation menu",
         menu: "Navigation menu",
         navigation: "Navigation",
@@ -1453,6 +1454,9 @@ export default {
             clean: "Working tree clean",
             dirty: "Uncommitted changes",
             locateHint: "Click to locate the repo node",
+        },
+        entry: {
+            open: "Open assistant",
         },
         state: {
             ready: "Ready",

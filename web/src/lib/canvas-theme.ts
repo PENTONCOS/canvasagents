@@ -3,6 +3,8 @@ export type CanvasBackgroundMode = "dots" | "lines" | "blank";
 
 export const canvasThemes = {
     light: {
+        // G9：强调色。默认回退到本主题的 activeStroke，设了 accent 时由 --canvas-accent 覆盖。
+        accent: "var(--canvas-accent, #1c1917)",
         canvas: {
             background: "#f4f2ed",
             dot: "rgba(68,64,60,.28)",
@@ -31,6 +33,7 @@ export const canvasThemes = {
         },
     },
     dark: {
+        accent: "var(--canvas-accent, #fafaf9)",
         canvas: {
             background: "#181715",
             dot: "rgba(245,245,244,.24)",
