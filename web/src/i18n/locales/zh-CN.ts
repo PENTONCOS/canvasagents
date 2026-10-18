@@ -519,6 +519,9 @@ export default {
             alignCenter: "居中",
             alignRight: "右对齐",
             selectedHint: "拖动可移动位置，边缘把手可调整大小",
+            nodeOpen: "识别元素",
+            nodeReparse: "重新识别",
+            nodeClose: "收起编辑",
             types: { title: "标题", subtitle: "副标题", body: "正文", button: "按钮", label: "标签", logo: "标志", image: "图片", unknown: "未知" },
         },
         editor: {

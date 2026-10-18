@@ -539,6 +539,9 @@ export default {
             alignCenter: "Center",
             alignRight: "Right",
             selectedHint: "Drag to move, use the edge handles to resize",
+            nodeOpen: "Detect elements",
+            nodeReparse: "Re-detect",
+            nodeClose: "Close editor",
             types: { title: "Title", subtitle: "Subtitle", body: "Body", button: "Button", label: "Label", logo: "Logo", image: "Image", unknown: "Unknown" },
         },
         editor: {

@@ -161,6 +161,24 @@ export function resizeRegionBbox(bbox: { x: number; y: number; w: number; h: num
     };
 }
 
+// object-contain mapping: given the container box an <img> is laid out in and the image's natural
+// pixel size, returns where the image is actually painted (centred, aspect preserved) plus the
+// scale factor. Lets an overlay sit on top of an <img className="object-contain"> it does not own,
+// so region boxes stay glued to the pixels when the node is resized.
+export type ImageContainRect = { scale: number; offsetX: number; offsetY: number; width: number; height: number };
+
+export function imageContainRect(container: RegionBounds, natural: RegionBounds): ImageContainRect {
+    const cw = Math.max(0, Number(container.width) || 0);
+    const ch = Math.max(0, Number(container.height) || 0);
+    const nw = Math.max(0, Number(natural.width) || 0);
+    const nh = Math.max(0, Number(natural.height) || 0);
+    if (!cw || !ch || !nw || !nh) return { scale: 1, offsetX: 0, offsetY: 0, width: nw, height: nh };
+    const scale = Math.min(cw / nw, ch / nh);
+    const width = nw * scale;
+    const height = nh * scale;
+    return { scale, offsetX: (cw - width) / 2, offsetY: (ch - height) / 2, width, height };
+}
+
 // Maps one region to its overlay style: the box geometry in image pixels plus the resolved text
 // font and kind color.
 export function regionStyle(region: CanvasImageRegion): CSSProperties {
