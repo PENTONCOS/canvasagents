@@ -126,18 +126,37 @@ export async function fetchAgentJson<T>(endpoint: string, token: string, path: s
 // G3: 产物墙。桥用 screencapture 截取画布窗口，落盘 ~/.canvasagents/wall，网页只做读取与手动触发。
 export type AgentWallItem = { file: string; url: string; nodeId?: string; tag?: string; bytes: number; createdAt: number };
 export type AgentWallResponse = { ok?: boolean; items?: AgentWallItem[] };
-export type AgentCaptureResponse = { ok?: boolean; code?: string; error?: string; file?: string; url?: string; bytes?: number };
+export type AgentCaptureResponse = { ok?: boolean; code?: string; error?: string; file?: string; url?: string; bytes?: number; windowId?: number; windowName?: string; strategy?: string };
+
+/**
+ * G3: 锁定截图窗口的标题标记。与 `app-providers` 写入的 document.title 一致，
+ * 桥端用它把「画布那个窗」和「随便一个浏览器窗」区分开。
+ */
+export const CANVAS_WINDOW_MARKER = "CanvasAgents";
+
+/** 优先用当前页真实标题（可能被页面改写），退回固定标记。 */
+function windowTitleHint() {
+    if (typeof document === "undefined") return CANVAS_WINDOW_MARKER;
+    return document.title.trim() || CANVAS_WINDOW_MARKER;
+}
 
 export function fetchAgentWall(endpoint: string, token: string) {
     return fetchAgentJson<AgentWallResponse>(endpoint, token, "/agent/wall", { headers: repoAuthHeaders(token) });
 }
 
-export function requestAgentCapture(endpoint: string, token: string, body: { nodeId?: string; tag?: string; windowTitle?: string; force?: boolean }) {
-    return fetchAgentJson<AgentCaptureResponse>(endpoint, token, "/agent/capture", { method: "POST", headers: repoAuthHeaders(token, true), body: JSON.stringify(body) });
+export type AgentCaptureRequest = { nodeId?: string; tag?: string; windowTitle?: string; requireTitle?: boolean; force?: boolean };
+
+/**
+ * 默认带上窗口标题标记并要求「标题必须命中」：宁可拒绝，也不截错窗口。
+ * 调用方显式传 windowTitle/requireTitle 可覆盖。
+ */
+export function requestAgentCapture(endpoint: string, token: string, body: AgentCaptureRequest) {
+    const payload: AgentCaptureRequest = { windowTitle: windowTitleHint(), requireTitle: true, ...body };
+    return fetchAgentJson<AgentCaptureResponse>(endpoint, token, "/agent/capture", { method: "POST", headers: repoAuthHeaders(token, true), body: JSON.stringify(payload) });
 }
 
 /** 画布侧自动沉淀：截图是旁路，失败不能影响 agent turn，所以静默吞错。 */
-export function requestAgentCaptureSilently(endpoint: string, token: string, body: { nodeId?: string; tag?: string; windowTitle?: string; force?: boolean }) {
+export function requestAgentCaptureSilently(endpoint: string, token: string, body: AgentCaptureRequest) {
     if (!endpoint || !token) return;
     void requestAgentCapture(endpoint, token, body).catch(() => undefined);
 }
