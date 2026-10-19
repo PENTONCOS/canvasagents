@@ -203,6 +203,8 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     const liveTurnKeysRef = useRef(new Set<string>());
     const threadOperationRef = useRef(0);
     const threadOperationSequenceRef = useRef(0);
+    // 已经为该会话窗准备过对话线程的窗口 id：用于「新建/切换会话窗时补一次准备」，避免重复 reset。
+    const preparedWindowRef = useRef("");
     const endpoint = useMemo(() => url.trim().replace(/\/$/, ""), [url]);
     const urlAgentAutoConnect = searchParams.has("agentUrl") && searchParams.has("agentToken");
     useEffect(() => {
@@ -416,6 +418,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             void postState(endpoint, token, clientId, canvasContextRef.current?.snapshot || null);
             if (document.visibilityState === "visible" && document.hasFocus()) void activateAgentClient(endpoint, token, clientId);
             if (!busy && !nextThreadId && (!hello?.conversation || hello.conversation.status === "idle")) {
+                preparedWindowRef.current = useAgentStore.getState().activeWindowId;
                 void fetchAgentJson<AgentWorkspaceResponse>(endpoint, token, "/agent/codex/threads/reset", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId, permissionMode }) })
                     .then((result) => result.conversation && applyConversationState(result.conversation))
                     .catch((error) => {
@@ -1061,6 +1064,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         }
     };
 
+
     const resumeThread = async (threadId: string) => {
         const current = useAgentStore.getState();
         if (!current.connected || !threadId || current.sending || current.waiting || current.loadingThreads || ["preparing", "running"].includes(current.conversation.status)) return;
@@ -1128,6 +1132,37 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         if (last?.title === title && last.text === value) return;
         pushEventLog({ id: `${Date.now()}-${Math.random()}`, time: dayjs().format("YYYY-MM-DD HH:mm:ss"), title, text: value, raw });
     };
+
+    // 新建/切换会话窗时补一次会话准备：新窗口的 activeThreadId 为空、conversation.status 永远
+    // 停在 idle，输入框会一直禁用（点 + 新建后根本发不出消息）。这里在窗口成为激活窗时补一次
+    // threads/reset，让它进入 preparing → ready。已有线程/已在准备的窗口不动。
+    useEffect(() => {
+        if (!connected || !activeWindowId) return;
+        const current = useAgentStore.getState();
+        const window = current.windows.find((item) => item.id === activeWindowId);
+        if (!window) return;
+        if (window.activeThreadId || ["preparing", "running", "ready", "warning"].includes(window.conversation.status)) {
+            preparedWindowRef.current = activeWindowId;
+            return;
+        }
+        if (preparedWindowRef.current === activeWindowId) return;
+        if (current.sending || current.waiting || current.loadingThreads || threadOperationRef.current) return;
+        preparedWindowRef.current = activeWindowId;
+        const operation = beginThreadOperation();
+        setAgentState({ activity: rt("creatingConversation") });
+        void fetchAgentJson<AgentWorkspaceResponse>(endpoint, token, "/agent/codex/threads/reset", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId: clientIdRef.current, permissionMode }) })
+            .then((result) => {
+                if (threadOperationRef.current !== operation) return;
+                if (result.conversation) applyConversationState(result.conversation);
+            })
+            .catch((error) => {
+                preparedWindowRef.current = "";
+                const state = agentErrorState(error);
+                if (state) applyConversationState(state);
+                addEventLog(rt("newConversationFailed"), error);
+            })
+            .finally(() => finishThreadOperation(operation));
+    }, [activeWindowId, connected, applyConversationState, addEventLog, endpoint, permissionMode, setAgentState, token]);
 
     const upsertActivityMessage = (item: AgentChatItem) => {
         setAgentState({ messages: upsertAgentMessage(useAgentStore.getState().messages, item) });
