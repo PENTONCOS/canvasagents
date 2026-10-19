@@ -7,6 +7,7 @@ import {
     AGENT_WINDOWS_STORAGE_KEY,
     AGENT_WINDOW_LIMIT,
     appendAgentWindow,
+    bumpUnread,
     clearUnread,
     closeAgentWindowWithFallback,
     createAgentWindow,
@@ -149,13 +150,13 @@ type AgentStore = {
     queueOpen: boolean;
     windows: AgentWindow[];
     activeWindowId: string;
-    setAgentState: (patch: Partial<Omit<AgentStore, "setAgentState" | "connectAgent" | "disconnectAgent" | "addMessage" | "addEventLog" | "clearEventLogs" | "openPanel" | "closePanel" | "togglePanel" | "setCanvasContext" | "windows" | "activeWindowId" | "addWindow" | "removeWindow" | "selectWindow" | "renameWindow">>) => void;
+    setAgentState: (patch: Partial<Omit<AgentStore, "noteWindowOutput" | "setAgentState" | "connectAgent" | "disconnectAgent" | "addMessage" | "addEventLog" | "clearEventLogs" | "openPanel" | "closePanel" | "togglePanel" | "setCanvasContext" | "windows" | "activeWindowId" | "addWindow" | "removeWindow" | "selectWindow" | "renameWindow">>) => void;
     openPanel: () => void;
     closePanel: () => void;
     togglePanel: () => void;
     setCanvasContext: (context: AgentCanvasContext | null) => void;
     connectAgent: (options?: { silent?: boolean }) => void;
-    disconnectAgent: (patch?: Partial<Omit<AgentStore, "setAgentState" | "connectAgent" | "disconnectAgent" | "addMessage" | "addEventLog" | "clearEventLogs" | "openPanel" | "closePanel" | "togglePanel" | "setCanvasContext" | "windows" | "activeWindowId" | "addWindow" | "removeWindow" | "selectWindow" | "renameWindow">>) => void;
+    disconnectAgent: (patch?: Partial<Omit<AgentStore, "noteWindowOutput" | "setAgentState" | "connectAgent" | "disconnectAgent" | "addMessage" | "addEventLog" | "clearEventLogs" | "openPanel" | "closePanel" | "togglePanel" | "setCanvasContext" | "windows" | "activeWindowId" | "addWindow" | "removeWindow" | "selectWindow" | "renameWindow">>) => void;
     addMessage: (item: AgentChatItem) => void;
     addEventLog: (item: AgentEventLog) => void;
     clearEventLogs: () => void;
@@ -163,12 +164,41 @@ type AgentStore = {
     removeWindow: (id: string) => void;
     selectWindow: (id: string) => void;
     renameWindow: (id: string, title: string) => void;
+    noteWindowOutput: (windowId: string) => void;
 };
 
 export const CANVAS_AGENT_PANEL_MOTION_MS = 500;
 
 function activeAgentWindow(state: Pick<AgentStore, "windows" | "activeWindowId">): AgentWindow | undefined {
     return state.windows.find((window) => window.id === state.activeWindowId) ?? state.windows[0];
+}
+
+/** 取指定会话窗切片；找不到时回退激活窗（与 commitAgentPatch 的兜底一致）。 */
+export function agentWindowById(state: Pick<AgentStore, "windows" | "activeWindowId">, windowId: string): AgentWindow | undefined {
+    return state.windows.find((window) => window.id === windowId) ?? activeAgentWindow(state);
+}
+
+/**
+ * 按线程反查会话窗：会话线程 conversation.threadId 或当前线程 activeThreadId 命中即返回该窗 id。
+ * 未知线程返回 null（调用方继续按现状丢弃）。
+ */
+export function agentWindowIdForThread(state: Pick<AgentStore, "windows">, threadId: string): string | null {
+    if (!threadId) return null;
+    const match = state.windows.find((window) => window.conversation.threadId === threadId || window.activeThreadId === threadId);
+    return match ? match.id : null;
+}
+
+/** 临时指定 commitAgentPatch 的窗口级写目标（用于把后台事件写进非激活窗）。 */
+let windowPatchTargetId: string | null = null;
+
+export function withWindowPatchTarget<T>(windowId: string, run: () => T): T {
+    const previous = windowPatchTargetId;
+    windowPatchTargetId = windowId;
+    try {
+        return run();
+    } finally {
+        windowPatchTargetId = previous;
+    }
 }
 
 function projectAgentWindow(window: AgentWindow): Pick<AgentStore, AgentWindowField> {
@@ -186,13 +216,17 @@ function commitAgentPatch(state: AgentStore, patch: Record<string, unknown>): Pa
         else globalPatch[key] = value;
     }
     if (!Object.keys(windowPatch).length) return globalPatch as Partial<AgentStore>;
-    const active = activeAgentWindow(state);
+    // 目标窗：显式指定（后台事件写非激活窗）时取该窗，否则沿用当前激活窗。
+    const targeted = windowPatchTargetId ? state.windows.find((window) => window.id === windowPatchTargetId) : undefined;
+    const target = targeted ?? activeAgentWindow(state);
     // 没有窗口时（理论上不会发生）退回直接写，保证不会丢数据。
-    if (!active) return { ...globalPatch, ...patch } as Partial<AgentStore>;
-    const patched: AgentWindow = { ...active, ...windowPatch } as AgentWindow;
+    if (!target) return { ...globalPatch, ...patch } as Partial<AgentStore>;
+    const patched: AgentWindow = { ...target, ...windowPatch } as AgentWindow;
     patched.status = deriveWindowStatus(patched);
-    const windows = updateAgentWindow(state.windows, active.id, patched);
-    const next = windows.find((window) => window.id === active.id) ?? patched;
+    const windows = updateAgentWindow(state.windows, target.id, patched);
+    // 写非激活窗时只更新 windows 数组，不投影扁平字段，避免污染当前激活窗。
+    if (target.id !== state.activeWindowId) return { ...globalPatch, windows } as Partial<AgentStore>;
+    const next = windows.find((window) => window.id === target.id) ?? patched;
     return { ...globalPatch, windows, ...projectAgentWindow(next) } as Partial<AgentStore>;
 }
 
@@ -308,6 +342,13 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         return { windows, activeWindowId: id, ...projectAgentWindow(resolved) };
     }),
     renameWindow: (id, title) => set((state) => ({ windows: updateAgentWindow(state.windows, id, { title: title.trim() || defaultWindowTitle(1) }) })),
+    // 后台窗产生输出：只给非激活窗累加未读，激活窗的消息本来就在眼前。
+    noteWindowOutput: (windowId) => set((state) => {
+        if (windowId === state.activeWindowId) return {};
+        const windows = bumpUnread(state.windows, windowId);
+        if (windows === state.windows) return {};
+        return { windows };
+    }),
 }));
 
 // 窗口布局变化即落盘（只落骨架：id/标题/CLI 形态），刷新后按原样恢复，不再回到单窗。

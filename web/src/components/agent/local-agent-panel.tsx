@@ -20,11 +20,12 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import { useShallow } from "zustand/react/shallow";
-import { useAgentStore, type AgentAttachment, type AgentBootstrapStatus, type AgentCanvasContext, type AgentCanvasReference, type AgentChatItem, type AgentConversationState, type AgentModel, type AgentPendingApproval, type AgentPendingToolCall, type AgentPermissionMode, type AgentReasoningEffort, type AgentThreadSummary } from "@/stores/use-agent-store";
+import { useAgentStore, type AgentAttachment, type AgentBootstrapStatus, type AgentCanvasContext, type AgentCanvasReference, type AgentChatItem, type AgentConversationState, type AgentModel, type AgentPendingApproval, type AgentPendingToolCall, type AgentPermissionMode, type AgentReasoningEffort, type AgentThreadSummary, agentWindowById, agentWindowIdForThread, withWindowPatchTarget } from "@/stores/use-agent-store";
 import { type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import { referenceConnectionOps } from "@/lib/canvas/canvas-reference-links";
 import { isSiteTool, runSiteTool } from "@/lib/agent/agent-site-tools";
 import { acknowledgeCodexHistory, activateAgentClient, AgentApiError, discoverAgentConfig, fetchAgentJson, interruptCodexTurn, postCodexApproval, postState, postToolResult, requestAgentCaptureSilently } from "@/services/api/canvas-agent";
+import { withAppendedEventLog } from "@/lib/agent/agent-windows";
 import { AgentChatTimeline, AgentTaskProgress, AgentUsageBar } from "./agent-chat";
 import { AgentChatComposer } from "./agent-chat-composer";
 import { AgentConnectView } from "./agent-connect-view";
@@ -476,7 +477,14 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         source.addEventListener("agent_event", (event) => {
             const data = parseEventData<AgentEventPayload>(event);
             if (data) enqueueEvent(() => {
-                if (!isCurrentThreadEvent(data)) return;
+                const eventThreadId = data.threadId || data.thread_id || "";
+                const storeState = useAgentStore.getState();
+                const targetWindowId = agentWindowIdForThread(storeState, eventThreadId);
+                if (!targetWindowId) return;
+                if (targetWindowId !== storeState.activeWindowId) {
+                    handleBackgroundEvent(targetWindowId, data);
+                    return;
+                }
                 const shouldProcess = registerLiveAgentTurn(data, authoritativeHistoryTurnsRef.current, liveTurnKeysRef.current);
                 if (data.type !== "usage.updated" && !shouldProcess) return;
                 return handleAgentEvent(data);
@@ -510,7 +518,15 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         });
         source.addEventListener("conversation_changed", (event) => {
             const data = parseEventData<AgentConversationState>(event);
-            if (data) enqueueEvent(() => { applyConversationState(data); });
+            if (data) enqueueEvent(() => {
+                const storeState = useAgentStore.getState();
+                const targetWindowId = agentWindowIdForThread(storeState, data.threadId);
+                if (targetWindowId && targetWindowId !== storeState.activeWindowId) {
+                    handleBackgroundEvent(targetWindowId, data);
+                    return;
+                }
+                applyConversationState(data);
+            });
         });
         source.addEventListener("workspace_changed", (event) => {
             const data = parseEventData<AgentWorkspaceEvent>(event);
@@ -525,7 +541,14 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             const data = parseEventData<AgentChatEvent>(event);
             if (!data?.message) return;
             enqueueEvent(() => {
-                if (!isCurrentThreadEvent(data)) return;
+                const eventThreadId = data.threadId || data.message!.threadId || "";
+                const storeState = useAgentStore.getState();
+                const targetWindowId = agentWindowIdForThread(storeState, eventThreadId);
+                if (!targetWindowId) return;
+                if (targetWindowId !== storeState.activeWindowId) {
+                    handleBackgroundEvent(targetWindowId, data);
+                    return;
+                }
                 if (!registerLiveAgentTurn(data, authoritativeHistoryTurnsRef.current, liveTurnKeysRef.current)) return;
                 const current = useAgentStore.getState();
                 const threadId = data.threadId || data.message!.threadId || current.activeThreadId;
@@ -554,7 +577,14 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             const data = parseEventData<AgentEventPayload>(event);
             if (!data) return;
             enqueueEvent(() => {
-                if (!isCurrentThreadEvent(data)) return;
+                const eventThreadId = data.threadId || data.thread_id || "";
+                const storeState = useAgentStore.getState();
+                const targetWindowId = agentWindowIdForThread(storeState, eventThreadId);
+                if (!targetWindowId) return;
+                if (targetWindowId !== storeState.activeWindowId) {
+                    handleBackgroundEvent(targetWindowId, data);
+                    return;
+                }
                 if (!registerLiveAgentTurn(data, authoritativeHistoryTurnsRef.current, liveTurnKeysRef.current)) return;
                 showAgentError(data.message, data, !data.replayed);
             });
@@ -1258,6 +1288,82 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         upsertActivityMessage(item);
         setAgentState({ activity: rt("processingFailed"), pendingApprovals: [] });
         if (log) addEventLog(rt("processingFailed"), error.text, value);
+    };
+
+    // 非激活会话窗的后台事件：只写目标窗切片 + 累加该窗未读，绝不触碰激活窗的扁平字段。
+    // 复用与激活窗相同的 formatter 帮助函数，保证两窗渲染一致。
+    const handleBackgroundEvent = (windowId: string, payload: unknown) => {
+        if (useAgentStore.getState().activeWindowId === windowId) return;
+        const produced = withWindowPatchTarget(windowId, () => {
+            const initial = agentWindowById(useAgentStore.getState(), windowId);
+            if (!initial) return false;
+            const conversation = payload as Partial<AgentConversationState> | null;
+            if (conversation && typeof conversation === "object" && typeof conversation.revision === "number" && typeof conversation.conversationId === "string") {
+                // conversation_changed：只有同一线程才更新该窗会话状态。
+                if (!conversation.threadId || conversation.threadId !== initial.conversation.threadId) return false;
+                const next = conversation as AgentConversationState;
+                setAgentState({ conversation: next, ...conversationBootstrapView(next) });
+                return true;
+            }
+            const chat = payload as AgentChatEvent | null;
+            if (chat && chat.message) {
+                const threadId = chat.threadId || chat.message.threadId || initial.activeThreadId || "";
+                const turnId = chat.turnId ?? chat.message.turnId ?? "";
+                setAgentState({ messages: upsertAgentMessage(initial.messages, scopeChatItem(chat.message, threadId, turnId)) });
+                return true;
+            }
+            const event = payload as AgentEventPayload;
+            const scope = eventScope(event);
+            if (!scope.threadId) return false;
+            if (event.type === "usage.updated") {
+                setAgentState({ tokenUsage: eventUsage(event) });
+                return true;
+            }
+            if (event.type === "turn.started") {
+                const messages = scope.turnId ? bindPendingTurnMessages(initial.messages, scope.threadId, scope.turnId) : initial.messages;
+                setAgentState({ activeTurnId: scope.turnId, waiting: true, sending: false, activity: rt("codexRunning"), bootstrapStatus: null, mcpStartupStatuses: {}, messages });
+                return true;
+            }
+            if (event.type === "turn.completed") {
+                const messages = initial.messages.map((message) => message.threadId === scope.threadId && message.turnId === scope.turnId && message.streamId ? { ...message, streamId: undefined } : message);
+                setAgentState({
+                    activeTurnId: initial.activeTurnId === scope.turnId ? "" : initial.activeTurnId,
+                    waiting: false,
+                    sending: false,
+                    activity: event.status === "failed" ? rt("processingFailed") : event.status === "interrupted" ? rt("turnStopped") : rt("completed"),
+                    messages,
+                });
+                return true;
+            }
+            if (event.type === "item.updated" && event.item?.type === "agent_message" && event.item.id) {
+                const delta = stringText(event.item.delta);
+                const text = delta || stringText(event.item.text);
+                if (!text) return false;
+                const scoped = scopeEventChatItem(event, { id: event.item.id, role: "assistant", title: "Codex", text, streamId: event.item.id }, event.item.id);
+                const index = initial.messages.findIndex((message) => message.id === scoped.id);
+                const messages = index < 0
+                    ? [...initial.messages, scoped]
+                    : initial.messages.map((message, itemIndex) => itemIndex === index ? { ...message, text: delta ? `${message.text}${text}` : mergeStreamText(message.text, text) } : message);
+                setAgentState({ messages });
+                return true;
+            }
+            if (event.type === "item.completed" && event.item?.type === "agent_message" && event.item.id) {
+                const text = stringText(event.item.text);
+                const scoped = scopeEventChatItem(event, { id: event.item.id, role: "assistant", title: "Codex", text }, event.item.id);
+                const index = initial.messages.findIndex((message) => message.id === scoped.id);
+                const messages = index >= 0
+                    ? initial.messages.map((message, itemIndex) => itemIndex === index ? { ...message, text: text || message.text, streamId: undefined } : message)
+                    : upsertAgentMessage(initial.messages, scoped);
+                setAgentState({ messages });
+                return true;
+            }
+            // 其它事件：只把日志记进该窗，配合未读提示。
+            const log = formatAgentEventLog(event);
+            if (!log) return false;
+            setAgentState({ eventLogs: withAppendedEventLog(initial, { id: `${Date.now()}-${Math.random()}`, time: dayjs().format("YYYY-MM-DD HH:mm:ss"), title: log.title, text: log.text }).eventLogs });
+            return true;
+        });
+        if (produced) useAgentStore.getState().noteWindowOutput(windowId);
     };
 
     const handleAgentEvent = async (event: AgentEventPayload) => {
