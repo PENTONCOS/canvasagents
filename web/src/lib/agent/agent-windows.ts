@@ -141,3 +141,18 @@ export function deriveWindowStatus(window: Pick<AgentWindow, "status" | "sending
 export function toWindowTabLabel(window: Pick<AgentWindow, "title">, index: number): string {
     return `${index + 1}: ${window.title}`;
 }
+
+/**
+ * 下一个可用的默认窗口编号：取现有标题里最小的未占用正整数。
+ * 关掉中间某个窗口后再点 `+`，不会生成重名 tab（旧实现按窗口数量算，会撞名）。
+ */
+export function nextWindowNumber(list: AgentWindow[]): number {
+    const used = new Set<number>();
+    for (const window of list) {
+        const match = /(\d+)\s*$/.exec(window.title.trim());
+        if (match) used.add(Number(match[1]));
+    }
+    let index = 1;
+    while (used.has(index)) index += 1;
+    return index;
+}

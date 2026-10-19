@@ -11,6 +11,7 @@ import {
     createAgentWindow,
     deriveWindowStatus,
     nextActiveIdAfterClose,
+    nextWindowNumber,
     updateAgentWindow,
     withAppendedChatItem,
     withAppendedEventLog,
@@ -278,14 +279,14 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     clearEventLogs: () => set((state) => patchActiveWindow(state, (window) => ({ ...window, eventLogs: [] }))),
     addWindow: () => {
         const state = get();
-        const fresh = createDefaultWindow(state.windows.length + 1);
+        const fresh = createDefaultWindow(nextWindowNumber(state.windows));
         const { windows, ok } = appendAgentWindow(state.windows, fresh);
         if (!ok) return false;
         set({ windows, activeWindowId: fresh.id, ...projectAgentWindow(fresh) });
         return true;
     },
     removeWindow: (id) => set((state) => {
-        const fallback = createDefaultWindow(Math.max(1, state.windows.length));
+        const fallback = createDefaultWindow(nextWindowNumber(state.windows.filter((window) => window.id !== id)));
         const windows = closeAgentWindowWithFallback(state.windows, id, () => fallback);
         const wasActive = state.activeWindowId === id;
         const nextActiveId = wasActive ? nextActiveIdAfterClose(state.windows, id, state.activeWindowId) : state.activeWindowId;

@@ -12,6 +12,7 @@ import {
     deriveWindowStatus,
     findAgentWindow,
     nextActiveIdAfterClose,
+    nextWindowNumber,
     toWindowTabLabel,
     updateAgentWindow,
     withAppendedChatItem,
@@ -150,5 +151,19 @@ describe("展示辅助", () => {
         expect(deriveWindowStatus({ status: "idle", sending: false, waiting: true })).toBe("running");
         expect(deriveWindowStatus({ status: "idle", sending: false, waiting: false })).toBe("idle");
         expect(deriveWindowStatus({ status: "error", sending: true, waiting: false })).toBe("error");
+    });
+});
+
+describe("窗口编号", () => {
+    test("nextWindowNumber 分配最小未占用编号", () => {
+        expect(nextWindowNumber([])).toBe(1);
+        expect(nextWindowNumber([win("a", { title: "会话 1" })])).toBe(2);
+        expect(nextWindowNumber([win("a", { title: "会话 2" })])).toBe(1);
+        expect(nextWindowNumber([win("a", { title: "会话 1" }), win("b", { title: "会话 3" })])).toBe(2);
+    });
+
+    test("nextWindowNumber 忽略不是编号结尾的标题", () => {
+        expect(nextWindowNumber([win("a", { title: "landingpage 改版" })])).toBe(1);
+        expect(nextWindowNumber([win("a", { title: "精灵模式" }), win("b", { title: "会话 2" })])).toBe(1);
     });
 });
