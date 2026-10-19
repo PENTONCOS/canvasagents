@@ -4,6 +4,7 @@ import i18n from "@/i18n";
 import type { CanvasAgentOp, CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import {
+    AGENT_WINDOWS_STORAGE_KEY,
     AGENT_WINDOW_LIMIT,
     appendAgentWindow,
     clearUnread,
@@ -12,6 +13,8 @@ import {
     deriveWindowStatus,
     nextActiveIdAfterClose,
     nextWindowNumber,
+    parsePersistedWindows,
+    projectPersistedWindows,
     updateAgentWindow,
     withAppendedChatItem,
     withAppendedEventLog,
@@ -202,6 +205,10 @@ function patchActiveWindow(state: AgentStore, evolve: (window: AgentWindow) => A
 }
 
 const initialWindow = createDefaultWindow(1);
+// 刷新恢复窗口布局（只恢复骨架：几个窗、各叫什么、CLI 形态；消息内容不落盘）。
+const persistedWindows = typeof window === "undefined" ? null : parsePersistedWindows(localStorage.getItem(AGENT_WINDOWS_STORAGE_KEY));
+const bootstrapWindows = persistedWindows?.windows ?? [initialWindow];
+const bootstrapActiveWindow = bootstrapWindows.find((window) => window.id === persistedWindows?.activeWindowId) ?? bootstrapWindows[0];
 
 export const useAgentStore = create<AgentStore>((set, get) => ({
     width: typeof window === "undefined" ? 440 : Number(localStorage.getItem("canvas-agent-panel-width")) || 440,
@@ -224,9 +231,9 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     reasoningEffort: typeof window === "undefined" ? "" : (localStorage.getItem("canvas-agent-reasoning-effort") as AgentReasoningEffort) || "",
     connectError: "",
     queueOpen: false,
-    windows: [initialWindow],
-    activeWindowId: initialWindow.id,
-    ...projectAgentWindow(initialWindow),
+    windows: bootstrapWindows,
+    activeWindowId: bootstrapActiveWindow.id,
+    ...projectAgentWindow(bootstrapActiveWindow),
     setAgentState: (patch) => set((state) => commitAgentPatch(state, patch as Record<string, unknown>)),
     openPanel: () => set({ panelOpen: true, panelMounted: true, panelClosing: false }),
     closePanel: () => {
@@ -302,3 +309,21 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     }),
     renameWindow: (id, title) => set((state) => ({ windows: updateAgentWindow(state.windows, id, { title: title.trim() || defaultWindowTitle(1) }) })),
 }));
+
+// 窗口布局变化即落盘（只落骨架：id/标题/CLI 形态），刷新后按原样恢复，不再回到单窗。
+// 注意：流式 token 会让 windows 数组每帧换新，所以用投影串做比对，只有布局真变了才写 localStorage。
+if (typeof window !== "undefined") {
+    let lastPersistedWindows = "";
+    useAgentStore.subscribe((state, previous) => {
+        if (state.windows === previous.windows && state.activeWindowId === previous.activeWindowId) return;
+        const next = JSON.stringify(projectPersistedWindows(state.windows, state.activeWindowId));
+        if (next === lastPersistedWindows) return;
+        lastPersistedWindows = next;
+        try {
+            localStorage.setItem(AGENT_WINDOWS_STORAGE_KEY, next);
+        } catch (error) {
+            // localStorage 不可用或超配额：布局持久化失败不影响当前会话，记录后继续。
+            void error;
+        }
+    });
+}

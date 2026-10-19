@@ -13,6 +13,8 @@ import {
     findAgentWindow,
     nextActiveIdAfterClose,
     nextWindowNumber,
+    parsePersistedWindows,
+    projectPersistedWindows,
     toWindowTabLabel,
     updateAgentWindow,
     withAppendedChatItem,
@@ -165,5 +167,58 @@ describe("窗口编号", () => {
     test("nextWindowNumber 忽略不是编号结尾的标题", () => {
         expect(nextWindowNumber([win("a", { title: "landingpage 改版" })])).toBe(1);
         expect(nextWindowNumber([win("a", { title: "精灵模式" }), win("b", { title: "会话 2" })])).toBe(1);
+    });
+});
+
+describe("窗口布局持久化", () => {
+    test("projectPersistedWindows 只落骨架，不含消息/附件/对话", () => {
+        const windows = [
+            win("a", { title: "会话 1", cliMode: true, cliSession: "tty-1", messages: [{ id: "m1", role: "user", text: "秘密" }], activeThreadId: "th-1" }),
+            win("b", { title: "landingpage 改版" }),
+        ];
+        const projected = projectPersistedWindows(windows, "b");
+        expect(projected.activeWindowId).toBe("b");
+        expect(projected.windows).toEqual([
+            { id: "a", title: "会话 1", cliMode: true, cliSession: "tty-1" },
+            { id: "b", title: "landingpage 改版", cliMode: false, cliSession: "" },
+        ]);
+        const raw = JSON.stringify(projected);
+        expect(raw.includes("秘密")).toBe(false);
+        expect(raw.includes("messages")).toBe(false);
+        expect(raw.includes("th-1")).toBe(false);
+    });
+
+    test("parsePersistedWindows 能还原骨架，且默认空白可用", () => {
+        const parsed = parsePersistedWindows(JSON.stringify({ activeWindowId: "b", windows: [{ id: "a", title: "会话 1" }, { id: "b", title: "会话 2", cliMode: true, cliSession: "tty-9" }] }));
+        expect(parsed).not.toBeNull();
+        expect(parsed!.windows.map((item) => item.id)).toEqual(["a", "b"]);
+        expect(parsed!.activeWindowId).toBe("b");
+        const restored = parsed!.windows[1];
+        expect(restored.cliMode).toBe(true);
+        expect(restored.cliSession).toBe("tty-9");
+        expect(restored.messages).toEqual([]);
+        expect(restored.conversation.status).toBe("idle");
+        expect(restored.activeThreadId).toBe("");
+    });
+
+    test("activeWindowId 不在列表时回退首个窗口", () => {
+        const parsed = parsePersistedWindows(JSON.stringify({ activeWindowId: "不存在", windows: [{ id: "a", title: "会话 1" }] }));
+        expect(parsed!.activeWindowId).toBe("a");
+    });
+
+    test("坏数据一律回退为 null（不会卡成零窗口）", () => {
+        expect(parsePersistedWindows(null)).toBeNull();
+        expect(parsePersistedWindows("")).toBeNull();
+        expect(parsePersistedWindows("{不是 json")).toBeNull();
+        expect(parsePersistedWindows("[1,2,3]")).toBeNull();
+        expect(parsePersistedWindows(JSON.stringify({ windows: [] }))).toBeNull();
+        expect(parsePersistedWindows(JSON.stringify({ windows: [{ id: "", title: "x" }, { id: "a", title: "" }] }))).toBeNull();
+    });
+
+    test("丢弃重复 id 并截断到上限", () => {
+        const dup = parsePersistedWindows(JSON.stringify({ windows: [{ id: "a", title: "会话 1" }, { id: "a", title: "重复" }] }));
+        expect(dup!.windows).toHaveLength(1);
+        const many = { windows: Array.from({ length: AGENT_WINDOW_LIMIT + 4 }, (_, index) => ({ id: `w${index}`, title: `会话 ${index}` })) };
+        expect(parsePersistedWindows(JSON.stringify(many))!.windows).toHaveLength(AGENT_WINDOW_LIMIT);
     });
 });

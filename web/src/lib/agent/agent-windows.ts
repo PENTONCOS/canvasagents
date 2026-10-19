@@ -3,6 +3,8 @@ import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-refer
 
 /** 面板同时最多容纳的会话窗数量（与 ⌘1..9 快捷键位数一致）。 */
 export const AGENT_WINDOW_LIMIT = 9;
+/** 会话窗布局的持久化键：只存窗口骨架（编号/标题/CLI 形态），不存消息内容。 */
+export const AGENT_WINDOWS_STORAGE_KEY = "canvas-agent-windows";
 /** 每个窗口保留的操作日志条数上限（沿用改造前的全局上限）。 */
 export const AGENT_WINDOW_EVENT_LOG_LIMIT = 160;
 
@@ -155,4 +157,52 @@ export function nextWindowNumber(list: AgentWindow[]): number {
     let index = 1;
     while (used.has(index)) index += 1;
     return index;
+}
+
+/** 可持久化的窗口骨架：刻意不含 messages / attachments / conversation，避免体积与隐私面扩大。 */
+export type PersistedAgentWindow = Pick<AgentWindow, "id" | "title" | "cliMode" | "cliSession">;
+
+/** 把当前窗口列表投影成可写盘的最小结构（刷新后能恢复「几个窗、各叫什么、什么形态」）。 */
+export function projectPersistedWindows(windows: AgentWindow[], activeWindowId: string): { activeWindowId: string; windows: PersistedAgentWindow[] } {
+    return {
+        activeWindowId,
+        windows: windows.map(({ id, title, cliMode, cliSession }) => ({ id, title, cliMode, cliSession })),
+    };
+}
+
+/**
+ * 从 localStorage 原始串恢复窗口骨架：坏数据、超上限、重复 id 一律丢弃并回退，
+ * 保证刷新永远不会因为一份脏数据把面板卡成零窗口。
+ */
+export function parsePersistedWindows(raw: string | null | undefined): { windows: AgentWindow[]; activeWindowId: string } | null {
+    if (!raw) return null;
+    let data: unknown;
+    try {
+        data = JSON.parse(raw);
+    } catch {
+        return null;
+    }
+    if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+    const value = data as { activeWindowId?: unknown; windows?: unknown };
+    if (!Array.isArray(value.windows)) return null;
+    const seen = new Set<string>();
+    const windows: AgentWindow[] = [];
+    for (const item of value.windows) {
+        if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+        const entry = item as Record<string, unknown>;
+        const id = typeof entry.id === "string" ? entry.id.trim() : "";
+        const title = typeof entry.title === "string" ? entry.title.trim() : "";
+        if (!id || !title || seen.has(id)) continue;
+        seen.add(id);
+        windows.push(createAgentWindow({
+            id,
+            title,
+            cliMode: entry.cliMode === true,
+            cliSession: typeof entry.cliSession === "string" ? entry.cliSession : "",
+        }));
+        if (windows.length >= AGENT_WINDOW_LIMIT) break;
+    }
+    if (!windows.length) return null;
+    const requested = typeof value.activeWindowId === "string" ? value.activeWindowId : "";
+    return { windows, activeWindowId: seen.has(requested) ? requested : windows[0].id };
 }
