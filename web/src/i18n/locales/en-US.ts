@@ -2001,6 +2001,8 @@ export default {
             invalidAddress: "The local Agent address is invalid",
             connecting: "Connecting",
             creatingConversation: "Creating conversation",
+            retryingConversation: "Retrying new conversation (attempt {{attempt}})",
+            newConversationRetrying: "Creating conversation failed, retrying",
             newConversation: "New conversation",
             newConversationFailed: "Failed to create conversation",
             conversationResumed: "Conversation resumed",

@@ -1921,6 +1921,8 @@ export default {
             invalidAddress: "本地 Agent 地址格式不正确",
             connecting: "连接中",
             creatingConversation: "正在新建对话",
+            retryingConversation: "正在重试新建对话（第 {{attempt}} 次）",
+            newConversationRetrying: "新建对话失败，正在重试",
             newConversation: "新对话",
             newConversationFailed: "新建对话失败",
             conversationResumed: "已恢复会话",

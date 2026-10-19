@@ -22,6 +22,7 @@ import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import { useShallow } from "zustand/react/shallow";
 import { useAgentStore, type AgentAttachment, type AgentBootstrapStatus, type AgentCanvasContext, type AgentCanvasReference, type AgentChatItem, type AgentConversationState, type AgentModel, type AgentPendingApproval, type AgentPendingToolCall, type AgentPermissionMode, type AgentReasoningEffort, type AgentThreadSummary, agentWindowById, agentWindowIdForConversation, agentWindowIdForThread, withWindowPatchTarget } from "@/stores/use-agent-store";
 import { backgroundUnreadKey } from "@/lib/agent/agent-windows";
+import { needsThreadPrepare, threadResetRetryDelay } from "@/lib/agent/agent-thread-retry";
 import { type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import { referenceConnectionOps } from "@/lib/canvas/canvas-reference-links";
 import { isSiteTool, runSiteTool } from "@/lib/agent/agent-site-tools";
@@ -204,8 +205,13 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     const liveTurnKeysRef = useRef(new Set<string>());
     const threadOperationRef = useRef(0);
     const threadOperationSequenceRef = useRef(0);
-    // 已经为该会话窗准备过对话线程的窗口 id：用于「新建/切换会话窗时补一次准备」，避免重复 reset。
+    // 已经为该会话窗「成功」准备过对话线程的窗口 id：只记成功，失败时要能再次进入准备路径。
     const preparedWindowRef = useRef("");
+    // 建线程重试：定时器 / 已完成尝试次数 / 当前等待重试的目标窗。
+    const threadResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const threadResetAttemptRef = useRef(0);
+    const threadResetTargetRef = useRef("");
+    const runThreadResetRef = useRef<(windowId: string, attempt: number) => void>(() => undefined);
     const endpoint = useMemo(() => url.trim().replace(/\/$/, ""), [url]);
     const urlAgentAutoConnect = searchParams.has("agentUrl") && searchParams.has("agentToken");
     useEffect(() => {
@@ -453,14 +459,10 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             void postState(endpoint, token, clientId, canvasContextRef.current?.snapshot || null);
             if (document.visibilityState === "visible" && document.hasFocus()) void activateAgentClient(endpoint, token, clientId);
             if (!busy && !nextThreadId && (!hello?.conversation || hello.conversation.status === "idle")) {
-                preparedWindowRef.current = helloWindowId;
-                void fetchAgentJson<AgentWorkspaceResponse>(endpoint, token, "/agent/codex/threads/reset", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId, permissionMode }) })
-                    .then((result) => result.conversation && applyConversationState(result.conversation, false, helloWindowId))
-                    .catch((error) => {
-                        const state = agentErrorState(error);
-                        if (state) applyConversationState(state, false, helloWindowId);
-                        addEventLog(rt("conversationInitFailed"), error);
-                    });
+                // 走统一的补准备路径（含退避重试）：先占住目标窗，避免下面 effect 再发一次并发 reset。
+                // 连接时不该忙（busy 已排除），但网络抖动/桥端切换中失败时同样要能自恢复。
+                threadResetTargetRef.current = helloWindowId;
+                runThreadResetRef.current(helloWindowId, 0);
             }
         });
         source.addEventListener("codex_state", (event) => {
@@ -1237,38 +1239,108 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         addWindowEventLog(useAgentStore.getState().activeWindowId, title, text, raw);
     };
 
+    /** 目标窗是否还需要补建线程：窗还在、还没线程、状态没定性（被别的路径建好了就不再补）。 */
+    const threadPrepareNeeded = (windowId: string) => needsThreadPrepare(useAgentStore.getState().windows.find((item) => item.id === windowId));
+
+    const clearThreadResetRetry = useCallback(() => {
+        if (threadResetTimerRef.current) {
+            clearTimeout(threadResetTimerRef.current);
+            threadResetTimerRef.current = null;
+        }
+        threadResetAttemptRef.current = 0;
+        threadResetTargetRef.current = "";
+    }, []);
+
+    /**
+     * 为新窗补一次建线程（threads/reset）。
+     * 失败按退避重试（1s → 2s → 4s → 8s 封顶，最多 THREAD_RESET_MAX_ATTEMPTS 次）：
+     * 双窗并行时桥端在任一 turn 运行中直接 409 拒绝，若不重试新窗会永久卡在无线程状态。
+     * 终点只有三个：成功 / 窗口被关或切走（cleanup 清定时器）/ 重试耗尽后落到可读失败态。
+     */
+    const runThreadReset = (windowId: string, attempt: number) => {
+        if (!threadPrepareNeeded(windowId)) {
+            clearThreadResetRetry();
+            return;
+        }
+        threadResetAttemptRef.current = attempt;
+        // loadingThreads 是窗口级字段：必须显式指向目标窗（hello 补准备时目标窗未必是激活窗）。
+        const operation = withWindowPatchTarget(windowId, () => beginThreadOperation());
+        withWindowPatchTarget(windowId, () => setAgentState({ activity: attempt > 0 ? rt("retryingConversation", { attempt }) : rt("creatingConversation") }));
+        void fetchAgentJson<AgentWorkspaceResponse>(endpoint, token, "/agent/codex/threads/reset", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId: clientIdRef.current, permissionMode }) })
+            .then((result) => {
+                // 被更新的操作抢了（切窗/用户手动新建）：这次结果作废，但不能把重试状态一起废掉。
+                if (threadOperationRef.current !== operation) return;
+                if (!result.conversation) throw new Error(rt("newConversationFailed"));
+                // 新建窗即建独立线程：结果只写发起准备的那一窗，绝不落到别的窗。
+                applyConversationState(result.conversation, false, windowId);
+                // 只在成功后标记已准备；失败路径必须能再次进入。
+                preparedWindowRef.current = windowId;
+                clearThreadResetRetry();
+            })
+            .catch((error) => {
+                if (threadOperationRef.current !== operation) return;
+                const retryDelay = threadResetRetryDelay(attempt + 1, error);
+                if (retryDelay !== null && threadPrepareNeeded(windowId)) {
+                    threadResetTargetRef.current = windowId;
+                    threadResetAttemptRef.current = attempt + 1;
+                    if (attempt === 0) addWindowEventLog(windowId, rt("newConversationRetrying"), error);
+                    threadResetTimerRef.current = setTimeout(() => {
+                        threadResetTimerRef.current = null;
+                        runThreadResetRef.current(windowId, attempt + 1);
+                    }, retryDelay);
+                    return;
+                }
+                // 非瞬时错 / 重试耗尽：落到可读失败态，别让 activity 永远停在「正在新建对话」。
+                clearThreadResetRetry();
+                preparedWindowRef.current = "";
+                addWindowEventLog(windowId, rt("newConversationFailed"), error);
+                // 桥端带回的 state 可能属于别的窗（忙时快照是运行中窗的会话），
+                // 这里只在自己这窗落一个可读失败态，不转发别人的状态。
+                withWindowPatchTarget(windowId, () => {
+                    const latest = useAgentStore.getState().windows.find((item) => item.id === windowId);
+                    if (!latest || latest.activeThreadId) return;
+                    const failed = { ...latest.conversation, status: "failed" as const, error: normalizeText(error) || rt("newConversationFailed") };
+                    setAgentState({ activity: rt("newConversationFailed"), conversation: failed, ...conversationBootstrapView(failed) });
+                });
+            })
+            .finally(() => withWindowPatchTarget(windowId, () => finishThreadOperation(operation)));
+    };
+
+    // 渲染时刷新 ref（不是 effect）：hello 补准备与定时器回调都能拿到最新闭包，
+    // 且任何异步回调执行前 ref 一定已就位（否则新窗会静默漏发一次请求）。
+    runThreadResetRef.current = runThreadReset;
+
     // 新建/切换会话窗时补一次会话准备：新窗口的 activeThreadId 为空、conversation.status 永远
     // 停在 idle，输入框会一直禁用（点 + 新建后根本发不出消息）。这里在窗口成为激活窗时补一次
-    // threads/reset，让它进入 preparing → ready。已有线程/已在准备的窗口不动。
+    // threads/reset，让它进入 preparing → ready。已有线程/已在准备的窗口不动；
+    // 失败走 runThreadReset 的退避重试，不留下永久禁用的新窗。
     useEffect(() => {
         if (!connected || !activeWindowId) return;
         const current = useAgentStore.getState();
         const window = current.windows.find((item) => item.id === activeWindowId);
         if (!window) return;
-        if (window.activeThreadId || ["preparing", "running", "ready", "warning"].includes(window.conversation.status)) {
+        if (!needsThreadPrepare(window)) {
+            // 已有线程 / 已在准备 / 已定性失败：标记已准备，并清掉可能残留的重试。
             preparedWindowRef.current = activeWindowId;
+            clearThreadResetRetry();
             return;
         }
         if (preparedWindowRef.current === activeWindowId) return;
+        // 请求在飞或正等下一次重试：同一窗不并发第二个 reset。
+        if (threadResetTargetRef.current === activeWindowId) return;
+        // 忙时不发（deps 里的 sending/waiting/loadingThreads 保证「忙 → 闲」会再触发一次）。
         if (current.sending || current.waiting || current.loadingThreads || threadOperationRef.current) return;
-        preparedWindowRef.current = activeWindowId;
-        const preparingWindowId = activeWindowId;
-        const operation = beginThreadOperation();
-        setAgentState({ activity: rt("creatingConversation") });
-        void fetchAgentJson<AgentWorkspaceResponse>(endpoint, token, "/agent/codex/threads/reset", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId: clientIdRef.current, permissionMode }) })
-            .then((result) => {
-                if (threadOperationRef.current !== operation) return;
-                // 新建窗即建独立线程：结果只写发起准备的那一窗，绝不落到别的窗。
-                if (result.conversation) applyConversationState(result.conversation, false, preparingWindowId);
-            })
-            .catch((error) => {
-                preparedWindowRef.current = "";
-                const state = agentErrorState(error);
-                if (state) applyConversationState(state, false, preparingWindowId);
-                addWindowEventLog(preparingWindowId, rt("newConversationFailed"), error);
-            })
-            .finally(() => finishThreadOperation(operation));
-    }, [activeWindowId, connected, applyConversationState, addEventLog, endpoint, permissionMode, setAgentState, token]);
+        threadResetTargetRef.current = activeWindowId;
+        runThreadResetRef.current(activeWindowId, 0);
+    }, [activeWindowId, connected, applyConversationState, addEventLog, endpoint, permissionMode, setAgentState, token, sending, waiting, loadingThreads, clearThreadResetRetry]);
+
+    // 窗口被关 / 切走：清掉挂起的重试定时器，不能在离开后继续往旧窗写状态。
+    useEffect(() => {
+        const leavingWindowId = activeWindowId;
+        return () => {
+            if (threadResetTargetRef.current && threadResetTargetRef.current === leavingWindowId) clearThreadResetRetry();
+        };
+    }, [activeWindowId, clearThreadResetRetry]);
 
     const upsertActivityMessage = (item: AgentChatItem) => {
         setAgentState({ messages: upsertAgentMessage(useAgentStore.getState().messages, item) });
