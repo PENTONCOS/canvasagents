@@ -43,7 +43,6 @@ describe("the PS-edit entry lives on the image node toolbar", () => {
         const handlers = {
             onUpload: () => calls.push("upload"),
             onToggleFreeResize: () => calls.push("resize"),
-            onMaskEdit: () => calls.push("mask"),
             onPsEdit: () => calls.push("psEdit"),
             onCrop: () => calls.push("crop"),
             onSplit: () => calls.push("split"),

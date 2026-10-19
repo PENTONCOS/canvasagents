@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { App, Modal, Popover, Segmented, Tooltip } from "antd";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { App, Modal, Segmented, Tooltip } from "antd";
 import { Download, Ellipsis, FolderPlus, Image as ImageIcon, Info, Link2, MessageSquare, Minus, Music2, Pencil, Plus, RefreshCw, Settings2, Trash2, Ungroup, Unlink, Upload, Video } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -27,7 +28,6 @@ type CanvasNodeHoverToolbarProps = {
     onUpload: (node: CanvasNodeData) => void;
     onDownload: (node: CanvasNodeData) => void;
     onSaveAsset: (node: CanvasNodeData) => void;
-    onMaskEdit: (node: CanvasNodeData) => void;
     onPsEdit: (node: CanvasNodeData) => void;
     onCrop: (node: CanvasNodeData) => void;
     onSplit: (node: CanvasNodeData) => void;
@@ -53,7 +53,7 @@ type ToolbarTool = {
     title: string;
     label: string;
     icon: ReactNode;
-    onClick: () => void;
+    onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
     active?: boolean;
     danger?: boolean;
 };
@@ -72,7 +72,6 @@ export function CanvasNodeHoverToolbar({
     onUpload,
     onDownload,
     onSaveAsset,
-    onMaskEdit,
     onPsEdit,
     onCrop,
     onSplit,
@@ -99,6 +98,9 @@ export function CanvasNodeHoverToolbar({
     const [imageToolSettingsOpen, setImageToolSettingsOpen] = useState(false);
     const [renaming, setRenaming] = useState(false);
     const [renameDraft, setRenameDraft] = useState("");
+    // 跟随会话窗的候选列表。这里不用 antd Popover：ToolbarAction 是普通函数组件，
+    // 不会把 trigger 注入的 ref 传给内部 button，Popover 拿不到锚点元素，点开永远是空的。
+    const [followMenu, setFollowMenu] = useState<{ x: number; y: number } | null>(null);
     const renameInputRef = useRef<HTMLInputElement>(null);
     const { message } = App.useApp();
     const { t } = useTranslation();
@@ -120,7 +122,32 @@ export function CanvasNodeHoverToolbar({
     useEffect(() => {
         setImageToolSettingsOpen(false);
         setRenaming(false);
+        setFollowMenu(null);
     }, [node?.id]);
+
+    useEffect(() => {
+        if (!followMenu) return;
+        const closeOnOutside = (event: MouseEvent) => {
+            const target = event.target as HTMLElement | null;
+            if (target?.closest("[data-follow-menu]")) return;
+            if (target?.closest('[data-node-toolbar]')) return;
+            setFollowMenu(null);
+        };
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === "Escape") setFollowMenu(null);
+        };
+        const closeOnViewportChange = () => setFollowMenu(null);
+        document.addEventListener("mousedown", closeOnOutside, true);
+        document.addEventListener("keydown", closeOnEscape);
+        window.addEventListener("scroll", closeOnViewportChange, true);
+        window.addEventListener("resize", closeOnViewportChange);
+        return () => {
+            document.removeEventListener("mousedown", closeOnOutside, true);
+            document.removeEventListener("keydown", closeOnEscape);
+            window.removeEventListener("scroll", closeOnViewportChange, true);
+            window.removeEventListener("resize", closeOnViewportChange);
+        };
+    }, [followMenu]);
 
     useEffect(() => {
         if (!renaming) return;
@@ -152,7 +179,7 @@ export function CanvasNodeHoverToolbar({
         }
         copyText(prompt, t("common.promptCopied"));
     };
-    const imageTools = buildImageToolbarTools(node, { onUpload, onToggleFreeResize, onMaskEdit, onPsEdit, onCrop, onSplit, onUpscale, onSuperResolve, onAngle, onViewImage, onUseAsHd, onCopyPrompt: copyImagePrompt, onReversePrompt });
+    const imageTools = buildImageToolbarTools(node, { onUpload, onToggleFreeResize, onPsEdit, onCrop, onSplit, onUpscale, onSuperResolve, onAngle, onViewImage, onUseAsHd, onCopyPrompt: copyImagePrompt, onReversePrompt });
 
     function openImageToolSettings() {
         onKeep(activeNode.id);
@@ -261,7 +288,7 @@ export function CanvasNodeHoverToolbar({
                 style={{ left, top }}
                 onMouseEnter={() => onKeep(node.id)}
                 onMouseLeave={() => {
-                    if (!imageToolSettingsOpen && !renaming) onLeave();
+                    if (!imageToolSettingsOpen && !renaming && !followMenu) onLeave();
                 }}
                 onMouseDown={(event) => event.stopPropagation()}
                 onPointerDown={(event) => event.stopPropagation()}
@@ -288,27 +315,24 @@ export function CanvasNodeHoverToolbar({
                         {followWindowId && node ? (
                             <ToolbarAction id="unfollowWindow" title={t("canvas.nodeToolbar.unfollowTitle")} label={t("canvas.nodeToolbar.unfollow")} icon={<Unlink className="size-4" />} onClick={() => onUnfollow(node)} showLabel={isImage ? showImageToolLabels : true} />
                         ) : node && followOptions.length ? (
-                            <Popover
-                                trigger="click"
-                                placement="bottom"
-                                content={
-                                    <div className="flex max-h-64 min-w-44 flex-col overflow-y-auto">
-                                        {followOptions.map((option) => (
-                                            <button
-                                                key={option.id}
-                                                type="button"
-                                                className="flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-black/5 dark:hover:bg-white/10"
-                                                onClick={() => onFollow(node, option.id)}
-                                            >
-                                                <span className="font-mono text-[10px] opacity-60">{option.index}</span>
-                                                <span className="truncate">{option.title}</span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                }
-                            >
-                                <ToolbarAction id="followWindow" title={t("canvas.nodeToolbar.followTitle")} label={t("canvas.nodeToolbar.follow")} icon={<Link2 className="size-4" />} onClick={() => {}} showLabel={isImage ? showImageToolLabels : true} />
-                            </Popover>
+                            <ToolbarAction
+                                id="followWindow"
+                                title={t("canvas.nodeToolbar.followTitle")}
+                                label={t("canvas.nodeToolbar.follow")}
+                                icon={<Link2 className="size-4" />}
+                                active={Boolean(followMenu)}
+                                onClick={(event) => {
+                                    if (followMenu) {
+                                        setFollowMenu(null);
+                                        return;
+                                    }
+                                    const rect = event.currentTarget.getBoundingClientRect();
+                                    const width = 208;
+                                    const maxX = Math.max(8, window.innerWidth - width - 8);
+                                    setFollowMenu({ x: Math.min(Math.max(8, rect.left), maxX), y: rect.bottom + 8 });
+                                }}
+                                showLabel={isImage ? showImageToolLabels : true}
+                            />
                         ) : null}
                         {toolbarTools.map((tool) => (
                             <ToolbarAction key={tool.id} {...tool} showLabel={isImage ? showImageToolLabels : true} />
@@ -340,6 +364,34 @@ export function CanvasNodeHoverToolbar({
                     onSave={saveImageToolSettings}
                 />
             ) : null}
+            {/* 跟随菜单走 portal：工具栏容器带 transform/overflow，内联渲染会被裁掉或错位。 */}
+            {followMenu && node && followOptions.length
+                ? createPortal(
+                      <div
+                          data-follow-menu
+                          className="fixed z-[3000] flex max-h-64 w-52 flex-col overflow-y-auto rounded-lg border border-black/10 bg-white p-1 text-[#242529] shadow-[0_12px_32px_rgba(15,23,42,.18)]"
+                          style={{ left: followMenu.x, top: followMenu.y }}
+                          onMouseDown={(event) => event.stopPropagation()}
+                      >
+                          <div className="px-2 py-1 text-[11px] font-medium opacity-50">{t("canvas.nodeToolbar.followTitle")}</div>
+                          {followOptions.map((option) => (
+                              <button
+                                  key={option.id}
+                                  type="button"
+                                  className="flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-black/5"
+                                  onClick={() => {
+                                      setFollowMenu(null);
+                                      onFollow(node, option.id);
+                                  }}
+                              >
+                                  <span className="font-mono text-[10px] opacity-60">{option.index}</span>
+                                  <span className="truncate">{option.title}</span>
+                              </button>
+                          ))}
+                      </div>,
+                      document.body,
+                  )
+                : null}
         </>
     );
 }

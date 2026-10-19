@@ -1,6 +1,6 @@
 {
   "name": "canvasagents-agent",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -10,6 +10,7 @@
   },
   "files": [
     "dist",
+    "bin",
     "agent-instructions.md",
     "README.md"
   ],

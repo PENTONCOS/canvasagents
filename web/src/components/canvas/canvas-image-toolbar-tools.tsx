@@ -1,16 +1,15 @@
 import type { ReactNode } from "react";
-import { Brush, Camera, Copy, FileText, Grid2x2, Lock, LockOpen, Maximize2, MonitorUp, Palette, Scissors, Sparkles, Upload, ZoomIn } from "lucide-react";
+import { Camera, Copy, FileText, Grid2x2, Lock, LockOpen, Maximize2, MonitorUp, Palette, Scissors, Sparkles, Upload, ZoomIn } from "lucide-react";
 
 import type { CanvasNodeData } from "@/types/canvas";
 import i18n from "@/i18n";
 
-export type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "maskEdit" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "view" | "psEdit" | "useAsHd";
+export type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "view" | "psEdit" | "useAsHd";
 export type ImageQuickToolId = "info" | "delete" | "saveAsset" | "download" | ImageNodeActionToolId;
 
 export type ImageToolHandlers = {
     onUpload: (node: CanvasNodeData) => void;
     onToggleFreeResize: (node: CanvasNodeData) => void;
-    onMaskEdit: (node: CanvasNodeData) => void;
     // Opens the embedded PS editor on *this* image; saving writes back to the same node (no new node).
     onPsEdit: (node: CanvasNodeData) => void;
     onCrop: (node: CanvasNodeData) => void;
@@ -80,14 +79,6 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
         icon: (node) => (node.metadata?.freeResize ? <LockOpen className="size-4" /> : <Lock className="size-4" />),
         active: (node) => Boolean(node.metadata?.freeResize),
         run: (node, handlers) => handlers.onToggleFreeResize(node),
-    },
-    {
-        id: "maskEdit",
-        defaultVisible: true,
-        label: () => i18n.t("canvas.imageTools.mask"),
-        title: () => i18n.t("canvas.imageTools.maskTitle"),
-        icon: () => <Brush className="size-4" />,
-        run: (node, handlers) => handlers.onMaskEdit(node),
     },
     {
         id: "psEdit",

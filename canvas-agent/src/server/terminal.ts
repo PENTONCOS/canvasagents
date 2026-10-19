@@ -1,9 +1,9 @@
 // M2: 内置终端服务。pty-bridge（bin/pty-bridge，forkpty 实现）负责创建/重连
 // macOS screen 会话；ws 在浏览器 xterm 客户端与 pty 之间推流。会话名
 // canvas-<canvasId>-<n> 在 screen 中存活，agent 重启后可透明重连。
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { accessSync, constants } from "node:fs";
+import { accessSync, chmodSync, constants, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,6 +15,8 @@ import { logger } from "../utils/logger.js";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_PATH = process.env.PTY_BRIDGE_PATH || path.join(moduleDir, "..", "..", "bin", "pty-bridge");
+const BRIDGE_SOURCE = path.join(moduleDir, "..", "..", "bin", "pty-bridge.c");
+const BRIDGE_CC = process.env.CC || "/usr/bin/cc";
 const SCREEN_PATH = process.env.SCREEN_PATH || "/usr/bin/screen";
 const SCROLLBACK_LIMIT = 200_000;
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
@@ -82,13 +84,46 @@ function screenNames(): Promise<Set<string>> {
     });
 }
 
-export function bridgeAvailable() {
+let bridgeProbe: boolean | null = null;
+
+/** 二进制存在且当前架构能跑（x86 包跑在 M 芯片上时 exists+X_OK 会骗人）。 */
+function bridgeRunnable() {
     try {
         accessSync(BRIDGE_PATH, constants.X_OK);
-        return true;
     } catch {
         return false;
     }
+    const probe = spawnSync(BRIDGE_PATH, [], { timeout: 3000, stdio: "ignore" });
+    // pty-bridge 无参数时打印 usage 并 exit 2；退化为 error 说明架构/加载不可用。
+    return !probe.error && probe.status === 2;
+}
+
+/** 源码随包发布；二进缺失或架构不匹配时现场编译，避免 npx 安装后终端直接 500。 */
+function compileBridge() {
+    if (!existsSync(BRIDGE_SOURCE)) return false;
+    try {
+        mkdirSync(path.dirname(BRIDGE_PATH), { recursive: true });
+        execFileSync(BRIDGE_CC, ["-O2", "-o", BRIDGE_PATH, BRIDGE_SOURCE, "-lutil"], { stdio: "ignore", timeout: 60_000 });
+        chmodSync(BRIDGE_PATH, 0o755);
+        logger.info("pty-bridge 已就地编译", { path: BRIDGE_PATH });
+        return true;
+    } catch (error) {
+        logger.warn("pty-bridge 就地编译失败", { error: error instanceof Error ? error.message : String(error) });
+        return false;
+    }
+}
+
+export function bridgeAvailable() {
+    if (bridgeProbe === true) return true;
+    bridgeProbe = bridgeRunnable() || (compileBridge() && bridgeRunnable());
+    return bridgeProbe;
+}
+
+export function bridgeUnavailableReason() {
+    if (bridgeAvailable()) return "";
+    return existsSync(BRIDGE_SOURCE)
+        ? `pty-bridge 不可用：${BRIDGE_PATH} 缺失/不可执行，且就地编译失败（需要 Xcode 命令行工具下的 cc）`
+        : `pty-bridge 不可用：${BRIDGE_PATH} 缺失，且包内不含 ${BRIDGE_SOURCE}`;
 }
 
 class TerminalManager {
@@ -112,7 +147,7 @@ class TerminalManager {
     }
 
     async create(canvasId = "") {
-        if (!bridgeAvailable()) throw new Error("pty-bridge 不可用（bin/pty-bridge 缺失或不可执行）");
+        if (!bridgeAvailable()) throw new Error(bridgeUnavailableReason());
         let lastError = new Error("session create failed");
         for (let attempt = 0; attempt < 5; attempt += 1) {
             const names = await screenNames();
