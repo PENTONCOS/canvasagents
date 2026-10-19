@@ -8,6 +8,7 @@ import {
     AGENT_WINDOW_LIMIT,
     appendAgentWindow,
     bumpUnread,
+    bumpUnreadOnce,
     clearUnread,
     closeAgentWindowWithFallback,
     createAgentWindow,
@@ -164,7 +165,7 @@ type AgentStore = {
     removeWindow: (id: string) => void;
     selectWindow: (id: string) => void;
     renameWindow: (id: string, title: string) => void;
-    noteWindowOutput: (windowId: string) => void;
+    noteWindowOutput: (windowId: string, dedupeKey?: string) => void;
 };
 
 export const CANVAS_AGENT_PANEL_MOTION_MS = 500;
@@ -173,19 +174,46 @@ function activeAgentWindow(state: Pick<AgentStore, "windows" | "activeWindowId">
     return state.windows.find((window) => window.id === state.activeWindowId) ?? state.windows[0];
 }
 
-/** 取指定会话窗切片；找不到时回退激活窗（与 commitAgentPatch 的兜底一致）。 */
+/**
+ * 取指定会话窗切片。找不到就返回 undefined —— 后台写入路径必须放弃写入，
+ * 绝不能回退激活窗（回退就是把后台窗内容写进当前窗的直接原因）。
+ */
 export function agentWindowById(state: Pick<AgentStore, "windows" | "activeWindowId">, windowId: string): AgentWindow | undefined {
-    return state.windows.find((window) => window.id === windowId) ?? activeAgentWindow(state);
+    return state.windows.find((window) => window.id === windowId);
 }
 
 /**
  * 按线程反查会话窗：会话线程 conversation.threadId 或当前线程 activeThreadId 命中即返回该窗 id。
- * 未知线程返回 null（调用方继续按现状丢弃）。
+ * 未知线程返回 null。多个窗撞同一线程（历史脏数据）时只认激活窗；
+ * 激活窗不在其中则视为无归属，宁可不写也不并发写多个窗。
  */
-export function agentWindowIdForThread(state: Pick<AgentStore, "windows">, threadId: string): string | null {
+export function agentWindowIdForThread(state: Pick<AgentStore, "windows"> & { activeWindowId?: string }, threadId: string): string | null {
     if (!threadId) return null;
-    const match = state.windows.find((window) => window.conversation.threadId === threadId || window.activeThreadId === threadId);
-    return match ? match.id : null;
+    const matches = state.windows.filter((window) => window.conversation.threadId === threadId || window.activeThreadId === threadId);
+    if (matches.length === 1) return matches[0].id;
+    if (!matches.length) return null;
+    return matches.find((window) => window.id === state.activeWindowId)?.id ?? null;
+}
+
+/**
+ * 会话状态归属哪一窗：threadId 优先；其次显式指定的偏好窗；再次唯一持有该 conversationId 的窗；
+ * 都没有才落到激活窗。返回值至多一个窗，保证一次状态更新不会同时写多个窗。
+ */
+export function agentWindowIdForConversation(
+    state: Pick<AgentStore, "windows" | "activeWindowId">,
+    conversation: Pick<AgentConversationState, "threadId" | "conversationId"> | null | undefined,
+    preferredWindowId = "",
+): string | null {
+    if (!conversation) return null;
+    const byThread = agentWindowIdForThread(state, conversation.threadId);
+    if (byThread) return byThread;
+    if (preferredWindowId && state.windows.some((window) => window.id === preferredWindowId)) return preferredWindowId;
+    const owners = conversation.conversationId
+        ? state.windows.filter((window) => window.conversation.conversationId === conversation.conversationId)
+        : [];
+    if (owners.length === 1) return owners[0].id;
+    if (owners.length > 1) return owners.find((window) => window.id === state.activeWindowId)?.id ?? null;
+    return state.activeWindowId;
 }
 
 /** 临时指定 commitAgentPatch 的窗口级写目标（用于把后台事件写进非激活窗）。 */
@@ -218,6 +246,8 @@ function commitAgentPatch(state: AgentStore, patch: Record<string, unknown>): Pa
     if (!Object.keys(windowPatch).length) return globalPatch as Partial<AgentStore>;
     // 目标窗：显式指定（后台事件写非激活窗）时取该窗，否则沿用当前激活窗。
     const targeted = windowPatchTargetId ? state.windows.find((window) => window.id === windowPatchTargetId) : undefined;
+    // 显式指定了目标窗却找不到（窗口已被关掉）：放弃窗口级写入，绝不回退激活窗。
+    if (windowPatchTargetId && !targeted) return globalPatch as Partial<AgentStore>;
     const target = targeted ?? activeAgentWindow(state);
     // 没有窗口时（理论上不会发生）退回直接写，保证不会丢数据。
     if (!target) return { ...globalPatch, ...patch } as Partial<AgentStore>;
@@ -231,10 +261,14 @@ function commitAgentPatch(state: AgentStore, patch: Record<string, unknown>): Pa
 }
 
 function patchActiveWindow(state: AgentStore, evolve: (window: AgentWindow) => AgentWindow): Partial<AgentStore> {
-    const active = activeAgentWindow(state);
+    // 与 commitAgentPatch 一致：显式指定目标窗（后台事件）时写该窗；找不到目标窗就放弃。
+    const targeted = windowPatchTargetId ? state.windows.find((window) => window.id === windowPatchTargetId) : undefined;
+    if (windowPatchTargetId && !targeted) return {};
+    const active = targeted ?? activeAgentWindow(state);
     if (!active) return {};
     const patched = evolve(active);
     const windows = updateAgentWindow(state.windows, active.id, patched);
+    if (active.id !== state.activeWindowId) return { windows };
     return { windows, ...projectAgentWindow(patched) } as Partial<AgentStore>;
 }
 
@@ -343,9 +377,9 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     }),
     renameWindow: (id, title) => set((state) => ({ windows: updateAgentWindow(state.windows, id, { title: title.trim() || defaultWindowTitle(1) }) })),
     // 后台窗产生输出：只给非激活窗累加未读，激活窗的消息本来就在眼前。
-    noteWindowOutput: (windowId) => set((state) => {
+    noteWindowOutput: (windowId, dedupeKey) => set((state) => {
         if (windowId === state.activeWindowId) return {};
-        const windows = bumpUnread(state.windows, windowId);
+        const windows = dedupeKey ? bumpUnreadOnce(state.windows, windowId, dedupeKey) : bumpUnread(state.windows, windowId);
         if (windows === state.windows) return {};
         return { windows };
     }),

@@ -32,10 +32,11 @@ describe("agentWindowIdForThread", () => {
 });
 
 describe("agentWindowById", () => {
-    test("取指定窗，找不到回退激活窗", () => {
+    test("取指定窗；找不到返回 undefined，绝不回退激活窗", () => {
         const state = { windows: [win("a"), win("b")], activeWindowId: "b" };
         expect(agentWindowById(state, "a")?.id).toBe("a");
-        expect(agentWindowById(state, "missing")?.id).toBe("b");
+        // 后台写入路径拿到 undefined 必须放弃写入 —— 回退激活窗就是把后台内容串进当前窗。
+        expect(agentWindowById(state, "missing")).toBeUndefined();
     });
 });
 

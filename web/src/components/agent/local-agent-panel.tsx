@@ -20,7 +20,8 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import { useShallow } from "zustand/react/shallow";
-import { useAgentStore, type AgentAttachment, type AgentBootstrapStatus, type AgentCanvasContext, type AgentCanvasReference, type AgentChatItem, type AgentConversationState, type AgentModel, type AgentPendingApproval, type AgentPendingToolCall, type AgentPermissionMode, type AgentReasoningEffort, type AgentThreadSummary, agentWindowById, agentWindowIdForThread, withWindowPatchTarget } from "@/stores/use-agent-store";
+import { useAgentStore, type AgentAttachment, type AgentBootstrapStatus, type AgentCanvasContext, type AgentCanvasReference, type AgentChatItem, type AgentConversationState, type AgentModel, type AgentPendingApproval, type AgentPendingToolCall, type AgentPermissionMode, type AgentReasoningEffort, type AgentThreadSummary, agentWindowById, agentWindowIdForConversation, agentWindowIdForThread, withWindowPatchTarget } from "@/stores/use-agent-store";
+import { backgroundUnreadKey } from "@/lib/agent/agent-windows";
 import { type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import { referenceConnectionOps } from "@/lib/canvas/canvas-reference-links";
 import { isSiteTool, runSiteTool } from "@/lib/agent/agent-site-tools";
@@ -47,7 +48,6 @@ import {
     bindPendingTurnMessages,
     isCanvasWriteTool,
     isConnectionErrorMessage,
-    isCurrentThreadEvent,
     isReasoningSummary,
     mergeAgentMessages,
     mergeStreamText,
@@ -218,12 +218,14 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         });
         return () => { disposed = true; };
     }, []);
-    const loadThreadSnapshot = useCallback(async (threadId: string, sequence: number, response?: AgentThreadResponse, expectedTurnId = "") => {
+    const loadThreadSnapshot = useCallback(async (threadId: string, sequence: number, windowId: string, response?: AgentThreadResponse, expectedTurnId = "") => {
         let thread = response;
         let lastError: unknown;
         for (const delayMs of HISTORY_RETRY_DELAYS_MS) {
             if (delayMs) await delay(delayMs);
-            if (sequence !== loadThreadsSequenceRef.current || useAgentStore.getState().activeThreadId !== threadId) return false;
+            if (sequence !== loadThreadsSequenceRef.current) return false;
+            const windowAtStart = useAgentStore.getState().windows.find((window) => window.id === windowId);
+            if (windowAtStart?.activeThreadId !== threadId) return false;
             try {
                 thread ||= await fetchAgentJson<AgentThreadResponse>(endpoint, token, `/agent/codex/threads/${encodeURIComponent(threadId)}`);
                 lastError = undefined;
@@ -233,8 +235,8 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 continue;
             }
             const history = normalizeHistoryMessages(thread.messages || []);
-            const latest = useAgentStore.getState();
-            if (sequence !== loadThreadsSequenceRef.current || latest.activeThreadId !== threadId) return false;
+            const latest = useAgentStore.getState().windows.find((window) => window.id === windowId);
+            if (sequence !== loadThreadsSequenceRef.current || !latest || latest.activeThreadId !== threadId) return false;
             const historyTurns = authoritativeHistoryTurnKeys(threadId, thread.settledTurnIds || []);
             const hasExpectedTurn = !expectedTurnId || historyTurns.has(`${threadId}\0${expectedTurnId}`);
             historyTurns.forEach((key) => liveTurnKeysRef.current.delete(key));
@@ -242,7 +244,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             authoritativeHistoryTurnsRef.current = historyTurns;
             const messages = mergeAgentMessages(history, latest.messages, threadId, liveTurnKeysRef.current);
             threadMessagesRef.current.set(threadId, messages);
-            setAgentState({ messages, connectError: "" });
+            withWindowPatchTarget(windowId, () => setAgentState({ messages, connectError: "" }));
             const coveredTurnIds = [...historyTurns].map((key) => key.slice(threadId.length + 1));
             if (coveredTurnIds.length) void acknowledgeCodexHistory(endpoint, token, threadId, coveredTurnIds).catch(() => undefined);
             if (hasExpectedTurn && (thread.historyReady !== false || Boolean(expectedTurnId))) return true;
@@ -251,21 +253,27 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         if (lastError) throw lastError;
         return false;
     }, [endpoint, setAgentState, token]);
-    const applyWorkspaceChange = useCallback((data: AgentWorkspaceEvent) => {
+    const applyWorkspaceChange = useCallback((data: AgentWorkspaceEvent, targetWindowId = "") => {
+        const state = useAgentStore.getState();
         const nextThreadId = data.activeThreadId ?? data.threadId ?? "";
-        const current = useAgentStore.getState();
-        const threadChanged = current.activeThreadId !== nextThreadId;
+        const threadOwnerId = agentWindowIdForThread(state, nextThreadId);
+        const windowId = (targetWindowId && state.windows.some((window) => window.id === targetWindowId) ? targetWindowId : "")
+            || threadOwnerId
+            || state.activeWindowId;
+        const target = state.windows.find((window) => window.id === windowId);
+        if (!target) return loadThreadsSequenceRef.current;
+        const threadChanged = target.activeThreadId !== nextThreadId;
         const emptyThread = Boolean(data.emptyThread || data.draftThread);
-        const pendingMessage = [...current.messages].reverse().find((item) => item.role === "user" && !item.turnId);
+        const pendingMessage = [...target.messages].reverse().find((item) => item.role === "user" && !item.turnId);
         const keepPendingMessage = Boolean(
             data.emptyThread
             && pendingMessage
-            && (current.sending || current.waiting)
+            && (target.sending || target.waiting)
             && (!data.sourceClientId || data.sourceClientId === clientIdRef.current),
         );
-        if (threadChanged && current.activeThreadId) {
-            const messages = keepPendingMessage ? current.messages.filter((item) => item.id !== pendingMessage!.id) : current.messages;
-            threadMessagesRef.current.set(current.activeThreadId, messages);
+        if (threadChanged && target.activeThreadId) {
+            const messages = keepPendingMessage ? target.messages.filter((item) => item.id !== pendingMessage!.id) : target.messages;
+            threadMessagesRef.current.set(target.activeThreadId, messages);
         }
         if (emptyThread && nextThreadId) threadMessagesRef.current.delete(nextThreadId);
         if (threadChanged || emptyThread) {
@@ -277,51 +285,69 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             ? [scopeChatItem(pendingMessage!, nextThreadId, "")]
             : emptyThread ? []
                 : threadChanged ? threadMessagesRef.current.get(nextThreadId) || []
-                    : current.messages;
-        pendingToolRef.current = null;
-        setAgentState({
+                    : target.messages;
+        if (windowId === state.activeWindowId) pendingToolRef.current = null;
+        withWindowPatchTarget(windowId, () => setAgentState({
             activeThreadId: nextThreadId,
-            activeTurnId: threadChanged || emptyThread ? "" : current.activeTurnId,
+            activeTurnId: threadChanged || emptyThread ? "" : target.activeTurnId,
             messages,
-            tokenUsage: threadChanged || emptyThread ? null : current.tokenUsage,
+            tokenUsage: threadChanged || emptyThread ? null : target.tokenUsage,
             pendingTool: null,
-            pendingApprovals: threadChanged || emptyThread ? [] : current.pendingApprovals,
-        });
+            pendingApprovals: threadChanged || emptyThread ? [] : target.pendingApprovals,
+        }));
         return loadThreadsSequenceRef.current;
     }, [setAgentState]);
-    const applyConversationState = useCallback((next: AgentConversationState, force = false) => {
-        const current = useAgentStore.getState();
-        if (!next?.revision || !force && next.revision <= current.conversation.revision) return false;
-        const conversationChanged = next.conversationId !== current.conversation.conversationId;
-        if (conversationChanged || next.threadId !== current.activeThreadId) {
+    /**
+     * 会话状态只落到「属于它」的那一个窗：threadId 优先，其次显式偏好窗，
+     * 再次唯一持有该 conversationId 的窗，都没有才落到激活窗。返回实际写入的窗 id，未写返回 null。
+     */
+    const applyConversationState = useCallback((next: AgentConversationState, force = false, preferredWindowId = "") => {
+        if (!next?.revision) return null;
+        const state = useAgentStore.getState();
+        const windowId = agentWindowIdForConversation(state, next, preferredWindowId);
+        if (!windowId) return null;
+        const target = state.windows.find((window) => window.id === windowId);
+        if (!target) return null;
+        if (!force && next.revision <= target.conversation.revision) return null;
+        const conversationChanged = next.conversationId !== target.conversation.conversationId;
+        const nextThreadId = next.threadId || "";
+        if (conversationChanged || nextThreadId !== target.activeThreadId) {
             applyWorkspaceChange({
-                activeThreadId: next.threadId,
-                emptyThread: conversationChanged || !current.activeThreadId,
+                activeThreadId: nextThreadId,
+                emptyThread: conversationChanged || !target.activeThreadId,
                 draftThread: next.status === "preparing",
                 sourceClientId: next.sourceClientId,
-            });
+            }, windowId);
         }
-        setAgentState({ conversation: next, ...conversationBootstrapView(next) });
-        return true;
+        withWindowPatchTarget(windowId, () => setAgentState({ conversation: next, ...conversationBootstrapView(next) }));
+        return windowId;
     }, [applyWorkspaceChange, setAgentState]);
     const loadThreads = useCallback(async (skipHistory = false, expectedTurnId = "") => {
         if (!connectedRef.current && !useAgentStore.getState().connected) return;
         let sequence = ++loadThreadsSequenceRef.current;
-        setAgentState({ loadingThreads: true });
+        const requestedWindowId = useAgentStore.getState().activeWindowId;
+        withWindowPatchTarget(requestedWindowId, () => setAgentState({ loadingThreads: true }));
         try {
             const data = await fetchAgentJson<AgentThreadsResponse>(endpoint, token, `/agent/codex/threads`);
             if (sequence !== loadThreadsSequenceRef.current) return;
+            // 先按 threadId / conversationId 找到会话归属窗，再决定历史写进哪一窗，绝不默认写激活窗。
+            const windowId = data.conversation
+                ? agentWindowIdForConversation(useAgentStore.getState(), data.conversation) ?? requestedWindowId
+                : requestedWindowId;
             if (data.conversation) {
-                applyConversationState(data.conversation);
+                applyConversationState(data.conversation, false, windowId);
                 sequence = loadThreadsSequenceRef.current;
             }
-            const current = useAgentStore.getState();
-            const currentThreadId = current.activeThreadId || data.workspace?.activeThreadId || "";
-            if (!data.conversation && currentThreadId !== current.activeThreadId) sequence = applyWorkspaceChange({ activeThreadId: currentThreadId });
-            if (sequence !== loadThreadsSequenceRef.current || useAgentStore.getState().activeThreadId !== currentThreadId) return;
-            setAgentState({ threads: data.data || [], workspacePath: data.workspace?.workspacePath || "" });
+            const target = useAgentStore.getState().windows.find((window) => window.id === windowId);
+            if (!target) return;
+            const currentThreadId = target.activeThreadId || data.conversation?.threadId || data.workspace?.activeThreadId || "";
+            if (!data.conversation && currentThreadId !== target.activeThreadId) sequence = applyWorkspaceChange({ activeThreadId: currentThreadId }, windowId);
+            if (sequence !== loadThreadsSequenceRef.current) return;
+            const latest = useAgentStore.getState().windows.find((window) => window.id === windowId);
+            if (!latest || latest.activeThreadId !== currentThreadId) return;
+            withWindowPatchTarget(windowId, () => setAgentState({ threads: data.data || [], workspacePath: data.workspace?.workspacePath || "" }));
             if (currentThreadId && !skipHistory) {
-                await loadThreadSnapshot(currentThreadId, sequence, undefined, expectedTurnId);
+                await loadThreadSnapshot(currentThreadId, sequence, windowId, undefined, expectedTurnId);
             } else {
                 authoritativeHistoryTurnsRef.current.clear();
                 liveTurnKeysRef.current.clear();
@@ -329,7 +355,9 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         } catch (error) {
             addEventLog(rt("historyReadFailed"), error);
         } finally {
-            if (sequence === loadThreadsSequenceRef.current && !threadOperationRef.current) setAgentState({ loadingThreads: false });
+            if (sequence === loadThreadsSequenceRef.current && !threadOperationRef.current) {
+                withWindowPatchTarget(requestedWindowId, () => setAgentState({ loadingThreads: false }));
+            }
         }
     }, [applyConversationState, applyWorkspaceChange, endpoint, loadThreadSnapshot, setAgentState, token]);
     // Imperatively subscribe to canvasContext to keep the ref current and debounce snapshot reports without rerendering the panel.
@@ -388,10 +416,16 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             }
             const codex = hello?.codex;
             const busy = Boolean(codex?.busy);
-            const nextThreadId = hello?.conversation?.threadId ?? hello?.workspace?.activeThreadId ?? useAgentStore.getState().activeThreadId;
-            if (hello?.conversation) applyConversationState(hello.conversation, true);
-            else applyWorkspaceChange({ activeThreadId: nextThreadId });
-            const current = useAgentStore.getState();
+            const storeAtHello = useAgentStore.getState();
+            // 重连只绑定「归属」那一窗：threadId 命中写归属窗，没有归属才写激活窗，绝不一次写多个窗。
+            const helloWindowId = (hello?.conversation
+                ? agentWindowIdForConversation(storeAtHello, hello.conversation)
+                : agentWindowIdForThread(storeAtHello, hello?.workspace?.activeThreadId || storeAtHello.activeThreadId))
+                ?? storeAtHello.activeWindowId;
+            const nextThreadId = hello?.conversation?.threadId ?? hello?.workspace?.activeThreadId ?? storeAtHello.activeThreadId;
+            if (hello?.conversation) applyConversationState(hello.conversation, true, helloWindowId);
+            else applyWorkspaceChange({ activeThreadId: nextThreadId }, helloWindowId);
+            const current = useAgentStore.getState().windows.find((window) => window.id === helloWindowId) ?? storeAtHello.windows[0];
             const nextTurnId = codex?.threadId === nextThreadId ? codex.turnId ?? "" : "";
             if (nextTurnId) liveTurnKeysRef.current.add(`${nextThreadId}\0${nextTurnId}`);
             const activeTurnId = busy ? nextTurnId : "";
@@ -401,7 +435,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 : current.messages.filter((item) => !isConnectionErrorMessage(item));
             errorLoggedRef.current = false;
             connectedRef.current = true;
-            setAgentState({
+            withWindowPatchTarget(helloWindowId, () => setAgentState({
                 connected: true,
                 activity: pendingApprovals.length ? rt("awaitingApproval") : busy ? rt("codexRunning") : rt("connected"),
                 waiting: busy,
@@ -409,22 +443,22 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 connectError: "",
                 silentConnect: false,
                 fragmentBootstrap: false,
-                activeTab: current.activeTab === "setup" ? "chat" : current.activeTab,
+                activeTab: storeAtHello.activeTab === "setup" ? "chat" : storeAtHello.activeTab,
                 activeThreadId: nextThreadId,
                 activeTurnId,
                 messages,
                 pendingApprovals,
-            });
+            }));
             if (!headless) message.success(rt("localAgentConnected"));
             void postState(endpoint, token, clientId, canvasContextRef.current?.snapshot || null);
             if (document.visibilityState === "visible" && document.hasFocus()) void activateAgentClient(endpoint, token, clientId);
             if (!busy && !nextThreadId && (!hello?.conversation || hello.conversation.status === "idle")) {
-                preparedWindowRef.current = useAgentStore.getState().activeWindowId;
+                preparedWindowRef.current = helloWindowId;
                 void fetchAgentJson<AgentWorkspaceResponse>(endpoint, token, "/agent/codex/threads/reset", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId, permissionMode }) })
-                    .then((result) => result.conversation && applyConversationState(result.conversation))
+                    .then((result) => result.conversation && applyConversationState(result.conversation, false, helloWindowId))
                     .catch((error) => {
                         const state = agentErrorState(error);
-                        if (state) applyConversationState(state);
+                        if (state) applyConversationState(state, false, helloWindowId);
                         addEventLog(rt("conversationInitFailed"), error);
                     });
             }
@@ -434,21 +468,24 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             if (!data) return;
             enqueueEvent(async () => {
                 const busy = Boolean(data.busy);
-                const current = useAgentStore.getState();
-                const appliesToCurrentThread = !data.threadId || data.threadId === current.activeThreadId;
-                if (!appliesToCurrentThread) return;
+                const storeState = useAgentStore.getState();
+                // 按线程找归属窗；未知线程直接丢弃，不能改写当前激活窗。
+                const windowId = data.threadId ? agentWindowIdForThread(storeState, data.threadId) : storeState.activeWindowId;
+                if (!windowId) return;
+                const current = storeState.windows.find((window) => window.id === windowId);
+                if (!current) return;
                 const turnId = data.turnId || current.activeTurnId;
                 if (turnId) liveTurnKeysRef.current.add(`${current.activeThreadId}\0${turnId}`);
                 const activeTurnId = busy ? turnId : "";
                 const messages = activeTurnId ? bindPendingTurnMessages(current.messages, current.activeThreadId, activeTurnId) : current.messages;
-                setAgentState({
+                withWindowPatchTarget(windowId, () => setAgentState({
                     activity: busy ? rt("codexRunning") : current.activity === rt("processingFailed") ? rt("processingFailed") : rt("completed"),
                     waiting: busy,
                     sending: false,
                     activeTurnId,
                     messages,
-                });
-                if (!busy && current.waiting) void loadThreads(false, turnId);
+                }));
+                if (!busy && current.waiting && windowId === storeState.activeWindowId) void loadThreads(false, turnId);
             });
         });
         source.addEventListener("tool_call", (event) => {
@@ -459,27 +496,38 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         source.addEventListener("codex_approval", (event) => {
             if (!isCurrentConnection()) return;
             const data = parseEventData<AgentPendingApproval>(event);
-            if (!data || !isCurrentThreadEvent(data)) return;
-            setAgentState({ pendingApprovals: [...useAgentStore.getState().pendingApprovals.filter((item) => item.requestId !== data.requestId), data], activity: rt("awaitingApproval") });
-            addEventLog(rt("awaitingApproval"), data.reason || data.method, data);
+            if (!data) return;
+            const storeState = useAgentStore.getState();
+            const windowId = data.threadId ? agentWindowIdForThread(storeState, data.threadId) : storeState.activeWindowId;
+            if (!windowId) return;
+            const current = storeState.windows.find((window) => window.id === windowId);
+            if (!current) return;
+            withWindowPatchTarget(windowId, () => setAgentState({ pendingApprovals: [...current.pendingApprovals.filter((item) => item.requestId !== data.requestId), data], activity: rt("awaitingApproval") }));
+            addWindowEventLog(windowId, rt("awaitingApproval"), data.reason || data.method, data);
         });
         source.addEventListener("codex_approval_resolved", (event) => {
             if (!isCurrentConnection()) return;
             const data = parseEventData<{ requestId?: string; decision?: "accept" | "acceptForSession" | "decline" | "cancel" }>(event);
             if (!data?.requestId) return;
-            const current = useAgentStore.getState();
+            const storeState = useAgentStore.getState();
+            // 审批归属按 requestId 反查：哪个窗挂着这条审批就写哪个窗。
+            const owner = storeState.windows.find((window) => window.pendingApprovals.some((item) => item.requestId === data.requestId));
+            const windowId = owner?.id ?? storeState.activeWindowId;
+            const current = owner ?? storeState.windows.find((window) => window.id === windowId);
+            if (!current) return;
             const approval = current.pendingApprovals.find((item) => item.requestId === data.requestId);
             const pendingApprovals = current.pendingApprovals.filter((item) => item.requestId !== data.requestId);
-            setAgentState({ pendingApprovals, activity: approvalActivity(pendingApprovals, current.waiting, current.activity) });
+            withWindowPatchTarget(windowId, () => setAgentState({ pendingApprovals, activity: approvalActivity(pendingApprovals, current.waiting, current.activity) }));
             const decision = data.decision || approval?.deciding;
-            if (approval && decision) addEventLog(rt(decision === "accept" || decision === "acceptForSession" ? "approvalGranted" : "approvalCanceled"), approval.reason || approval.method, approval);
+            if (approval && decision) addWindowEventLog(windowId, rt(decision === "accept" || decision === "acceptForSession" ? "approvalGranted" : "approvalCanceled"), approval.reason || approval.method, approval);
         });
         source.addEventListener("agent_event", (event) => {
             const data = parseEventData<AgentEventPayload>(event);
             if (data) enqueueEvent(() => {
                 const eventThreadId = data.threadId || data.thread_id || "";
                 const storeState = useAgentStore.getState();
-                const targetWindowId = agentWindowIdForThread(storeState, eventThreadId);
+                // 有 threadId 就严格按归属路由；没有 threadId 的全局事件落到激活窗。
+                const targetWindowId = eventThreadId ? agentWindowIdForThread(storeState, eventThreadId) : storeState.activeWindowId;
                 if (!targetWindowId) return;
                 if (targetWindowId !== storeState.activeWindowId) {
                     handleBackgroundEvent(targetWindowId, data);
@@ -520,12 +568,14 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             const data = parseEventData<AgentConversationState>(event);
             if (data) enqueueEvent(() => {
                 const storeState = useAgentStore.getState();
-                const targetWindowId = agentWindowIdForThread(storeState, data.threadId);
+                // 严格按 threadId 归属路由；找不到归属时按 conversationId 唯一持有者/激活窗兜底，且只写一个窗。
+                const targetWindowId = agentWindowIdForConversation(storeState, data);
+                if (!targetWindowId) return;
                 if (targetWindowId && targetWindowId !== storeState.activeWindowId) {
                     handleBackgroundEvent(targetWindowId, data);
                     return;
                 }
-                applyConversationState(data);
+                applyConversationState(data, false, targetWindowId);
             });
         });
         source.addEventListener("workspace_changed", (event) => {
@@ -543,7 +593,8 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             enqueueEvent(() => {
                 const eventThreadId = data.threadId || data.message!.threadId || "";
                 const storeState = useAgentStore.getState();
-                const targetWindowId = agentWindowIdForThread(storeState, eventThreadId);
+                // 用户/助手消息带 threadId 时只写归属窗；缺失 threadId 才落激活窗。
+                const targetWindowId = eventThreadId ? agentWindowIdForThread(storeState, eventThreadId) : storeState.activeWindowId;
                 if (!targetWindowId) return;
                 if (targetWindowId !== storeState.activeWindowId) {
                     handleBackgroundEvent(targetWindowId, data);
@@ -579,7 +630,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             enqueueEvent(() => {
                 const eventThreadId = data.threadId || data.thread_id || "";
                 const storeState = useAgentStore.getState();
-                const targetWindowId = agentWindowIdForThread(storeState, eventThreadId);
+                const targetWindowId = eventThreadId ? agentWindowIdForThread(storeState, eventThreadId) : storeState.activeWindowId;
                 if (!targetWindowId) return;
                 if (targetWindowId !== storeState.activeWindowId) {
                     handleBackgroundEvent(targetWindowId, data);
@@ -722,9 +773,12 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         }));
         const messageSkill = selectedSkill ? { name: selectedSkill.name, path: selectedSkill.path, displayName: selectedSkill.interface?.displayName || undefined } : undefined;
         loadThreadsSequenceRef.current += 1;
-        const currentBeforeSend = useAgentStore.getState();
-        const requestThreadId = currentBeforeSend.activeThreadId;
-        setAgentState({ prompt: "", attachments: [], canvasReferences: [], activity: rt("sending"), sending: true, loadingThreads: false, activeTurnId: "", messages: currentBeforeSend.messages });
+        const storeBeforeSend = useAgentStore.getState();
+        // 发送必须用本窗自己的线程：取激活窗切片，而不是可能被别的窗刷新的扁平字段。
+        const sendWindow = agentWindowById(storeBeforeSend, storeBeforeSend.activeWindowId);
+        if (!sendWindow) return;
+        const requestThreadId = sendWindow.activeThreadId || sendWindow.conversation.threadId;
+        setAgentState({ prompt: "", attachments: [], canvasReferences: [], activity: rt("sending"), sending: true, loadingThreads: false, activeTurnId: "", messages: sendWindow.messages });
         addMessage({ id: messageId, itemId: "synthetic:user", clientMessageId: messageId, threadId: requestThreadId, turnId: "", role: "user", text: userText, attachments: files, canvasReferences: messageReferences, skill: messageSkill });
         let threadId = requestThreadId;
         try {
@@ -747,8 +801,8 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                     messageId,
                     clientId: clientIdRef.current,
                     threadId,
-                    conversationId: currentBeforeSend.conversation.conversationId,
-                    expectedRevision: currentBeforeSend.conversation.revision,
+                    conversationId: sendWindow.conversation.conversationId,
+                    expectedRevision: sendWindow.conversation.revision,
                     permissionMode,
                     model,
                     effort: reasoningEffort,
@@ -799,7 +853,10 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         if (!connected || (!sending && !waiting)) return;
         setAgentState({ activity: rt("stopping") });
         try {
-            await interruptCodexTurn(endpoint, token, useAgentStore.getState().activeThreadId || undefined);
+            // 中断用本窗线程：取激活窗切片的线程，不取可能被别的窗改写的扁平字段。
+            const storeState = useAgentStore.getState();
+            const window = agentWindowById(storeState, storeState.activeWindowId);
+            await interruptCodexTurn(endpoint, token, window?.activeThreadId || window?.conversation.threadId || undefined);
             addEventLog(rt("stopTask"), rt("taskStopped"));
         } catch (error) {
             setAgentState({ activity: rt("stopFailed") });
@@ -921,24 +978,32 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     };
 
     const decideApproval = async (approval: AgentPendingApproval, decision: "accept" | "acceptForSession" | "decline") => {
-        const current = useAgentStore.getState();
+        // 审批归属按 requestId 反查持有窗：哪个窗挂着这条审批就更新哪个窗，不默认写激活窗。
+        const storeState = useAgentStore.getState();
+        const owner = storeState.windows.find((window) => window.pendingApprovals.some((item) => item.requestId === approval.requestId));
+        const windowId = owner?.id ?? storeState.activeWindowId;
+        const current = owner ?? agentWindowById(storeState, windowId);
+        if (!current) return;
         const pending = current.pendingApprovals.find((item) => item.requestId === approval.requestId);
         if (!pending || pending.deciding) return;
-        setAgentState({ pendingApprovals: current.pendingApprovals.map((item) => item.requestId === approval.requestId ? { ...item, deciding: decision } : item), activity: rt("submittingApproval") });
+        withWindowPatchTarget(windowId, () => setAgentState({ pendingApprovals: current.pendingApprovals.map((item) => item.requestId === approval.requestId ? { ...item, deciding: decision } : item), activity: rt("submittingApproval") }));
         try {
             await postCodexApproval(endpoint, token, approval.requestId, decision);
-            const latest = useAgentStore.getState();
-            if (latest.pendingApprovals.some((item) => item.requestId === approval.requestId)) setAgentState({ activity: rt("waitingCodexApproval") });
+            const latest = agentWindowById(useAgentStore.getState(), windowId);
+            if (latest?.pendingApprovals.some((item) => item.requestId === approval.requestId)) {
+                withWindowPatchTarget(windowId, () => setAgentState({ activity: rt("waitingCodexApproval") }));
+            }
         } catch (error) {
-            const latest = useAgentStore.getState();
+            const latest = agentWindowById(useAgentStore.getState(), windowId);
+            if (!latest) return;
             const expired = error instanceof Error && error.message.includes("审批请求已失效");
             const resolved = expired || !latest.pendingApprovals.some((item) => item.requestId === approval.requestId);
             const pendingApprovals = resolved
                 ? latest.pendingApprovals.filter((item) => item.requestId !== approval.requestId)
                 : latest.pendingApprovals.map((item) => item.requestId === approval.requestId ? { ...item, deciding: undefined } : item);
-            setAgentState({ pendingApprovals, activity: approvalActivity(pendingApprovals, latest.waiting, latest.activity) });
+            withWindowPatchTarget(windowId, () => setAgentState({ pendingApprovals, activity: approvalActivity(pendingApprovals, latest.waiting, latest.activity) }));
             if (resolved) return;
-            addEventLog(rt("approvalFailed"), error);
+            addWindowEventLog(windowId, rt("approvalFailed"), error);
             message.error(error instanceof Error ? error.message : rt("approvalFailed"));
         }
     };
@@ -1078,15 +1143,16 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         const operation = beginThreadOperation();
         clearSkillSelection();
         setAgentState({ activeTab: "chat", activity: rt("creatingConversation") });
+        const targetWindowId = useAgentStore.getState().activeWindowId;
         try {
             const result = await fetchAgentJson<AgentWorkspaceResponse>(endpoint, token, "/agent/codex/threads/reset", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId: clientIdRef.current, permissionMode }) });
             if (threadOperationRef.current !== operation) return;
-            if (result.conversation) applyConversationState(result.conversation);
+            if (result.conversation) applyConversationState(result.conversation, false, targetWindowId);
             setAgentState({ activeTab: "chat", activity: rt("newConversation") });
         } catch (error) {
             const state = agentErrorState(error);
-            if (state) applyConversationState(state);
-            addEventLog(rt("newConversationFailed"), error);
+            if (state) applyConversationState(state, false, targetWindowId);
+            addWindowEventLog(targetWindowId, rt("newConversationFailed"), error);
             message.error(error instanceof Error ? error.message : rt("newConversationFailed"));
             await loadThreads();
         } finally {
@@ -1099,15 +1165,16 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         const current = useAgentStore.getState();
         if (!current.connected || !threadId || current.sending || current.waiting || current.loadingThreads || ["preparing", "running"].includes(current.conversation.status)) return;
         const operation = beginThreadOperation();
+        const targetWindowId = useAgentStore.getState().activeWindowId;
         try {
             const result = await fetchAgentJson<AgentThreadResponse>(endpoint, token, `/agent/codex/threads/${encodeURIComponent(threadId)}/resume`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ permissionMode, clientId: clientIdRef.current }) });
-            if (result.conversation) applyConversationState(result.conversation);
+            if (result.conversation) applyConversationState(result.conversation, false, targetWindowId);
             await loadThreads();
             if (useAgentStore.getState().activeThreadId === threadId) setAgentState({ activeTab: "chat", activity: rt("conversationResumed") });
         } catch (error) {
             const state = agentErrorState(error);
-            if (state) applyConversationState(state);
-            addEventLog(rt("resumeConversationFailed"), error);
+            if (state) applyConversationState(state, false, targetWindowId);
+            addWindowEventLog(targetWindowId, rt("resumeConversationFailed"), error);
             message.error(error instanceof Error ? error.message : rt("resumeConversationFailed"));
             await loadThreads();
         } finally {
@@ -1156,11 +1223,18 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         setAgentState({ messages: upsertAgentMessage(current.messages, next) });
     };
 
-    const addEventLog = (title: string, text: unknown, raw?: unknown) => {
+    /** 把一条日志写进指定窗（后台窗也只在它自己的切片里累积）。 */
+    const addWindowEventLog = (windowId: string, title: string, text: unknown, raw?: unknown) => {
         const value = normalizeText(text) || title;
-        const last = useAgentStore.getState().eventLogs.at(-1);
+        const target = useAgentStore.getState().windows.find((window) => window.id === windowId);
+        if (!target) return;
+        const last = target.eventLogs.at(-1);
         if (last?.title === title && last.text === value) return;
-        pushEventLog({ id: `${Date.now()}-${Math.random()}`, time: dayjs().format("YYYY-MM-DD HH:mm:ss"), title, text: value, raw });
+        withWindowPatchTarget(windowId, () => pushEventLog({ id: `${Date.now()}-${Math.random()}`, time: dayjs().format("YYYY-MM-DD HH:mm:ss"), title, text: value, raw }));
+    };
+
+    const addEventLog = (title: string, text: unknown, raw?: unknown) => {
+        addWindowEventLog(useAgentStore.getState().activeWindowId, title, text, raw);
     };
 
     // 新建/切换会话窗时补一次会话准备：新窗口的 activeThreadId 为空、conversation.status 永远
@@ -1178,18 +1252,20 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         if (preparedWindowRef.current === activeWindowId) return;
         if (current.sending || current.waiting || current.loadingThreads || threadOperationRef.current) return;
         preparedWindowRef.current = activeWindowId;
+        const preparingWindowId = activeWindowId;
         const operation = beginThreadOperation();
         setAgentState({ activity: rt("creatingConversation") });
         void fetchAgentJson<AgentWorkspaceResponse>(endpoint, token, "/agent/codex/threads/reset", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId: clientIdRef.current, permissionMode }) })
             .then((result) => {
                 if (threadOperationRef.current !== operation) return;
-                if (result.conversation) applyConversationState(result.conversation);
+                // 新建窗即建独立线程：结果只写发起准备的那一窗，绝不落到别的窗。
+                if (result.conversation) applyConversationState(result.conversation, false, preparingWindowId);
             })
             .catch((error) => {
                 preparedWindowRef.current = "";
                 const state = agentErrorState(error);
-                if (state) applyConversationState(state);
-                addEventLog(rt("newConversationFailed"), error);
+                if (state) applyConversationState(state, false, preparingWindowId);
+                addWindowEventLog(preparingWindowId, rt("newConversationFailed"), error);
             })
             .finally(() => finishThreadOperation(operation));
     }, [activeWindowId, connected, applyConversationState, addEventLog, endpoint, permissionMode, setAgentState, token]);
@@ -1363,7 +1439,9 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             setAgentState({ eventLogs: withAppendedEventLog(initial, { id: `${Date.now()}-${Math.random()}`, time: dayjs().format("YYYY-MM-DD HH:mm:ss"), title: log.title, text: log.text }).eventLogs });
             return true;
         });
-        if (produced) useAgentStore.getState().noteWindowOutput(windowId);
+        // 未读按「消息 / turn」计数：流式 delta、日志类事件不带 dedupeKey，不累加。
+        const unreadKey = produced ? backgroundUnreadKey(payload) : null;
+        if (unreadKey) useAgentStore.getState().noteWindowOutput(windowId, unreadKey);
     };
 
     const handleAgentEvent = async (event: AgentEventPayload) => {

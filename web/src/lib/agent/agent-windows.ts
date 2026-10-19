@@ -7,6 +7,8 @@ export const AGENT_WINDOW_LIMIT = 9;
 export const AGENT_WINDOWS_STORAGE_KEY = "canvas-agent-windows";
 /** 每个窗口保留的操作日志条数上限（沿用改造前的全局上限）。 */
 export const AGENT_WINDOW_EVENT_LOG_LIMIT = 160;
+/** 每个窗口保留的未读去重键数量上限（防止长会话无限增长）。 */
+export const AGENT_WINDOW_UNREAD_KEY_LIMIT = 200;
 
 export type AgentWindowStatus = "idle" | "running" | "error";
 
@@ -19,6 +21,8 @@ export type AgentWindow = {
     title: string;
     status: AgentWindowStatus;
     unread: number;
+    /** 已经计过未读的 turn/消息键，保证一次回复只 +1（流式 delta 不计数）。 */
+    unreadKeys: string[];
     messages: AgentChatItem[];
     eventLogs: AgentEventLog[];
     attachments: AgentAttachment[];
@@ -52,6 +56,7 @@ export function createAgentWindow(patch: Partial<AgentWindow> & { id: string; ti
     return {
         status: "idle",
         unread: 0,
+        unreadKeys: [],
         messages: [],
         eventLogs: [],
         attachments: [],
@@ -121,6 +126,35 @@ export function bumpUnread(list: AgentWindow[], id: string, delta = 1): AgentWin
     const target = findAgentWindow(list, id);
     if (!target) return list;
     return updateAgentWindow(list, id, { unread: Math.max(0, target.unread + delta) });
+}
+
+/**
+ * 按事件去重累加未读：同一个 turn / 同一条消息只 +1。
+ * key 为空时退化为普通累加（调用方不应在流式 delta 上调用它）。
+ */
+export function bumpUnreadOnce(list: AgentWindow[], id: string, key: string): AgentWindow[] {
+    const target = findAgentWindow(list, id);
+    if (!target) return list;
+    if (target.unreadKeys.includes(key)) return list;
+    return updateAgentWindow(list, id, {
+        unread: Math.max(0, target.unread + 1),
+        unreadKeys: [...target.unreadKeys, key].slice(-AGENT_WINDOW_UNREAD_KEY_LIMIT),
+    });
+}
+
+/**
+ * 后台事件是否应该让该窗未读 +1：只有一条 assistant 消息或一个 turn 收尾时返回去重键，
+ * 流式 delta（item.updated / 增量文本）返回 null，避免一次回复涨几十个红点。
+ */
+export function backgroundUnreadKey(payload: unknown): string | null {
+    if (!payload || typeof payload !== "object") return null;
+    const chat = payload as { message?: { id?: string; role?: string } };
+    if (chat.message && typeof chat.message === "object") {
+        return chat.message.role === "assistant" && chat.message.id ? `message:${chat.message.id}` : null;
+    }
+    const event = payload as { type?: string; threadId?: string; thread_id?: string; turnId?: string; turn_id?: string };
+    if (event.type === "turn.completed") return `turn:${event.threadId || event.thread_id || ""}:${event.turnId || event.turn_id || "final"}`;
+    return null;
 }
 
 /** 收到消息：激活窗视为已读，非激活窗累加未读。 */
