@@ -34,6 +34,8 @@ export function AgentWindowTabs() {
 
     const active = windows.find((window) => window.id === activeWindowId) ?? windows[0];
     const atLimit = windows.length >= AGENT_WINDOW_LIMIT;
+    // 只剩一个窗时，关窗只会换成一个空白窗，看起来「点了没反应」，所以要先说清楚。
+    const isLastWindow = windows.length <= 1;
     const newWindowLabel = atLimit ? t("agent.window.limit", { count: AGENT_WINDOW_LIMIT }) : t("agent.window.new");
 
     useEffect(() => {
@@ -86,6 +88,10 @@ export function AgentWindowTabs() {
                     </Tooltip>
                     {active.status === "running" ? (
                         <Popconfirm title={t("agent.window.closeConfirm")} okText={t("agent.window.close")} cancelText={t("common.cancel")} onConfirm={closeActive}>
+                            <Button size="small" type="text" className="!h-8 !w-8 !min-w-8 !px-0" aria-label={t("agent.window.close")} style={{ color: theme.node.muted }} icon={<X className="size-3.5" />} />
+                        </Popconfirm>
+                    ) : isLastWindow ? (
+                        <Popconfirm title={t("agent.window.closeLast")} okText={t("agent.window.close")} cancelText={t("common.cancel")} onConfirm={closeActive}>
                             <Button size="small" type="text" className="!h-8 !w-8 !min-w-8 !px-0" aria-label={t("agent.window.close")} style={{ color: theme.node.muted }} icon={<X className="size-3.5" />} />
                         </Popconfirm>
                     ) : (
