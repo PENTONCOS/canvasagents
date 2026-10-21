@@ -9,6 +9,7 @@ import { previewUrlFor, subscribeImagePreviews, getImagePreviewRevision } from "
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
 import { AC_STATUS_COLOR, acStatusLabelKey } from "@/lib/delivery/ac-status";
+import { CanvasAnnotationLayer } from "./canvas-annotation-layer";
 import { useDeliveryStore } from "@/stores/use-delivery-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { ImageNodeRegions } from "./image-node-regions";
@@ -547,6 +548,26 @@ function GroupNodeContent({ node, theme, groupChildCount }: NodeContentRendererP
     );
 }
 
+// M3: 截图圈注入口。默认关闭，避免误拖；开启后拖拽画矩形、Shift+拖拽画箭头，编号自动递增。
+function ImageAnnotationOverlay({ node }: { node: CanvasNodeData }) {
+    const { t } = useTranslation();
+    const [active, setActive] = useState(false);
+    return (
+        <>
+            <CanvasAnnotationLayer nodeId={node.id} size={{ width: node.width, height: node.height }} active={active} />
+            <button
+                type="button"
+                className="absolute right-2 top-2 z-30 flex h-7 items-center rounded-lg border px-2 text-[10px] font-medium opacity-0 shadow-[0_6px_18px_rgba(15,23,42,.16)] backdrop-blur-md transition group-hover/node:opacity-100"
+                style={{ background: active ? "#ef4444" : "rgba(15,23,42,.72)", borderColor: "transparent", color: "#fff" }}
+                onClick={(event) => (event.stopPropagation(), setActive((value) => !value))}
+                data-annotation-toggle
+            >
+                {active ? t("canvas.node.delivery.annotateDone") : t("canvas.node.delivery.annotate")}
+            </button>
+        </>
+    );
+}
+
 // M0: shared compact renderer for delivery-domain nodes (requirement/journey/design/…).
 // Shows the type-specific primary text plus status; full editing lives in each node's Panel.
 function DeliveryNodeContent({ node, theme }: NodeContentRendererProps) {
@@ -926,6 +947,7 @@ function ImageContent({
                 {primaryContent ? (
                     <ImageNodeRegions ctx={pluginContext ?? null} source={node.metadata?.content || ""} naturalWidth={primaryImage?.naturalWidth || node.metadata?.naturalWidth} naturalHeight={primaryImage?.naturalHeight || node.metadata?.naturalHeight} />
                 ) : null}
+                {primaryContent ? <ImageAnnotationOverlay node={node} /> : null}
             </div>
             {primaryImage?.status === "error" ? <BatchImageFailureActions placement="left" onRetry={() => onRetryBatchImage?.(primaryImage.id)} onDelete={() => onDeleteBatchImage?.(primaryImage.id)} /> : null}
             {primaryImage?.content ? (

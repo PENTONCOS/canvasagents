@@ -636,7 +636,7 @@ export default {
             retry: "Retry",
             missingPlugin: "Plugin missing",
             missingPluginDescription: "The plugin for node type “{{type}}” is not installed or enabled",
-            delivery: { selected: "Selected", emptyHint: "Double-click to edit", stepTitle: "Step {{index}}" , acStatus: { draft: "Draft", ready: "Ready", failing: "Failing", passing: "Passing", blocked: "Blocked" }},
+            delivery: { selected: "Selected", emptyHint: "Double-click to edit", stepTitle: "Step {{index}}" , acStatus: { draft: "Draft", ready: "Ready", failing: "Failing", passing: "Passing", blocked: "Blocked" }, annotate: "Mark up", annotateDone: "Done", annotationHint: "Drag to box, Shift+drag for arrow" },
             generateImage: "Generate image from text",
             generate: "Generate",
             editText: "Double-click to edit text",

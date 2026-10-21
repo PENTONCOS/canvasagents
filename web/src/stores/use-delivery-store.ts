@@ -10,6 +10,8 @@ import {
     type DeliveryBug,
     type DeliveryEnvironment,
     type DeliveryRun,
+    nextAnnotationLabel,
+    type DeliveryAnnotation,
     type DeliveryTestCase,
     type DesignVariant,
     type Journey,
@@ -28,12 +30,13 @@ type DeliveryState = {
     bugs: Record<string, DeliveryBug>;
     runs: Record<string, DeliveryRun>;
     environments: Record<string, DeliveryEnvironment>;
+    annotations: Record<string, DeliveryAnnotation>;
 };
 
 /** 持久化实体桶（partialize 收集的字段），迁移函数的输入/输出形状。 */
 type DeliveryPersistedState = Pick<
     DeliveryState,
-    "journeys" | "steps" | "designs" | "acceptance" | "testCases" | "bugs" | "runs" | "environments"
+    "journeys" | "steps" | "designs" | "acceptance" | "testCases" | "bugs" | "runs" | "environments" | "annotations"
 >;
 
 type DeliveryActions = {
@@ -55,6 +58,10 @@ type DeliveryActions = {
     upsertBug: (bug: DeliveryBug) => void;
     removeBug: (id: string) => void;
     setBugStatus: (id: string, status: DeliveryBug["status"]) => void;
+    upsertAnnotation: (annotation: DeliveryAnnotation) => void;
+    removeAnnotation: (id: string) => void;
+    /** 新建圈注：编号在画布内递增，删除中间编号也不复用。 */
+    addAnnotation: (input: Omit<DeliveryAnnotation, "id" | "label" | "createdAt">) => DeliveryAnnotation;
     upsertRun: (run: DeliveryRun) => void;
     upsertEnvironment: (env: DeliveryEnvironment) => void;
     removeEnvironment: (id: string) => void;
@@ -72,6 +79,7 @@ const EMPTY_STATE: DeliveryState = {
     bugs: {},
     runs: {},
     environments: {},
+    annotations: {},
 };
 
 export const useDeliveryStore = create<DeliveryStore>()(
@@ -211,6 +219,28 @@ export const useDeliveryStore = create<DeliveryStore>()(
                     return { bugs: { ...state.bugs, [id]: { ...bug, status } } };
                 }),
 
+            upsertAnnotation: (annotation) =>
+                set((state) => ({ annotations: { ...state.annotations, [annotation.id]: annotation } })),
+
+            removeAnnotation: (id) =>
+                set((state) => {
+                    const annotations = { ...state.annotations };
+                    delete annotations[id];
+                    return { annotations };
+                }),
+
+            addAnnotation: (input) => {
+                const label = nextAnnotationLabel(Object.values(useDeliveryStore.getState().annotations).map((item) => item.label));
+                const annotation: DeliveryAnnotation = {
+                    ...input,
+                    id: `AN-${String(label).padStart(2, "0")}`,
+                    label,
+                    createdAt: Date.now(),
+                };
+                set((state) => ({ annotations: { ...state.annotations, [annotation.id]: annotation } }));
+                return annotation;
+            },
+
             upsertRun: (run) => set((state) => ({ runs: { ...state.runs, [run.id]: run } })),
 
             upsertEnvironment: (env) =>
@@ -227,7 +257,7 @@ export const useDeliveryStore = create<DeliveryStore>()(
         }),
         {
             name: "delivery-store",
-            version: 2,
+            version: 3,
             migrate: migrateDeliveryState,
             storage: createJSONStorage(() => localForageStorage),
             // Persist entities only; actions are rebuilt on hydration.
@@ -240,6 +270,7 @@ export const useDeliveryStore = create<DeliveryStore>()(
                 bugs: state.bugs,
                 runs: state.runs,
                 environments: state.environments,
+                annotations: state.annotations,
             }),
         },
     ),
@@ -248,7 +279,7 @@ export const useDeliveryStore = create<DeliveryStore>()(
 /** 交付域持久化迁移：旧版本缺实体桶时补空对象，避免 hydrate 后字段为 undefined。 */
 export function migrateDeliveryState(persisted: unknown, version: number) {
     const base = (persisted && typeof persisted === "object"? persisted: {}) as Record<string, unknown>;
-    for (const key of ["journeys", "steps", "designs", "acceptance", "testCases", "bugs", "runs", "environments"]) {
+    for (const key of ["journeys", "steps", "designs", "acceptance", "testCases", "bugs", "runs", "environments", "annotations"]) {
         if (!base[key] || typeof base[key]!== "object") base[key] = {};
     }
     void version;

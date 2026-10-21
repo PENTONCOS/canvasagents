@@ -155,3 +155,59 @@ export function nextEntityId(existing: string[], prefix: string): string {
     }
     return `${prefix}-${String(max + 1).padStart(2, "0")}`;
 }
+
+// --- M3: annotation (screenshot markup) ------------------------------------------------------
+
+export type AnnotationShape = "rect" | "arrow";
+
+/**
+ * 截图圈注。坐标统一归一化到 0..1（相对所属图片节点），
+ * 这样节点缩放、画布缩放、换分辨率都不会让圈注跑位。
+ */
+export type DeliveryAnnotation = {
+    id: string; // "AN-01"
+    nodeId: string; // 所属图片节点
+    shape: AnnotationShape;
+    from: { x: number; y: number };
+    to: { x: number; y: number };
+    label: number; // 画布内递增编号（1,2,3…），对应截图上的数字标记
+    acId?: string; // 圈注针对的验收标准
+    bugId?: string; // 由该圈注生成的问题单
+    note?: string;
+    createdAt: number;
+};
+
+export function clampNormalized(value: number): number {
+    if (!Number.isFinite(value)) return 0;
+    return Math.min(1, Math.max(0, value));
+}
+
+/** 归一化坐标 → 节点内像素矩形（左上角 + 宽高，保证非负）。 */
+export function annotationRect(
+    annotation: Pick<DeliveryAnnotation, "from" | "to">,
+    size: { width: number; height: number },
+): { x: number; y: number; width: number; height: number } {
+    const x1 = clampNormalized(annotation.from.x) * size.width;
+    const y1 = clampNormalized(annotation.from.y) * size.height;
+    const x2 = clampNormalized(annotation.to.x) * size.width;
+    const y2 = clampNormalized(annotation.to.y) * size.height;
+    return {
+        x: Math.min(x1, x2),
+        y: Math.min(y1, y2),
+        width: Math.abs(x2 - x1),
+        height: Math.abs(y2 - y1),
+    };
+}
+
+/** 下一个圈注编号：画布内 1 开始递增，删除中间编号也不复用，避免截图与单号错位。 */
+export function nextAnnotationLabel(existing: number[]): number {
+    return existing.reduce((max, value) => (Number.isFinite(value) && value > max ? value : max), 0) + 1;
+}
+
+/** 由圈注生成问题单标题：编号 + 违反的 AC，保证每个问题单都能追溯到验收标准。 */
+export function annotationBugTitle(annotation: Pick<DeliveryAnnotation, "label" | "acId" | "note">): string {
+    const note = annotation.note?.trim();
+    if (note) return note;
+    if (annotation.acId) return `#${annotation.label} 违反 ${annotation.acId}`;
+    return `#${annotation.label} 圈注问题`;
+}
