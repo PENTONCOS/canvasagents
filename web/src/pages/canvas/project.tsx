@@ -28,6 +28,8 @@ import { captureVideoFrame, type VideoFramePosition } from "@/lib/canvas/canvas-
 import { App, Button, Modal } from "antd";
 import { NODE_DEFAULT_SIZE, getNodeSpec } from "@/constant/canvas";
 import { layoutDesignVariants, layoutJourneySteps } from "@/lib/canvas/journey-layout";
+import { useDeliveryStore } from "@/stores/use-delivery-store";
+import { nextEntityId, nextStepId, nextVariantId, type DesignVariant, type JourneyStep } from "@/types/delivery";
 import { ActiveConnectionPath, ConnectionPath } from "@/components/canvas/canvas-connections";
 import { CanvasConfigComposer } from "@/components/canvas/canvas-config-composer";
 import { CanvasConfigNodePanel } from "@/components/canvas/canvas-config-node-panel";
@@ -1042,6 +1044,21 @@ function InfiniteCanvasPage() {
             // 交付域节点的语义在 metadata 上，画布只负责摆放与连线。
             const extraNodes: CanvasNodeData[] = [];
             const extraConnections: CanvasConnection[] = [];
+            // M2: 节点与交付实体一起创建，实体的 nodeId 指回画布，侧栏/Agent 才能互查。
+            const delivery = useDeliveryStore.getState();
+            if (type === CanvasNodeType.Acceptance) {
+                const acId = nextEntityId(Object.keys(delivery.acceptance), "AC");
+                delivery.upsertAc({
+                    id: acId,
+                    statement: "",
+                    journeyIds: [],
+                    stepIds: [],
+                    testCaseIds: [],
+                    status: "draft",
+                    nodeId: newNode.id,
+                });
+                newNode.metadata = { ...newNode.metadata, acId };
+            }
             if (type === CanvasNodeType.Journey) {
                 const stepSpec = getNodeSpec(CanvasNodeType.JourneyStep);
                 const stepPositions = layoutJourneySteps({
@@ -1050,18 +1067,31 @@ function InfiniteCanvasPage() {
                     stepSize: { width: stepSpec.width, height: stepSpec.height },
                     count: 3,
                 });
+                const journeyId = nextEntityId(Object.keys(delivery.journeys), "J");
+                const createdSteps: { nodeId: string; title: string }[] = [];
                 stepPositions.forEach((position, index) => {
                     const step = createCanvasNode(CanvasNodeType.JourneyStep, {
                         x: position.x + stepSpec.width / 2,
                         y: position.y + stepSpec.height / 2,
                     });
-                    step.metadata = {
-                        ...step.metadata,
-                        statement: t("canvas.node.delivery.stepTitle", { index: index + 1 }),
-                    };
+                    const title = t("canvas.node.delivery.stepTitle", { index: index + 1 });
+                    step.metadata = { ...step.metadata, statement: title };
                     extraNodes.push(step);
+                    createdSteps.push({ nodeId: step.id, title });
                     extraConnections.push({ id: nanoid(), fromNodeId: newNode.id, toNodeId: step.id, type: "specifies" });
                 });
+                const stepEntities: JourneyStep[] = [];
+                for (const [index, created] of createdSteps.entries()) {
+                    stepEntities.push({
+                        id: nextStepId(journeyId, stepEntities.map((step) => step.id)),
+                        journeyId,
+                        order: index + 1,
+                        title: created.title,
+                        nodeId: created.nodeId,
+                    });
+                }
+                for (const step of stepEntities) delivery.upsertStep(step);
+                delivery.upsertJourney({ id: journeyId, title: "", stepIds: stepEntities.map((step) => step.id), nodeId: newNode.id });
             }
             if (type === CanvasNodeType.Design) {
                 const centers = layoutDesignVariants(
@@ -1075,6 +1105,21 @@ function InfiniteCanvasPage() {
                     const variant = createCanvasNode(CanvasNodeType.Design, centers[index + 1]);
                     variant.metadata = { ...variant.metadata, variantLabel: label, selected: false, variantOf: newNode.id };
                     extraNodes.push(variant);
+                });
+                // 三版设计对应三个 DesignVariant 实体；同一旅程（这里没有旅程，用 variantOf 分组）只有一版选中。
+                const designIds: string[] = Object.keys(delivery.designs);
+                [newNode, ...extraNodes.filter((node) => node.type === CanvasNodeType.Design)].forEach((node) => {
+                    const id = nextVariantId(designIds);
+                    designIds.push(id);
+                    // 从菜单直接创建设计稿时还没有旅程归属，journeyId 留空；后续由 Agent 或面板挂到旅程上。
+                    const variant: DesignVariant = {
+                        id,
+                        journeyId: "",
+                        label: id.slice(-1),
+                        selected: node.metadata?.selected === true,
+                        nodeId: node.id,
+                    };
+                    delivery.upsertDesign(variant);
                 });
             }
 

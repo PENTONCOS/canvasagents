@@ -5,6 +5,7 @@ import { canTransitionAc, nextEntityId, nextStepId, nextVariantId, transitionAc,
 describe("AC state machine", () => {
     const legal: [AcStatus, AcStatus][] = [
         ["draft", "ready"],
+        ["ready", "passing"], // 回归用例首次即通过：ready 必须能直接转绿
         ["ready", "failing"],
         ["ready", "blocked"],
         ["failing", "passing"],
@@ -27,7 +28,6 @@ describe("AC state machine", () => {
         ["draft", "failing"],
         ["draft", "passing"],
         ["draft", "blocked"],
-        ["ready", "passing"], // must run (fail first) before passing
         ["failing", "ready"],
         ["blocked", "draft"],
     ];

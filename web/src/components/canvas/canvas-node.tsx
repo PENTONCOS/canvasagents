@@ -8,6 +8,8 @@ import { pickImageSource } from "@/lib/image-thumbnail";
 import { previewUrlFor, subscribeImagePreviews, getImagePreviewRevision } from "@/services/image-storage";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
+import { AC_STATUS_COLOR, acStatusLabelKey } from "@/lib/delivery/ac-status";
+import { useDeliveryStore } from "@/stores/use-delivery-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { ImageNodeRegions } from "./image-node-regions";
 import { CanvasNodeStageBadge } from "./canvas-node-stage-badge";
@@ -550,22 +552,32 @@ function GroupNodeContent({ node, theme, groupChildCount }: NodeContentRendererP
 function DeliveryNodeContent({ node, theme }: NodeContentRendererProps) {
     const { t } = useTranslation();
     const meta = node.metadata;
+    // AC 的状态以 store 为准（测试结果回填的是实体，不是节点元数据）。
+    const acStatus = useDeliveryStore((state) => (meta?.acId ? state.acceptance[meta.acId]?.status : undefined));
     const body = meta?.statement || meta?.content || "";
-    const badges: string[] = [];
-    if (meta?.acId) badges.push(meta.acId);
-    if (meta?.bugId) badges.push(meta.bugId);
-    if (meta?.severity) badges.push(meta.severity);
-    if (meta?.envName) badges.push(meta.envName);
-    if (meta?.runKind) badges.push(meta.runKind);
-    if (meta?.variantLabel) badges.push(String(meta.variantLabel));
-    if (meta?.selected) badges.push(t("canvas.node.delivery.selected"));
+    const badges: { text: string; color?: string; status?: string }[] = [];
+    if (meta?.acId) badges.push({ text: meta.acId });
+    if (meta?.bugId) badges.push({ text: meta.bugId });
+    if (meta?.severity) badges.push({ text: meta.severity });
+    if (meta?.envName) badges.push({ text: meta.envName });
+    if (meta?.runKind) badges.push({ text: meta.runKind });
+    if (meta?.variantLabel) badges.push({ text: String(meta.variantLabel) });
+    if (meta?.selected) badges.push({ text: t("canvas.node.delivery.selected") });
+    if (acStatus) {
+        badges.push({ text: t(acStatusLabelKey(acStatus)), color: AC_STATUS_COLOR[acStatus], status: acStatus });
+    }
     return (
         <div className="flex h-full flex-col gap-1 overflow-hidden p-2" style={{ color: theme.node.text }}>
             {badges.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                     {badges.map((badge) => (
-                        <span key={badge} className="rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ background: theme.node.fill, color: theme.node.muted }}>
-                            {badge}
+                        <span
+                            key={badge.text}
+                            data-ac-badge={badge.status}
+                            className="rounded px-1.5 py-0.5 text-[10px] font-medium"
+                            style={badge.color ? { background: `${badge.color}22`, color: badge.color } : { background: theme.node.fill, color: theme.node.muted }}
+                        >
+                            {badge.text}
                         </span>
                     ))}
                 </div>

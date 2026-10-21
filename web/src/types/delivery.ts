@@ -122,11 +122,13 @@ export type DeliveryEnvironment = {
 
 // --- AC state machine ----------------------------------------------------------------------
 
-// Allowed transitions: draft -> ready; ready -> failing|blocked; failing -> passing|blocked;
+// Allowed transitions: draft -> ready; ready -> passing|failing|blocked; failing -> passing|blocked;
 // passing -> failing|blocked|ready; blocked -> ready|failing|passing.
+// ready -> passing 允许：回归用例首次运行就可能通过，若强制先红再绿，AC 永远无法从 ready 变绿。
+// 「必须先失败」属于运行级约束（一次运行里从未出现过失败 → 该次运行可疑），由运行器判定，不在 AC 状态机里。
 const AC_TRANSITIONS: Record<AcStatus, AcStatus[]> = {
     draft: ["ready"],
-    ready: ["failing", "blocked"],
+    ready: ["passing", "failing", "blocked"],
     failing: ["passing", "blocked"],
     passing: ["failing", "blocked", "ready"],
     blocked: ["ready", "failing", "passing"],

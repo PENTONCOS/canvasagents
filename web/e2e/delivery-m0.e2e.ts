@@ -82,3 +82,22 @@ test("创建设计稿 → 三版并排，默认只选中 A 版", async ({ page }
     // 「已选定」徽章只能有一个 —— 多选会让「选定版本才进上下文」失去意义。
     await expect(page.getByText("已选定")).toHaveCount(1);
 });
+
+test("创建验收标准 → 侧栏验收列表出现 AC-01，状态与画布徽章同色", async ({ page }) => {
+    await openFreshCanvas(page);
+    await createFromMenu(page, "验收标准");
+    // 画布上应立刻有一个交付节点，且徽章显示 AC-01 + 草稿。
+    await expect(page.locator("[data-node-id]")).toHaveCount(1, { timeout: 10_000 });
+    await expect(page.getByText("AC-01").first()).toBeVisible();
+    // 侧栏验收 tab：与画布读的是同一个 store，颜色来自 AC_STATUS_COLOR。
+    await page.getByRole("button", { name: "验收", exact: true }).click();
+    const item = page.locator('[data-testid="acceptance-list"] [data-ac-id="AC-01"]').first();
+    await expect(item).toBeVisible({ timeout: 10_000 });
+    await expect(item).toHaveAttribute("data-ac-status", "draft");
+    // 两处徽章颜色必须一致（同一常量），这里断言画布与侧栏都用 #94a3b8 的草稿色。
+    const canvasBadgeColor = await page.locator('[data-node-id] [data-ac-badge="draft"]').first().evaluate((el) => getComputedStyle(el).color);
+    const panelBadgeColor = await item.locator("span", { hasText: "草稿" }).last().evaluate((el) => getComputedStyle(el).color);
+    expect(canvasBadgeColor).toBe(panelBadgeColor);
+    // 草稿色是单一来源 #94a3b8，任何一处改色都会让这条断言失败。
+    expect(canvasBadgeColor).toBe("rgb(148, 163, 184)");
+});

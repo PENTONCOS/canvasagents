@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
+import { planAcStatusUpdates, type AcResultInput } from "@/lib/delivery/run-results";
 import { localForageStorage } from "@/lib/localforage-storage";
 import {
     transitionAc,
@@ -47,6 +48,8 @@ type DeliveryActions = {
     upsertAc: (ac: AcceptanceCriterion) => void;
     removeAc: (id: string) => void;
     setAcStatus: (id: string, status: AcStatus, runId?: string) => { ok: boolean; error?: string };
+    /** 按测试结果批量回填 AC 状态（失败优先；返回被拒绝的条目，便于提示）。 */
+    applyAcResults: (results: AcResultInput[], runId?: string) => { applied: string[]; rejected: { acId: string; reason: string }[] };
     upsertTestCase: (testCase: DeliveryTestCase) => void;
     removeTestCase: (id: string) => void;
     upsertBug: (bug: DeliveryBug) => void;
@@ -156,6 +159,30 @@ export const useDeliveryStore = create<DeliveryStore>()(
                     },
                 }));
                 return { ok: true };
+            },
+
+            applyAcResults: (results, runId) => {
+                const { plans, rejected } = planAcStatusUpdates(useDeliveryStore.getState().acceptance, results);
+                if (plans.length === 0) {
+                    return { applied: [], rejected: rejected.map((item) => ({ acId: item.acId, reason: item.reason })) };
+                }
+                set((state) => {
+                    const acceptance = { ...state.acceptance };
+                    for (const plan of plans) {
+                        let current = acceptance[plan.acId];
+                        for (const step of plan.steps) {
+                            const next = transitionAc(current.status, step);
+                            if (!next.ok) break;
+                            current = { ...current, status: next.status, lastRunId: runId ?? current.lastRunId };
+                        }
+                        acceptance[plan.acId] = current;
+                    }
+                    return { acceptance };
+                });
+                return {
+                    applied: plans.flatMap((plan) => plan.steps.map((step) => `${plan.acId}:${step}`)),
+                    rejected: rejected.map((item) => ({ acId: item.acId, reason: item.reason })),
+                };
             },
 
             upsertTestCase: (testCase) =>

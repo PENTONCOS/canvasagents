@@ -6,6 +6,7 @@ import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes, type CanvasTheme } from "@/lib/canvas-theme";
+import { AC_STATUS_COLOR, acStatusLabelKey, countAcByStatus } from "@/lib/delivery/ac-status";
 import { exportCanvasNodes } from "@/lib/canvas/canvas-export";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { cn } from "@/lib/utils";
@@ -14,6 +15,7 @@ import { fetchSourcePrompts, type Prompt } from "@/services/api/prompts";
 import { uploadMediaFile } from "@/services/file-storage";
 import { previewUrlFor, subscribeImagePreviews, getImagePreviewRevision, uploadImage } from "@/services/image-storage";
 import { useAssetStore, type Asset, type AssetKind } from "@/stores/use-asset-store";
+import { useDeliveryStore } from "@/stores/use-delivery-store";
 import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
 import { CANVAS_SIDE_PANEL_MAX_WIDTH, CANVAS_SIDE_PANEL_MIN_WIDTH, CANVAS_SIDE_PANEL_MOTION_MS, useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -24,7 +26,7 @@ import type { InsertAssetPayload } from "./asset-picker-modal";
 const PANEL_MOTION_SECONDS = CANVAS_SIDE_PANEL_MOTION_MS / 1000;
 const PANEL_EASE = [0.22, 1, 0.36, 1] as const;
 
-type PanelTab = "canvas" | "assets" | "prompts";
+type PanelTab = "canvas" | "assets" | "prompts" | "acceptance";
 
 type Props = {
     nodes: CanvasNodeData[];
@@ -104,14 +106,17 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
                     <TabButton label={t("canvas.sidePanel.canvas")} active={tab === "canvas"} theme={theme} onClick={() => setTab("canvas")} />
                     <TabButton label={t("canvas.sidePanel.assets")} active={tab === "assets"} theme={theme} onClick={() => setTab("assets")} />
                     <TabButton label={t("canvas.sidePanel.prompts")} active={tab === "prompts"} theme={theme} onClick={() => setTab("prompts")} />
+                    <TabButton label={t("canvas.sidePanel.acceptance")} active={tab === "acceptance"} theme={theme} onClick={() => setTab("acceptance")} />
                 </div>
                 <div className="mt-2 min-h-0 flex-1 overflow-hidden">
                     {tab === "canvas" ? (
                         <CanvasNodesTab nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={onFocusNode} onPreviewNode={onPreviewNode} onHoverNode={onHoverNode} theme={theme} />
                     ) : tab === "assets" ? (
                         <CanvasAssetsTab onInsert={onInsertAsset} theme={theme} />
-                    ) : (
+                    ) : tab === "prompts" ? (
                         <CanvasPromptsTab onInsert={onInsertAsset} theme={theme} />
+                    ) : (
+                        <DeliveryAcceptanceTab theme={theme} onFocusNode={onFocusNode} />
                     )}
                 </div>
                 <button type="button" className="absolute inset-y-0 right-0 z-40 w-4 translate-x-1/2 cursor-col-resize" onPointerDown={startResize} aria-label={t("canvas.sidePanel.resize")} />
@@ -126,6 +131,56 @@ function TabButton({ label, active, theme, onClick }: { label: string; active: b
             {label}
             {active ? <motion.span layoutId="sidePanelTabIndicator" className="absolute inset-x-0 -bottom-px h-0.5 rounded-full" style={{ background: theme.toolbar.activeText }} transition={{ type: "spring", stiffness: 500, damping: 34 }} /> : null}
         </button>
+    );
+}
+
+// M2: 验收标签页。状态色与画布节点徽章共用 AC_STATUS_COLOR，保证两处一致。
+function DeliveryAcceptanceTab({ theme, onFocusNode }: { theme: CanvasTheme; onFocusNode: (nodeId: string) => void }) {
+    const { t } = useTranslation();
+    const acceptance = useDeliveryStore((state) => state.acceptance);
+    const items = useMemo(() => Object.values(acceptance).sort((a, b) => a.id.localeCompare(b.id)), [acceptance]);
+    const counts = useMemo(() => countAcByStatus(items.map((item) => item.status)), [items]);
+
+    if (items.length === 0) {
+        return (
+            <div className="px-4 py-6 text-xs" style={{ color: theme.node.muted }} data-testid="acceptance-empty">
+                {t("canvas.sidePanel.acEmpty")}
+            </div>
+        );
+    }
+
+    return (
+        <div className="h-full overflow-y-auto px-3 pb-4" data-testid="acceptance-list">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 py-2 text-[11px]" style={{ color: theme.node.muted }}>
+                <span>{t("canvas.sidePanel.acTotal", { count: items.length })}</span>
+                <span style={{ color: AC_STATUS_COLOR.passing }}>{t("canvas.sidePanel.acPassing", { count: counts.passing })}</span>
+                <span style={{ color: AC_STATUS_COLOR.failing }}>{t("canvas.sidePanel.acFailing", { count: counts.failing })}</span>
+            </div>
+            {items.map((item) => (
+                <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => item.nodeId && onFocusNode(item.nodeId)}
+                    className="mb-1 flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-opacity hover:opacity-80"
+                    style={{ background: theme.node.fill, color: theme.node.text }}
+                    data-ac-id={item.id}
+                    data-ac-status={item.status}
+                >
+                    <span className="mt-1 h-2 w-2 shrink-0 rounded-full" style={{ background: AC_STATUS_COLOR[item.status] }} />
+                    <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2">
+                            <span className="font-medium">{item.id}</span>
+                            <span className="rounded px-1 text-[10px]" style={{ background: `${AC_STATUS_COLOR[item.status]}22`, color: AC_STATUS_COLOR[item.status] }}>
+                                {t(acStatusLabelKey(item.status))}
+                            </span>
+                        </span>
+                        <span className="line-clamp-2 block" style={{ color: theme.node.muted }}>
+                            {item.statement}
+                        </span>
+                    </span>
+                </button>
+            ))}
+        </div>
     );
 }
 
