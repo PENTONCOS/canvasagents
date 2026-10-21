@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { canTransitionAc, nextEntityId, transitionAc, type AcStatus } from "@/types/delivery";
+import { canTransitionAc, nextEntityId, nextStepId, nextVariantId, transitionAc, type AcStatus } from "@/types/delivery";
 
 describe("AC state machine", () => {
     const legal: [AcStatus, AcStatus][] = [
@@ -52,5 +52,20 @@ describe("nextEntityId", () => {
     });
     test("ignores other prefixes and malformed ids", () => {
         expect(nextEntityId(["AC-x", "BUG-07", "AC-"], "AC")).toBe("AC-01");
+    });
+});
+
+describe("M1 实体 id 分配", () => {
+    test("nextStepId 按已有步骤顺延", () => {
+        expect(nextStepId("J-01", [])).toBe("J-01-S1");
+        expect(nextStepId("J-01", ["J-01-S1", "J-01-S2"])).toBe("J-01-S3");
+        // 其他旅程的步骤不参与编号。
+        expect(nextStepId("J-02", ["J-01-S7"])).toBe("J-02-S1");
+    });
+
+    test("nextVariantId 从未占用的字母开始", () => {
+        expect(nextVariantId([])).toBe("D-01-A");
+        expect(nextVariantId(["D-01-A", "D-01-B"])).toBe("D-01-C");
+        expect(nextVariantId(["D-01-A", "D-01-C"])).toBe("D-01-B");
     });
 });

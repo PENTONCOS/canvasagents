@@ -71,3 +71,55 @@ describe("delivery store", () => {
         expect(useDeliveryStore.getState().environments["env-1"]).toBeUndefined();
     });
 });
+
+describe("delivery store · 旅程与设计版本 (M1)", () => {
+    test("removeJourney 级联删除步骤与设计版本", () => {
+        const store = useDeliveryStore.getState();
+        store.upsertJourney({ id: "J-01", title: "改约流程", stepIds: ["J-01-S1"] });
+        store.upsertJourney({ id: "J-02", title: "支付流程", stepIds: [] });
+        store.upsertStep({ id: "J-01-S1", journeyId: "J-01", order: 1, title: "进入预约页" });
+        store.upsertStep({ id: "J-02-S1", journeyId: "J-02", order: 1, title: "选择支付方式" });
+        store.upsertDesign({ id: "D-01-A", journeyId: "J-01", label: "A", selected: true });
+
+        store.removeJourney("J-01");
+
+        const state = useDeliveryStore.getState();
+        expect(state.journeys["J-01"]).toBeUndefined();
+        expect(state.steps["J-01-S1"]).toBeUndefined();
+        expect(state.designs["D-01-A"]).toBeUndefined();
+        // 其他旅程不受影响，不能误删。
+        expect(state.journeys["J-02"]).toBeDefined();
+        expect(state.steps["J-02-S1"]).toBeDefined();
+    });
+
+    test("selectDesign 保证同一旅程至多一版选中", () => {
+        const store = useDeliveryStore.getState();
+        store.upsertJourney({ id: "J-01", title: "改约流程", stepIds: [] });
+        store.upsertDesign({ id: "D-01-A", journeyId: "J-01", label: "A", selected: true });
+        store.upsertDesign({ id: "D-01-B", journeyId: "J-01", label: "B", selected: false });
+
+        store.selectDesign("D-01-B");
+
+        const state = useDeliveryStore.getState();
+        expect(state.designs["D-01-A"].selected).toBe(false);
+        expect(state.designs["D-01-B"].selected).toBe(true);
+    });
+
+    test("upsertDesign 选中新版本时旧版本自动让位", () => {
+        const store = useDeliveryStore.getState();
+        store.upsertJourney({ id: "J-01", title: "改约流程", stepIds: [] });
+        store.upsertDesign({ id: "D-01-A", journeyId: "J-01", label: "A", selected: true });
+        store.upsertDesign({ id: "D-01-C", journeyId: "J-01", label: "C", selected: true });
+
+        const state = useDeliveryStore.getState();
+        expect(state.designs["D-01-A"].selected).toBe(false);
+        expect(state.designs["D-01-C"].selected).toBe(true);
+    });
+
+    test("selectDesign 对不存在的 id 不改状态", () => {
+        const store = useDeliveryStore.getState();
+        store.upsertDesign({ id: "D-01-A", journeyId: "J-01", label: "A", selected: true });
+        store.selectDesign("D-99-Z");
+        expect(useDeliveryStore.getState().designs["D-01-A"].selected).toBe(true);
+    });
+});

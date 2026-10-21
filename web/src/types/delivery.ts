@@ -25,6 +25,61 @@ export type AcceptanceCriterion = {
     nodeId?: string; // canvas view node
 };
 
+// --- M1: journey & design variant ------------------------------------------------------------
+
+export type Journey = {
+    id: string; // "J-01"
+    title: string;
+    requirementId?: string; // requirement node/entity id this journey derives from
+    stepIds: string[];
+    nodeId?: string; // canvas view node
+};
+
+export type JourneyStep = {
+    id: string; // "J-01-S1"
+    journeyId: string;
+    order: number;
+    title: string;
+    nodeId?: string; // canvas view node (journey.step)
+};
+
+export type DesignVariant = {
+    id: string; // "D-01-A"
+    journeyId?: string;
+    label: string; // "A" | "B" | "C"
+    style?: string; // free-form palette/layout note
+    selected: boolean; // at most one selected per journey
+    nodeId?: string; // canvas view node (design)
+};
+
+/** 旅程下的步骤 id：J-01 -> J-01-S1 / S2 …（按已有编号顺延）。 */
+export function nextStepId(journeyId: string, existing: string[]): string {
+    const re = new RegExp(`^${journeyId}-S(\\d+)$`);
+    let max = 0;
+    for (const id of existing) {
+        const match = re.exec(id);
+        if (match) max = Math.max(max, Number.parseInt(match[1], 10));
+    }
+    return `${journeyId}-S${max + 1}`;
+}
+
+/** 设计版本 id：D-01 + A/B/C…（按已有编号顺延到下一个字母）。 */
+export function nextVariantId(existing: string[]): string {
+    const re = /^D-(\d+)-([A-Z])$/;
+    let maxSeq = 0;
+    let used = new Set<string>();
+    for (const id of existing) {
+        const match = re.exec(id);
+        if (!match) continue;
+        maxSeq = Math.max(maxSeq, Number.parseInt(match[1], 10));
+        used.add(match[2]);
+    }
+    const seq = maxSeq || 1;
+    const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+    const label = letters.find((letter) => !used.has(letter)) || "A";
+    return `D-${String(seq).padStart(2, "0")}-${label}`;
+}
+
 export type BugSeverity = "P0" | "P1" | "P2" | "P3";
 
 export type BugStatus = "open" | "fixing" | "fixed" | "verified" | "wontfix";
