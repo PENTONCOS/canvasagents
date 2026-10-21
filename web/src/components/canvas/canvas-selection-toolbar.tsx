@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Group, Ungroup } from "lucide-react";
+import { Bug, Group, Ungroup } from "lucide-react";
 import { Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -18,6 +18,8 @@ export function CanvasSelectionToolbar({
     canUngroup,
     onGroup,
     onUngroup,
+    canFeedBugs = false,
+    onFeedBugs,
 }: {
     nodes: CanvasNodeData[];
     viewport: ViewportTransform;
@@ -26,6 +28,9 @@ export function CanvasSelectionToolbar({
     canUngroup: boolean;
     onGroup: () => void;
     onUngroup: () => void;
+    /** M3: 选中里有问题单时，可把整批问题单连同圈注截图一次投喂给 Agent。 */
+    canFeedBugs?: boolean;
+    onFeedBugs?: () => void;
 }) {
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
@@ -36,7 +41,8 @@ export function CanvasSelectionToolbar({
     const top = viewport.y + bounds.top * viewport.k - SELECTION_PAD;
     const width = (bounds.right - bounds.left) * viewport.k + SELECTION_PAD * 2;
     const height = (bounds.bottom - bounds.top) * viewport.k + SELECTION_PAD * 2;
-    const showActions = showToolbar && (canGroup || canUngroup);
+    const showFeedBugs = showToolbar && canFeedBugs && Boolean(onFeedBugs);
+    const showActions = (showToolbar && (canGroup || canUngroup)) || showFeedBugs;
 
     return (
         <>
@@ -63,6 +69,7 @@ export function CanvasSelectionToolbar({
                     onMouseDown={(event) => event.stopPropagation()}
                     onPointerDown={(event) => event.stopPropagation()}
                 >
+                    {showFeedBugs ? <SelectionAction title={t("canvas.nodeToolbar.feedBugsTitle")} label={t("canvas.nodeToolbar.feedBugs")} icon={<Bug className="size-4" />} onClick={() => onFeedBugs?.()} /> : null}
                     {canGroup ? <SelectionAction title={t("canvas.nodeToolbar.groupTitle")} label={t("canvas.nodeToolbar.group")} icon={<Group className="size-4" />} onClick={onGroup} /> : null}
                     {canUngroup ? <SelectionAction title={t("canvas.nodeToolbar.ungroupTitle")} label={t("canvas.nodeToolbar.ungroup")} icon={<Ungroup className="size-4" />} onClick={onUngroup} /> : null}
                 </div>

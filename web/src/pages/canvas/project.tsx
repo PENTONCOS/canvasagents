@@ -30,7 +30,8 @@ import { NODE_DEFAULT_SIZE, getNodeSpec } from "@/constant/canvas";
 import { layoutDesignVariants, layoutJourneySteps } from "@/lib/canvas/journey-layout";
 import { useDeliveryStore } from "@/stores/use-delivery-store";
 import { planBugsFromAnnotations } from "@/lib/delivery/annotation-bugs";
-import { nextEntityId, nextStepId, nextVariantId, type DeliveryAnnotation, type DesignVariant, type JourneyStep } from "@/types/delivery";
+import { buildBugFeedPrompt, collectEvidenceNodeIds } from "@/lib/delivery/bug-batch";
+import { nextEntityId, nextStepId, nextVariantId, type DeliveryAnnotation, type DeliveryBug, type DesignVariant, type JourneyStep } from "@/types/delivery";
 import { ActiveConnectionPath, ConnectionPath } from "@/components/canvas/canvas-connections";
 import { CanvasConfigComposer } from "@/components/canvas/canvas-config-composer";
 import { CanvasConfigNodePanel } from "@/components/canvas/canvas-config-node-panel";
@@ -3418,6 +3419,29 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
 }, []);
 
 
+    // M3: 框选一批问题单一次投喂。证据截图沿「问题单 → 圈注 → 截图节点」取，
+    // 若这些截图绑在同一个 Agent 窗上，就切到那个窗，沿用开发阶段的上下文。
+    const feedBugsToAgent = useCallback((selection: CanvasNodeData[]) => {
+        const delivery = useDeliveryStore.getState();
+        const bugs = selection
+            .filter((node) => node.type === CanvasNodeType.Bug)
+            .map((node) => (node.metadata?.bugId ? delivery.bugs[node.metadata.bugId] : undefined))
+            .filter((bug): bug is DeliveryBug => Boolean(bug));
+        if (bugs.length === 0) return;
+        const annotations = Object.values(delivery.annotations);
+        const evidenceIds = collectEvidenceNodeIds(bugs, annotations);
+        const evidenceNodes = nodesRef.current.filter((node) => evidenceIds.includes(node.id));
+        const references = buildCanvasResourceReferences(evidenceNodes);
+        const agent = useAgentStore.getState();
+        const followId = evidenceNodes.map((node) => node.metadata?.followWindowId).find(Boolean);
+        if (followId && agent.windows.some((window) => window.id === followId)) agent.selectWindow(followId);
+        agent.setAgentState({
+            prompt: buildBugFeedPrompt(bugs, annotations),
+            canvasReferences: [...agent.canvasReferences.filter((item) => !references.some((reference) => reference.nodeId === item.nodeId)), ...references],
+        });
+        agent.openPanel();
+    }, [nodesRef]);
+
     const handleNodeViewImage = useCallback((node: CanvasNodeData, imageId?: string) => {
         setPreviewNodeId(node.id);
         setPreviewImageId(imageId || null);
@@ -3769,7 +3793,17 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
                 />
 
                 {hasMultipleSelectedNodes && !selectionBox ? (
-                    <CanvasSelectionToolbar nodes={selectedNodes} viewport={viewport} showToolbar={!isNodeDragging && !isNodeResizing} canGroup={canGroupSelection} canUngroup={canUngroupSelection} onGroup={groupSelection} onUngroup={ungroupSelection} />
+                    <CanvasSelectionToolbar
+                        nodes={selectedNodes}
+                        viewport={viewport}
+                        showToolbar={!isNodeDragging && !isNodeResizing}
+                        canGroup={canGroupSelection}
+                        canUngroup={canUngroupSelection}
+                        onGroup={groupSelection}
+                        onUngroup={ungroupSelection}
+                        canFeedBugs={selectedNodes.some((node) => node.type === CanvasNodeType.Bug)}
+                        onFeedBugs={() => feedBugsToAgent(selectedNodes)}
+                    />
                 ) : null}
 
                 <CanvasToolbar
