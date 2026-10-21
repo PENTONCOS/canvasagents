@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: 类型检查 / 单测 / 构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      # 单测用 bun 跑；bun 只负责运行时，依赖仍由 pnpm 按锁文件安装
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: 安装依赖
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: 类型检查
+        working-directory: web
+        run: pnpm run typecheck
+
+      # 里面包含 store 动作 × UI 入口覆盖检查（有实现没入口会失败）
+      - name: 单测
+        working-directory: web
+        run: bun test
+
+      # 单独再跑一遍：失败时输出直接点名缺哪个动作，不用翻单测堆栈
+      - name: store 动作 × UI 入口覆盖检查
+        working-directory: web
+        run: node scripts/agent-action-coverage.mjs
+
+      - name: 构建
+        working-directory: web
+        run: pnpm run build
+
+  e2e:
+    name: 端到端（真实 Chrome）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: 安装依赖
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      # 配置里用 channel: "chrome"，GitHub 的 ubuntu-latest 镜像自带 Google Chrome
+      - name: 确认 Chrome 可用
+        run: google-chrome --version
+
+      - name: 跑 E2E
+        working-directory: web
+        run: pnpm exec playwright test --reporter=list
+
+      - name: 失败时保留 trace
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-trace
+          path: web/test-results
+          retention-days: 7
