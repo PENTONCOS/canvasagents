@@ -511,14 +511,24 @@ function NodeContent(props: NodeContentRendererProps) {
     return <MissingPluginContent theme={props.theme} type={props.node.type} />;
 }
 
-const nodeContentRenderers = {
+const nodeContentRenderers: Record<CanvasNodeType, (props: NodeContentRendererProps) => ReactNode> = {
     [CanvasNodeType.Text]: TextContent,
     [CanvasNodeType.Image]: ImageNodeContent,
     [CanvasNodeType.Config]: EmptyImageContent,
     [CanvasNodeType.Video]: VideoNodeContent,
     [CanvasNodeType.Audio]: AudioNodeContent,
     [CanvasNodeType.Group]: GroupNodeContent,
-} satisfies Record<CanvasNodeType, (props: NodeContentRendererProps) => ReactNode>;
+    // M0: delivery domain nodes share one compact renderer
+    [CanvasNodeType.Requirement]: DeliveryNodeContent,
+    [CanvasNodeType.Journey]: DeliveryNodeContent,
+    [CanvasNodeType.JourneyStep]: DeliveryNodeContent,
+    [CanvasNodeType.Design]: DeliveryNodeContent,
+    [CanvasNodeType.Acceptance]: DeliveryNodeContent,
+    [CanvasNodeType.TestCase]: DeliveryNodeContent,
+    [CanvasNodeType.Bug]: DeliveryNodeContent,
+    [CanvasNodeType.Environment]: DeliveryNodeContent,
+    [CanvasNodeType.Run]: DeliveryNodeContent,
+};
 
 function GroupNodeContent({ node, theme, groupChildCount }: NodeContentRendererProps) {
     const { t } = useTranslation();
@@ -531,6 +541,46 @@ function GroupNodeContent({ node, theme, groupChildCount }: NodeContentRendererP
                     {t("canvas.node.nodeCount", { count: groupChildCount })}
                 </span>
             </div>
+        </div>
+    );
+}
+
+// M0: shared compact renderer for delivery-domain nodes (requirement/journey/design/…).
+// Shows the type-specific primary text plus status; full editing lives in each node's Panel.
+function DeliveryNodeContent({ node, theme }: NodeContentRendererProps) {
+    const { t } = useTranslation();
+    const meta = node.metadata;
+    const body = meta?.statement || meta?.content || "";
+    const badges: string[] = [];
+    if (meta?.acId) badges.push(meta.acId);
+    if (meta?.bugId) badges.push(meta.bugId);
+    if (meta?.severity) badges.push(meta.severity);
+    if (meta?.envName) badges.push(meta.envName);
+    if (meta?.runKind) badges.push(meta.runKind);
+    if (meta?.selected) badges.push(t("canvas.delivery.selected"));
+    return (
+        <div className="flex h-full flex-col gap-1 overflow-hidden p-2" style={{ color: theme.node.text }}>
+            {badges.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                    {badges.map((badge) => (
+                        <span key={badge} className="rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ background: theme.node.fill, color: theme.node.muted }}>
+                            {badge}
+                        </span>
+                    ))}
+                </div>
+            )}
+            {body ? (
+                <p className="line-clamp-4 whitespace-pre-wrap text-xs leading-snug">{body}</p>
+            ) : (
+                <p className="text-xs" style={{ color: theme.node.muted }}>
+                    {t("canvas.delivery.emptyHint")}
+                </p>
+            )}
+            {meta?.url && (
+                <span className="truncate text-[10px]" style={{ color: theme.node.muted }}>
+                    {meta.url}
+                </span>
+            )}
         </div>
     );
 }

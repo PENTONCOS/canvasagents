@@ -17,6 +17,16 @@ export const NODE_DEFAULT_SIZE = {
     [CanvasNodeType.Video]: { width: 420, height: 236, get title() { return i18n.t("canvas.nodeTypes.video"); } },
     [CanvasNodeType.Audio]: { width: 340, height: 120, get title() { return i18n.t("canvas.nodeTypes.audio"); } },
     [CanvasNodeType.Group]: { width: 760, height: 480, get title() { return i18n.t("canvas.nodeTypes.group"); } },
+    // M0: delivery domain
+    [CanvasNodeType.Requirement]: { width: 280, height: 160, get title() { return i18n.t("canvas.nodeTypes.requirement"); } },
+    [CanvasNodeType.Journey]: { width: 620, height: 300, get title() { return i18n.t("canvas.nodeTypes.journey"); } },
+    [CanvasNodeType.JourneyStep]: { width: 240, height: 360, get title() { return i18n.t("canvas.nodeTypes.journeyStep"); } },
+    [CanvasNodeType.Design]: { width: 340, height: 240, get title() { return i18n.t("canvas.nodeTypes.design"); } },
+    [CanvasNodeType.Acceptance]: { width: 320, height: 160, get title() { return i18n.t("canvas.nodeTypes.acceptance"); } },
+    [CanvasNodeType.TestCase]: { width: 300, height: 140, get title() { return i18n.t("canvas.nodeTypes.testCase"); } },
+    [CanvasNodeType.Bug]: { width: 320, height: 180, get title() { return i18n.t("canvas.nodeTypes.bug"); } },
+    [CanvasNodeType.Environment]: { width: 300, height: 160, get title() { return i18n.t("canvas.nodeTypes.environment"); } },
+    [CanvasNodeType.Run]: { width: 320, height: 180, get title() { return i18n.t("canvas.nodeTypes.run"); } },
 } satisfies Record<CanvasNodeType, { width: number; height: number; title: string }>;
 
 export const NODE_SPECS = {
@@ -43,6 +53,43 @@ export const NODE_SPECS = {
     [CanvasNodeType.Group]: {
         width: 760, height: 480, get title() { return NODE_DEFAULT_SIZE[CanvasNodeType.Group].title; },
         metadata: { status: "idle" },
+    },
+    // M0: delivery domain
+    [CanvasNodeType.Requirement]: {
+        width: 280, height: 160, get title() { return NODE_DEFAULT_SIZE[CanvasNodeType.Requirement].title; },
+        metadata: { status: "idle", content: "" },
+    },
+    [CanvasNodeType.Journey]: {
+        width: 620, height: 300, get title() { return NODE_DEFAULT_SIZE[CanvasNodeType.Journey].title; },
+        metadata: { status: "idle", stepIds: [] as string[] },
+    },
+    [CanvasNodeType.JourneyStep]: {
+        width: 240, height: 360, get title() { return NODE_DEFAULT_SIZE[CanvasNodeType.JourneyStep].title; },
+        metadata: { status: "idle", content: "" },
+    },
+    [CanvasNodeType.Design]: {
+        width: 340, height: 240, get title() { return NODE_DEFAULT_SIZE[CanvasNodeType.Design].title; },
+        metadata: { status: "idle", content: "", selected: false },
+    },
+    [CanvasNodeType.Acceptance]: {
+        width: 320, height: 160, get title() { return NODE_DEFAULT_SIZE[CanvasNodeType.Acceptance].title; },
+        metadata: { status: "idle", acId: "", statement: "" },
+    },
+    [CanvasNodeType.TestCase]: {
+        width: 300, height: 140, get title() { return NODE_DEFAULT_SIZE[CanvasNodeType.TestCase].title; },
+        metadata: { status: "idle", acId: "" },
+    },
+    [CanvasNodeType.Bug]: {
+        width: 320, height: 180, get title() { return NODE_DEFAULT_SIZE[CanvasNodeType.Bug].title; },
+        metadata: { status: "idle", bugId: "", severity: "P1", violates: [] as string[] },
+    },
+    [CanvasNodeType.Environment]: {
+        width: 300, height: 160, get title() { return NODE_DEFAULT_SIZE[CanvasNodeType.Environment].title; },
+        metadata: { status: "idle", envName: "staging", url: "" },
+    },
+    [CanvasNodeType.Run]: {
+        width: 320, height: 180, get title() { return NODE_DEFAULT_SIZE[CanvasNodeType.Run].title; },
+        metadata: { status: "idle", runKind: "test" },
     },
 } satisfies Record<CanvasNodeType, CanvasNodeSpec>;
 

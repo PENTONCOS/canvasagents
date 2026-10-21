@@ -16,6 +16,16 @@ export enum CanvasNodeType {
     Video = "video",
     Audio = "audio",
     Group = "group",
+    // M0: delivery domain nodes (dev plan §1.1)
+    Requirement = "requirement",
+    Journey = "journey",
+    JourneyStep = "journey.step",
+    Design = "design",
+    Acceptance = "acceptance",
+    TestCase = "testcase",
+    Bug = "bug",
+    Environment = "environment",
+    Run = "run",
 }
 
 // Node types are open strings: built-ins use CanvasNodeType and plugins use "<pluginId>:<name>".
@@ -69,7 +79,7 @@ export type CanvasNodeCodeView = "tree" | "file" | "diff";
 
 // M6: edge semantics. Every connection carries a kind that decides its color and line style,
 // plus optional metadata documenting the contract it represents (http method/path, payloads).
-export type CanvasEdgeType = "flow" | "http" | "depends-on" | "event" | "db";
+export type CanvasEdgeType = "flow" | "http" | "depends-on" | "event" | "db" | "derives" | "specifies" | "covers" | "violates" | "proves";
 export type CanvasEdgeContract = {
     method?: string;
     path?: string;
@@ -190,6 +200,17 @@ export type CanvasNodeMetadata = {
     primaryImageId?: string;
     storageKey?: string;
     mimeType?: string;
+    // M0: delivery domain node metadata (dev plan §1.1)
+    stepIds?: string[]; // journey -> ordered journey.step node ids
+    selected?: boolean; // design variant chosen as the reference
+    acId?: string; // acceptance/testcase business id ("AC-04")
+    statement?: string; // acceptance statement text
+    bugId?: string; // bug business id ("BUG-03")
+    severity?: "P0" | "P1" | "P2" | "P3";
+    violates?: string[]; // bug -> violated AC ids
+    envName?: string; // environment name (staging/production/…)
+    url?: string; // environment URL
+    runKind?: "test" | "deploy";
     bytes?: number;
     durationMs?: number;
     videoTaskId?: string;

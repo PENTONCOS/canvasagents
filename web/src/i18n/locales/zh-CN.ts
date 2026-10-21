@@ -398,7 +398,7 @@ export default {
         agentDisconnected: "Codex 未连接",
         connecting: "连接中",
         openAgent: "打开本地 Codex 面板",
-        nodeTypes: { image: "图片", text: "文本", config: "生成配置", video: "视频", audio: "音频", group: "组", terminal: "终端", preview: "网页预览", code: "代码浏览", repo: "仓库", service: "服务", imageRegions: "图片结构", editor: "PS 编辑" },
+        nodeTypes: { image: "图片", text: "文本", config: "生成配置", video: "视频", audio: "音频", group: "组", terminal: "终端", preview: "网页预览", code: "代码浏览", repo: "仓库", service: "服务", imageRegions: "图片结构", editor: "PS 编辑", requirement: "需求便签", journey: "用户旅程", journeyStep: "旅程步骤", design: "设计稿", acceptance: "验收标准", testCase: "测试用例", bug: "问题单", environment: "环境", run: "执行记录" },
         terminal: { description: "交互式终端（screen 持久会话）", connecting: "正在连接终端…", closed: "会话已结束", reconnect: "重连", newSession: "新会话", error: "终端连接失败", retry: "重试" },
         preview: {
             description: "本地 dev server 实时预览（iframe）",
@@ -458,7 +458,7 @@ export default {
             response: "响应",
             notes: "备注",
             close: "关闭",
-            types: { flow: "流转", http: "HTTP", "depends-on": "依赖", event: "事件", db: "数据库" },
+            types: { flow: "流转", http: "HTTP", "depends-on": "依赖", event: "事件", db: "数据库", derives: "派生", specifies: "指定", covers: "覆盖", violates: "违反", proves: "证明" },
         },
         stage: { requirement: "需求", design: "设计", code: "编码", service: "服务", test: "测试", runtime: "运行时" },
         repo: {
@@ -607,6 +607,7 @@ export default {
             retry: "重试",
             missingPlugin: "缺少插件",
             missingPluginDescription: "节点类型“{{type}}”的插件未安装或未启用",
+            delivery: { selected: "已选定", emptyHint: "双击编辑内容" },
             generateImage: "用文本生图",
             generate: "生图",
             editText: "双击编辑文字",

@@ -2,7 +2,7 @@
 // unit tested directly (see tests/canvas-semantics.test.ts) and reused by the renderer and panel.
 import type { CanvasConnection, CanvasEdgeContract, CanvasEdgeMetadata, CanvasEdgeType } from "@/types/canvas";
 
-export const CANVAS_EDGE_TYPES: CanvasEdgeType[] = ["flow", "http", "depends-on", "event", "db"];
+export const CANVAS_EDGE_TYPES: CanvasEdgeType[] = ["flow", "http", "depends-on", "event", "db", "derives", "specifies", "covers", "violates", "proves"];
 export const DEFAULT_EDGE_TYPE: CanvasEdgeType = "flow";
 
 // Visual identity per edge type: flow solid slate, http blue, depends-on gray dashed, event
@@ -13,6 +13,12 @@ export const EDGE_STYLE: Record<CanvasEdgeType, { color: string; dash?: string }
     "depends-on": { color: "#94a3b8", dash: "6 4" },
     event: { color: "#a855f7" },
     db: { color: "#f97316" },
+    // M0: delivery domain semantics
+    derives: { color: "#0ea5e9", dash: "2 3" },
+    specifies: { color: "#8b5cf6", dash: "2 3" },
+    covers: { color: "#22c55e", dash: "2 3" },
+    violates: { color: "#ef4444", dash: "4 3" },
+    proves: { color: "#eab308", dash: "2 3" },
 };
 
 // Drops unknown or stale edge types (hand-edited canvases) instead of crashing the renderer.
