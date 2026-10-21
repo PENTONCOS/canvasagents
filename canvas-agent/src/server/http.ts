@@ -18,6 +18,7 @@ import { SkillStore, SkillStoreError } from "../skills/store.js";
 import { IMAGE_PARSE_BODY_LIMIT, requestUpstream, resolveImageParseUrl, truncateUpstreamText } from "./image-parse.js";
 import { terminalManager } from "./terminal.js";
 import { captureWall, listWall, listWindows, pickCaptureWindow, readWallFile } from "./capture.js";
+import { rewriteAgentDriverPath } from "./agent-driver-route.js";
 
 export type StartHttpServerOptions = { skipVersionCheck?: boolean };
 
@@ -128,6 +129,15 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
     // 这样 express.json 不会再解析它（body-parser 见到已解析的 body 会跳过）。
     app.use("/image/parse", express.raw({ type: () => true, limit: IMAGE_PARSE_BODY_LIMIT }));
     app.use(express.json({ limit: "30mb" }));
+    // M0: /agent/:driver/* 双轨——codex 之外的已知 driver 改写到对应 handler，未知 driver 明确 404。
+    app.use((req, res, next) => {
+        const rewritten = rewriteAgentDriverPath(req.path);
+        if (!rewritten) return next();
+        if (rewritten.canonicalPath !== req.path) {
+            req.url = rewritten.canonicalPath + (req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "");
+        }
+        next();
+    });
     app.use((req, res, next) => {
         if (!logger.enabled) return next();
         const startedAt = Date.now();
