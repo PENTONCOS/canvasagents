@@ -1628,8 +1628,8 @@ export default {
             quotaExhaustedRuns: "验收运行次数已用尽（{{used}} / {{limit}}），运行按钮已停用。",
         },
         panel: {
-driver: "Agent 驱动",
-driverMissing: "未安装",
+            driver: "Agent 驱动",
+            driverMissing: "未安装",
             connectionSettings: "连接设置 · {{status}}",
             connectionSettingsLabel: "连接设置，当前{{status}}",
             chat: "对话",

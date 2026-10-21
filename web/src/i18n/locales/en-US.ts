@@ -1717,8 +1717,8 @@ export default {
             quotaExhaustedRuns: "Verification run budget exhausted ({{used}} / {{limit}}). The run button is disabled.",
         },
         panel: {
-driver: "Agent driver",
-driverMissing: "not installed",
+            driver: "Agent driver",
+            driverMissing: "not installed",
             connectionSettings: "Connection settings · {{status}}",
             connectionSettingsLabel: "Connection settings. Current status: {{status}}",
             chat: "Chat",

@@ -11,6 +11,10 @@ let deleted = [];
 let verifyCalls = 0;
 let verifyFailures = 1;
 let verifyResults = null;
+// M5：第二个 driver 的历史与 codex 完全分开，用来验证「切 driver 真的换了会话源」。
+let claudeThreads = [
+    { id: "claude-thread-1", preview: "用 Claude 写验收测试", name: "Claude 验收", createdAt: 1789200000, updatedAt: 1789300000 },
+];
 let threads = [
     { id: "thread-a", preview: "@图片1 把这张图变为蓝色调的，同明度…", name: "蓝色调改图", createdAt: 1789000000, updatedAt: 1789100000 },
     { id: "thread-b", preview: "@图片1 把这张图变为蓝色调的，同明度…", name: "第二次尝试", createdAt: 1788000000, updatedAt: 1788100000 },
@@ -39,6 +43,7 @@ function readBody(req) {
 
 const conversation = () => ({ revision: 1, conversationId: "conv-e2e", threadId: currentThread(), status: "ready", mcpStatuses: {} });
 const currentThread = () => threads[0]?.id || "";
+const claudeConversation = () => ({ revision: 1, conversationId: "conv-claude-e2e", threadId: claudeThreads[0]?.id || "", status: "ready", mcpStatuses: {} });
 
 const server = createServer(async (req, res) => {
     const url = new URL(req.url || "/", `http://127.0.0.1:${PORT}`);
@@ -51,7 +56,7 @@ const server = createServer(async (req, res) => {
     }
 
     // 测试辅助：断言服务端到底收到了什么
-    if (path === "/__state") return json(res, { deleted, threads: threads.map((item) => item.id) });
+    if (path === "/__state") return json(res, { deleted, threads: threads.map((item) => item.id), claudeThreads: claudeThreads.map((item) => item.id) });
     if (path === "/__reset") {
         deleted = [];
         verifyCalls = 0;
@@ -60,6 +65,9 @@ const server = createServer(async (req, res) => {
         threads = [
             { id: "thread-a", preview: "@图片1 把这张图变为蓝色调的，同明度…", name: "蓝色调改图", createdAt: 1789000000, updatedAt: 1789100000 },
             { id: "thread-b", preview: "@图片1 把这张图变为蓝色调的，同明度…", name: "第二次尝试", createdAt: 1788000000, updatedAt: 1788100000 },
+        ];
+        claudeThreads = [
+            { id: "claude-thread-1", preview: "用 Claude 写验收测试", name: "Claude 验收", createdAt: 1789200000, updatedAt: 1789300000 },
         ];
         return json(res, { ok: true });
     }
@@ -150,6 +158,27 @@ const server = createServer(async (req, res) => {
         await readBody(req).catch(() => "");
         return json(res, { ok: true, health: { ok: true, status: 200, latencyMs: 1, checkedAt: new Date().toISOString() }, status: "healthy" });
     }
+
+    if (path === "/agent/drivers") {
+        return json(res, { ok: true, data: [
+            { id: "codex", label: "Codex", available: true, version: "codex-cli 0.0.0-mock" },
+            { id: "claude", label: "Claude Code", available: true, version: "1.0.0-mock" },
+        ] });
+    }
+    if (path === "/agent/claude/threads" && req.method === "GET") {
+        return json(res, { data: claudeThreads, conversation: claudeConversation(), workspace: { activeThreadId: claudeThreads[0]?.id || "", cwd: "/tmp/e2e-workspace" } });
+    }
+    if (path === "/agent/claude/threads/reset") {
+        await readBody(req);
+        return json(res, { conversation: claudeConversation() });
+    }
+    const claudeThreadMatch = path.match(/^\/agent\/claude\/threads\/([^/]+)$/);
+    if (claudeThreadMatch && req.method === "GET") {
+        return json(res, { thread: { id: decodeURIComponent(claudeThreadMatch[1]), turns: [] }, conversation: claudeConversation() });
+    }
+    if (path === "/agent/claude/models") return json(res, { data: [{ id: "claude-sonnet-4-5", displayName: "Claude Sonnet 4.5", isDefault: true }] });
+    if (path === "/agent/claude/skills") return json(res, { ok: true, data: [], note: "claude driver 暂不支持技能市场" });
+    if (path === "/agent/claude/history/ack") return json(res, { ok: true });
 
     await readBody(req).catch(() => "");
     return json(res, { ok: true });

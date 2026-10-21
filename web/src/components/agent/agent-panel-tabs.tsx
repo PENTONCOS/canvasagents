@@ -37,7 +37,9 @@ export function AgentPanelTabs<T extends string>({ value, items, theme, leading,
     const isWindows = variant === "windows";
     return (
         <div className="@container border-b px-2" style={{ borderColor: theme.node.stroke, background: isWindows ? theme.node.fill : undefined }}>
-            <div className={`flex items-center gap-1 ${isWindows ? "h-10" : "h-12"}`}>
+            {/* 窄面板下右侧动作（含驱动切换）会把 tab 压成 0 宽，导致 tab 被 leading 图标挡住、点不动。
+                这里允许换行：空间不够时右侧动作掉到第二行，tab 始终可点。 */}
+            <div className={`flex flex-wrap items-center gap-1 ${isWindows ? "h-10" : "min-h-12 py-1 @min-[560px]:h-12 @min-[560px]:flex-nowrap @min-[560px]:py-0"}`}>
                 {label ? (
                     <span className="shrink-0 pl-1 pr-1.5 text-[11px] font-medium tracking-wide" style={{ color: theme.node.muted }}>
                         {label}
@@ -45,7 +47,7 @@ export function AgentPanelTabs<T extends string>({ value, items, theme, leading,
                 ) : null}
                 {leading ? <div className="flex shrink-0 items-center">{leading}</div> : null}
                 <nav
-                    className={isWindows ? "flex min-w-0 flex-1 items-center gap-1 overflow-x-auto" : "@container flex min-w-0 flex-1 items-center justify-center gap-0.5 overflow-hidden text-sm @min-[560px]:gap-3"}
+                    className={isWindows ? "flex min-w-0 flex-1 items-center gap-1 overflow-x-auto" : "@container flex min-w-0 flex-1 basis-[9rem] items-center justify-center gap-0.5 overflow-hidden text-sm @min-[560px]:gap-3"}
                     role="tablist"
                     aria-label={isWindows ? t("agent.window.section") : t("agent.panel.content")}
                 >

@@ -382,7 +382,10 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             const target = useAgentStore.getState().windows.find((window) => window.id === windowId);
             if (!target) return;
             const currentThreadId = target.activeThreadId || data.conversation?.threadId || data.workspace?.activeThreadId || "";
-            if (!data.conversation && currentThreadId !== target.activeThreadId) sequence = applyWorkspaceChange({ activeThreadId: currentThreadId }, windowId);
+            // 窗口的 activeThreadId 与本轮解析出的线程不一致时必须显式同步，不能只在「没有 conversation」时同步：
+            // 切换 driver 后新会话的 revision 不比旧的小，applyConversationState 会被版本保护跳过，
+            // 窗口就仍停在空线程上；下面的归属校验随即 return，结果切完 driver 历史列表是空的。
+            if (currentThreadId !== target.activeThreadId) sequence = applyWorkspaceChange({ activeThreadId: currentThreadId }, windowId);
             if (sequence !== loadThreadsSequenceRef.current) return;
             const latest = useAgentStore.getState().windows.find((window) => window.id === windowId);
             if (!latest || latest.activeThreadId !== currentThreadId) return;
