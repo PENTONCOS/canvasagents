@@ -211,6 +211,7 @@ export type CanvasNodeMetadata = {
     bugId?: string; // bug business id ("BUG-03")
     severity?: "P0" | "P1" | "P2" | "P3";
     violates?: string[]; // bug -> violated AC ids
+    envId?: string; // environment business id ("ENV-01")
     envName?: string; // environment name (staging/production/…)
     url?: string; // environment URL
     runKind?: "test" | "deploy";

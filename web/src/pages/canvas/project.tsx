@@ -1061,6 +1061,13 @@ function InfiniteCanvasPage() {
                 });
                 newNode.metadata = { ...newNode.metadata, acId };
             }
+            if (type === CanvasNodeType.Environment) {
+                // 环境是交付域的实体，节点只是它的视图：URL/版本改实体，节点上留 envId 引用。
+                const envId = nextEntityId(Object.keys(delivery.environments), "ENV");
+                const envName = String(newNode.metadata?.envName || "staging");
+                delivery.upsertEnvironment({ id: envId, name: envName, url: "", status: "unknown", nodeId: newNode.id });
+                newNode.metadata = { ...newNode.metadata, envId };
+            }
             if (type === CanvasNodeType.Journey) {
                 const stepSpec = getNodeSpec(CanvasNodeType.JourneyStep);
                 const stepPositions = layoutJourneySteps({
