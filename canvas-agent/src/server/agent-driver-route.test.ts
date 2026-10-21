@@ -20,8 +20,11 @@ test("rewriteAgentDriverPath rewrites unknown-but-known drivers onto codex", () 
     assert.deepEqual(rewriteAgentDriverPath("/agent/codex"), { driver: "codex", canonicalPath: "/agent/codex" });
 });
 
+test("rewriteAgentDriverPath keeps claude paths as-is (own handlers)", () => {
+    assert.deepEqual(rewriteAgentDriverPath("/agent/claude/threads"), { driver: "claude", canonicalPath: "/agent/claude/threads" });
+});
+
 test("rewriteAgentDriverPath returns null for unknown drivers and non-agent paths", () => {
-    assert.equal(rewriteAgentDriverPath("/agent/claude/threads"), null);
     assert.equal(rewriteAgentDriverPath("/agent/"), null);
     assert.equal(rewriteAgentDriverPath("/canvas/state"), null);
     assert.equal(rewriteAgentDriverPath("/agent/codexx/threads"), null);
@@ -29,5 +32,5 @@ test("rewriteAgentDriverPath returns null for unknown drivers and non-agent path
 
 test("isKnownAgentDriver narrows correctly", () => {
     assert.equal(isKnownAgentDriver("codex"), true);
-    assert.equal(isKnownAgentDriver("claude"), false);
+    assert.equal(isKnownAgentDriver("claude"), true);
 });

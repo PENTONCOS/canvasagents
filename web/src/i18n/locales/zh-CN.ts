@@ -1594,6 +1594,8 @@ export default {
             },
         },
         panel: {
+driver: "Agent 驱动",
+driverMissing: "未安装",
             connectionSettings: "连接设置 · {{status}}",
             connectionSettingsLabel: "连接设置，当前{{status}}",
             chat: "对话",

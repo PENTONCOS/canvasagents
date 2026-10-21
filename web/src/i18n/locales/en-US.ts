@@ -1683,6 +1683,8 @@ export default {
             },
         },
         panel: {
+driver: "Agent driver",
+driverMissing: "not installed",
             connectionSettings: "Connection settings · {{status}}",
             connectionSettingsLabel: "Connection settings. Current status: {{status}}",
             chat: "Chat",

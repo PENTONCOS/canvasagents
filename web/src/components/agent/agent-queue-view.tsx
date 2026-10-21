@@ -4,6 +4,7 @@ import { Modal } from "antd";
 import { Ban, CheckCircle2, Clock, LoaderCircle, RefreshCw, ShieldQuestion } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { agentApiPath } from "@/lib/agent/agent-driver";
 import { fetchAgentJson } from "@/services/api/canvas-agent";
 import { useAgentStore } from "@/stores/use-agent-store";
 
@@ -63,7 +64,7 @@ export function AgentQueueView() {
         } catch (primary) {
             // Older agents without /queue: fall back to the threads list.
             try {
-                const data = await fetchAgentJson<ThreadsResponse>(endpoint, token, "/agent/codex/threads");
+                const data = await fetchAgentJson<ThreadsResponse>(endpoint, token, agentApiPath("/threads"));
                 const list = Array.isArray(data.data) ? data.data : [];
                 setItems(list.map((thread) => ({
                     id: String(thread.id || ""),

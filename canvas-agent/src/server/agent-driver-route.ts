@@ -2,7 +2,7 @@
 // existing `/agent/codex/*` handlers so a second driver can register its own prefix later
 // without touching the frontend. Pure function so the rewrite rules stay unit-testable.
 
-export const KNOWN_AGENT_DRIVERS = ["codex"] as const;
+export const KNOWN_AGENT_DRIVERS = ["codex", "claude"] as const;
 
 export type AgentDriver = (typeof KNOWN_AGENT_DRIVERS)[number];
 
@@ -23,5 +23,7 @@ export function rewriteAgentDriverPath(pathname: string): { driver: AgentDriver;
     const driver = match[1];
     if (!isKnownAgentDriver(driver)) return null;
     const rest = match[2] ?? "";
-    return { driver, canonicalPath: `/agent/codex${rest}` };
+    // codex 是历史路径（前端早期全部硬编码），改写保持兼容；
+    // 新 driver（claude）有自己的 handler，路径原样保留。
+    return { driver, canonicalPath: driver === "codex" ? `/agent/codex${rest}` : pathname };
 }

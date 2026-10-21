@@ -3,7 +3,9 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 
-import { runClaudeTurn } from "../agent/claude.js";
+import { CLAUDE_MODELS, claudeRunningThreadIds, interruptClaudeTurn, runClaudeTurn } from "../agent/claude.js";
+import { claudeThreadStore } from "../agent/claude-threads.js";
+import { driverInventory } from "../agent/driver-inventory.js";
 import { archiveCodexThread, CodexSkillLookupError, configureCodexSkill, generateCodexSkillDraft, interruptCodexTurn, isRecoverableThreadError, listCodexModels, listCodexSkills, listCodexThreads, readCodexThread, resolveCodexApproval, resolveCodexSkill, resumeCodexThread, runCodexTurn, startCodexThread, summarizeCodexThread } from "../agent/codex.js";
 import type { CodexReasoningEffort, CodexSkillSelector } from "../agent/codex-protocol.js";
 import { messageMetadataStore } from "../agent/message-metadata.js";
@@ -639,10 +641,67 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
         const ok = await interruptCodexTurn(skillDraftRunning ? undefined : String(req.body?.threadId || ""));
         res.status(ok ? 200 : 409).json({ ok, ...(ok ? {} : { error: "当前没有可停止的任务" }) });
     }));
-    app.post("/agent/claude/turn", (req, res) => {
-        runClaudeTurn(String(req.body?.prompt || ""), emit);
-        res.json({ ok: true });
+    // M5: Claude Code 作为第二家 driver。线程 / 历史 / 中断与 Codex 对齐，
+    // 返回值统一成 Codex 的响应形状，前端只切路径前缀、不写第二套面板逻辑。
+    app.get("/agent/drivers", route(async (_req, res) => {
+        res.json({ ok: true, data: await driverInventory() });
+    }));
+    app.get("/agent/claude/workspace", (_req, res) => {
+        res.json({ ok: true, workspace: claudeWorkspace() });
     });
+    app.get("/agent/claude/models", (_req, res) => {
+        res.json({ ok: true, data: CLAUDE_MODELS.map((model) => ({ id: model.id, model: model.id, displayName: model.displayName, defaultReasoningEffort: "medium", supportedReasoningEfforts: [{ reasoningEffort: "medium" }], isDefault: Boolean(model.isDefault) })) });
+    });
+    app.get("/agent/claude/threads", (_req, res) => {
+        res.json({ ok: true, workspace: claudeWorkspace(), conversation: claudeConversation(""), data: claudeThreadStore.list().map(codexThreadSummary), running: claudeRunningThreadIds() });
+    });
+    app.post("/agent/claude/threads/new", (req, res) => {
+        const thread = claudeThreadStore.create({ name: typeof req.body?.name === "string" ? req.body.name : undefined, cwd: typeof req.body?.cwd === "string" ? req.body.cwd : ensureSiteWorkspace(config).workspacePath });
+        res.json({ ok: true, workspace: claudeWorkspace(thread.id), conversation: claudeConversation(thread.id), thread: codexThreadSummary(thread), messages: [] });
+    });
+    // 面板的「新对话」走 reset，语义与 new 相同；保留两个入口是为了不改前端调用点。
+    app.post("/agent/claude/threads/reset", (req, res) => {
+        const thread = claudeThreadStore.create({ cwd: ensureSiteWorkspace(config).workspacePath });
+        res.json({ ok: true, workspace: claudeWorkspace(thread.id), conversation: claudeConversation(thread.id), thread: codexThreadSummary(thread), messages: [] });
+    });
+    app.get("/agent/claude/threads/:threadId", (req, res) => {
+        const thread = claudeThreadStore.get(String(req.params.threadId));
+        if (!thread) return void res.status(404).json({ ok: false, error: "thread not found" });
+        res.json({ ok: true, workspace: claudeWorkspace(thread.id), conversation: claudeConversation(thread.id), thread: codexThreadSummary(thread), messages: claudeMessages(thread), settledTurnIds: [], historyReady: true });
+    });
+    app.post("/agent/claude/threads/:threadId/resume", (req, res) => {
+        const thread = claudeThreadStore.touch(String(req.params.threadId), { cwd: typeof req.body?.cwd === "string" ? req.body.cwd : undefined });
+        if (!thread) return void res.status(404).json({ ok: false, error: "thread not found" });
+        res.json({ ok: true, workspace: claudeWorkspace(thread.id), conversation: claudeConversation(thread.id), thread: codexThreadSummary(thread), messages: claudeMessages(thread), settledTurnIds: [], historyReady: true });
+    });
+    app.post("/agent/claude/threads/:threadId/delete", (req, res) => {
+        const threadId = String(req.params.threadId);
+        if (claudeRunningThreadIds().includes(threadId)) interruptClaudeTurn(threadId);
+        const removed = claudeThreadStore.remove(threadId);
+        res.status(removed ? 200 : 404).json({ ok: removed, ...(removed ? {} : { error: "thread not found" }) });
+    });
+    app.post("/agent/claude/turn", (req, res) => {
+        const threadId = String(req.body?.threadId || "");
+        const accepted = runClaudeTurn({
+            threadId,
+            prompt: String(req.body?.prompt || ""),
+            cwd: typeof req.body?.cwd === "string" ? req.body.cwd : undefined,
+            permissionMode: permissionMode(req.body?.permissionMode),
+            model: typeof req.body?.model === "string" ? req.body.model : undefined,
+        }, emit);
+        if (!accepted) return void res.status(400).json({ ok: false, error: "prompt required" });
+        res.json({ ok: true, threadId, turnId: `claude-turn-${Date.now().toString(36)}` });
+    });
+    app.post("/agent/claude/interrupt", (req, res) => {
+        const ok = interruptClaudeTurn(String(req.body?.threadId || ""));
+        res.status(ok ? 200 : 409).json({ ok, ...(ok ? {} : { error: "当前没有可停止的任务" }) });
+    });
+    // Claude 线程历史由桥端自己落盘，没有 Codex 那种 turn 级 ack 语义。
+    app.post("/agent/claude/history/ack", (_req, res) => res.json({ ok: true }));
+    // 逐条工具审批是 Codex 的机制；Claude 走 --permission-mode，这里明确拒绝而不是假装成功。
+    app.post("/agent/claude/approval", (_req, res) => res.status(409).json({ ok: false, error: "claude driver 使用 permission-mode，不支持逐条审批" }));
+    // 技能面板在 Claude driver 下暂无技能来源；返回空列表 + 说明，不报错也不造假数据。
+    app.get("/agent/claude/skills", (_req, res) => res.json({ ok: true, data: [], note: "claude driver 暂不支持技能市场" }));
     app.use((_req, res) => res.status(404).json({ ok: false, error: "not found" }));
     app.use((error: Error, req: Request, res: Response, _next: NextFunction) => {
         logger.error("HTTP request failed", { method: req.method, path: req.path, error });
@@ -789,4 +848,25 @@ function withAttachmentContext(prompt: string, attachments: Array<{ id: string; 
     }
     if (!sections.length) return prompt;
     return `${prompt}\n\n${sections.join("\n\n")}`;
+}
+
+/** Claude driver 的 workspace 视图：与 Codex 的 AgentWorkspace 同形。 */
+function claudeWorkspace(activeThreadId = ""): { workspacePath: string; activeThreadId?: string } {
+    const latest = activeThreadId || claudeThreadStore.list()[0]?.id || "";
+    return { workspacePath: "", activeThreadId: latest || undefined };
+}
+
+/** 让前端复用同一套 conversation 状态机：Claude 永远 ready，没有 MCP 预热。 */
+function claudeConversation(threadId: string) {
+    return { revision: 1, conversationId: threadId, threadId, status: "ready" as const, mcpStatuses: {} };
+}
+
+/** Claude 线程 → Codex 线程摘要形状（字段名保持一致，值不编造）。 */
+function codexThreadSummary(thread: { id: string; name?: string; preview: string; cwd?: string; createdAt: number; updatedAt: number }) {
+    return { id: thread.id, preview: thread.preview, name: thread.name ?? null, cwd: thread.cwd, status: "idle", createdAt: thread.createdAt, updatedAt: thread.updatedAt };
+}
+
+/** Claude 消息 → 面板渲染用的 AgentChatItem 形状。 */
+function claudeMessages(thread: { id: string; messages: Array<{ role: "user" | "assistant"; text: string; at: number }> }) {
+    return thread.messages.map((message, index) => ({ id: `${thread.id}-${index}`, threadId: thread.id, role: message.role, text: message.text, meta: new Date(message.at).toISOString() }));
 }

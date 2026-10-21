@@ -69,6 +69,7 @@ import {
 } from "./agent-event-formatters";
 import { AgentHistoryView } from "./agent-history-view";
 import { AgentLogView } from "./agent-log-view";
+import { agentApiPath, getAgentDriver, setAgentDriver as persistAgentDriver, subscribeAgentDriver, type AgentDriverId } from "@/lib/agent/agent-driver";
 import { AgentPanelTabs } from "./agent-panel-tabs";
 import { AgentWindowTabs } from "./agent-window-tabs";
 import { AgentRepoBadge } from "./agent-repo-badge";
@@ -199,7 +200,10 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     const clientIdRef = useRef("");
     const turnReferenceNodeIdsRef = useRef<string[]>([]);
     const [clientReady, setClientReady] = useState(false);
+    const [driverId, setDriverId] = useState<AgentDriverId>(getAgentDriver());
+    const [drivers, setDrivers] = useState<Array<{ id: string; label: string; available: boolean; version?: string; error?: string }>>([]);
     const loadThreadsSequenceRef = useRef(0);
+    const loadThreadsRef = useRef<((skipHistory?: boolean) => Promise<void>) | null>(null);
     const threadMessagesRef = useRef(new Map<string, AgentChatItem[]>());
     const authoritativeHistoryTurnsRef = useRef(new Set<string>());
     const liveTurnKeysRef = useRef(new Set<string>());
@@ -213,6 +217,17 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     const threadResetTargetRef = useRef("");
     const runThreadResetRef = useRef<(windowId: string, attempt: number) => void>(() => undefined);
     const endpoint = useMemo(() => url.trim().replace(/\/$/, ""), [url]);
+    useEffect(() => {
+        return subscribeAgentDriver((next: AgentDriverId) => setDriverId(next));
+    }, []);
+    useEffect(() => {
+        if (!connected || !endpoint || !token.trim()) return;
+        let disposed = false;
+        void fetchAgentJson<{ ok?: boolean; data?: Array<{ id: string; label: string; available: boolean; version?: string; error?: string }> }>(endpoint, token, "/agent/drivers")
+            .then(({ data }) => { if (!disposed) setDrivers(data || []); })
+            .catch(() => { if (!disposed) setDrivers([]); });
+        return () => { disposed = true; };
+    }, [connected, endpoint, token]);
     const urlAgentAutoConnect = searchParams.has("agentUrl") && searchParams.has("agentToken");
     useEffect(() => {
         let disposed = false;
@@ -233,7 +248,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             const windowAtStart = useAgentStore.getState().windows.find((window) => window.id === windowId);
             if (windowAtStart?.activeThreadId !== threadId) return false;
             try {
-                thread ||= await fetchAgentJson<AgentThreadResponse>(endpoint, token, `/agent/codex/threads/${encodeURIComponent(threadId)}`);
+                thread ||= await fetchAgentJson<AgentThreadResponse>(endpoint, token, agentApiPath(`/threads/${encodeURIComponent(threadId)}`));
                 lastError = undefined;
             } catch (error) {
                 lastError = error;
@@ -328,13 +343,21 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         withWindowPatchTarget(windowId, () => setAgentState({ conversation: next, ...conversationBootstrapView(next) }));
         return windowId;
     }, [applyWorkspaceChange, setAgentState]);
+    const switchAgentDriver = useCallback((next: AgentDriverId) => {
+        if (next === getAgentDriver()) return;
+        persistAgentDriver(next);
+        // 切 driver 只换会话来源：窗口与画布绑定不动，历史按新 driver 重新拉。
+        setAgentState({ messages: [], threads: [], activeThreadId: "", activeTurnId: "", eventLogs: [], waiting: false, sending: false, tokenUsage: { input: 0, cached: 0, output: 0 } });
+        void loadThreadsRef.current?.(true);
+    }, [setAgentState]);
+
     const loadThreads = useCallback(async (skipHistory = false, expectedTurnId = "") => {
         if (!connectedRef.current && !useAgentStore.getState().connected) return;
         let sequence = ++loadThreadsSequenceRef.current;
         const requestedWindowId = useAgentStore.getState().activeWindowId;
         withWindowPatchTarget(requestedWindowId, () => setAgentState({ loadingThreads: true }));
         try {
-            const data = await fetchAgentJson<AgentThreadsResponse>(endpoint, token, `/agent/codex/threads`);
+            const data = await fetchAgentJson<AgentThreadsResponse>(endpoint, token, agentApiPath("/threads"));
             if (sequence !== loadThreadsSequenceRef.current) return;
             // 先按 threadId / conversationId 找到会话归属窗，再决定历史写进哪一窗，绝不默认写激活窗。
             const windowId = data.conversation
@@ -366,6 +389,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             }
         }
     }, [applyConversationState, applyWorkspaceChange, endpoint, loadThreadSnapshot, setAgentState, token]);
+    loadThreadsRef.current = loadThreads;
     // Imperatively subscribe to canvasContext to keep the ref current and debounce snapshot reports without rerendering the panel.
     useEffect(() => {
         let timer: ReturnType<typeof setTimeout> | null = null;
@@ -540,6 +564,21 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 return handleAgentEvent(data);
             });
         });
+        source.addEventListener("agent_done", (event) => {
+            const data = parseEventData<{ threadId?: string; code?: number; agent?: string }>(event);
+            if (!data || data.agent !== "claude") return;
+            enqueueEvent(() => {
+                const threadId = data.threadId || "";
+                const current = useAgentStore.getState();
+                // 收尾：清掉流式标记，否则输入框会一直以为还有一轮在跑。
+                setAgentState({
+                    waiting: false,
+                    sending: false,
+                    activity: rt("completed"),
+                    messages: current.messages.map((message) => (threadId && message.id === `claude-stream-${threadId}` ? { ...message, streamId: undefined } : message)),
+                });
+            });
+        });
         source.addEventListener("agent_bootstrap", (event) => {
             const data = parseEventData<AgentBootstrapEvent>(event);
             if (!data?.type) return;
@@ -690,7 +729,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
 
     useEffect(() => {
         if (!connected) return;
-        void fetchAgentJson<AgentModelsResponse>(endpoint, token, "/agent/codex/models").then(({ data = [] }) => {
+        void fetchAgentJson<AgentModelsResponse>(endpoint, token, agentApiPath("/models")).then(({ data = [] }) => {
             const names = new Set<string>();
             const models = data.flatMap((item) => {
                 const name = item.displayName || item.model;
@@ -794,7 +833,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             const effortName = reasoningEffort ? i18n.t(`agent.composer.effort.${reasoningEffort}`) : rt("defaultEffort");
             addEventLog(rt("sendTask"), `${modelName} · ${effortName}${selectedSkill ? ` · Skill ${selectedSkill.name}` : ""}${files.length ? ` · ${rt("attachmentCount", { count: files.length })}` : ""}${canvasReferences.length ? ` · ${rt("canvasReferenceCount", { count: canvasReferences.length })}` : ""} · ${compactText(text) || rt(canvasReferences.length ? "canvasReferencesOnly" : "attachmentsOnly")}`);
             turnReferenceNodeIdsRef.current = messageReferences.map((item) => item.nodeId);
-            const accepted = await fetchAgentJson<AgentTurnResponse>(endpoint, token, "/agent/codex/turn", {
+            const accepted = await fetchAgentJson<AgentTurnResponse>(endpoint, token, agentApiPath("/turn"), {
                 method: "POST",
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({
@@ -1147,7 +1186,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         setAgentState({ activeTab: "chat", activity: rt("creatingConversation") });
         const targetWindowId = useAgentStore.getState().activeWindowId;
         try {
-            const result = await fetchAgentJson<AgentWorkspaceResponse>(endpoint, token, "/agent/codex/threads/reset", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId: clientIdRef.current, permissionMode }) });
+            const result = await fetchAgentJson<AgentWorkspaceResponse>(endpoint, token, agentApiPath("/threads/reset"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId: clientIdRef.current, permissionMode }) });
             if (threadOperationRef.current !== operation) return;
             if (result.conversation) applyConversationState(result.conversation, false, targetWindowId);
             setAgentState({ activeTab: "chat", activity: rt("newConversation") });
@@ -1169,7 +1208,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         const operation = beginThreadOperation();
         const targetWindowId = useAgentStore.getState().activeWindowId;
         try {
-            const result = await fetchAgentJson<AgentThreadResponse>(endpoint, token, `/agent/codex/threads/${encodeURIComponent(threadId)}/resume`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ permissionMode, clientId: clientIdRef.current }) });
+            const result = await fetchAgentJson<AgentThreadResponse>(endpoint, token, agentApiPath(`/threads/${encodeURIComponent(threadId)}/resume`), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ permissionMode, clientId: clientIdRef.current }) });
             if (result.conversation) applyConversationState(result.conversation, false, targetWindowId);
             await loadThreads();
             if (useAgentStore.getState().activeThreadId === threadId) setAgentState({ activeTab: "chat", activity: rt("conversationResumed") });
@@ -1190,7 +1229,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         let deletedCount = 0;
         try {
             for (const threadId of new Set(threadIds)) {
-                await fetchAgentJson(endpoint, token, `/agent/codex/threads/${encodeURIComponent(threadId)}/delete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId: clientIdRef.current }) });
+                await fetchAgentJson(endpoint, token, agentApiPath(`/threads/${encodeURIComponent(threadId)}/delete`), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId: clientIdRef.current }) });
                 threadMessagesRef.current.delete(threadId);
                 deletedCount += 1;
             }
@@ -1266,7 +1305,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         // loadingThreads 是窗口级字段：必须显式指向目标窗（hello 补准备时目标窗未必是激活窗）。
         const operation = withWindowPatchTarget(windowId, () => beginThreadOperation());
         withWindowPatchTarget(windowId, () => setAgentState({ activity: attempt > 0 ? rt("retryingConversation", { attempt }) : rt("creatingConversation") }));
-        void fetchAgentJson<AgentWorkspaceResponse>(endpoint, token, "/agent/codex/threads/reset", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId: clientIdRef.current, permissionMode }) })
+        void fetchAgentJson<AgentWorkspaceResponse>(endpoint, token, agentApiPath("/threads/reset"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId: clientIdRef.current, permissionMode }) })
             .then((result) => {
                 // 被更新的操作抢了（切窗/用户手动新建）：这次结果作废，但不能把重试状态一起废掉。
                 if (threadOperationRef.current !== operation) return;
@@ -1518,6 +1557,25 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
 
     const handleAgentEvent = async (event: AgentEventPayload) => {
         if (event.type === "usage.updated") setAgentState({ tokenUsage: eventUsage(event) });
+        // Claude driver 的事件形状：assistant_delta 是增量，assistant_message 是最终全文。
+        if ((event.type === "assistant_delta" || event.type === "assistant_message") && typeof event.text === "string" && event.text) {
+            const chunk: string = event.text;
+            const threadId = event.threadId || event.thread_id || "";
+            const id = `claude-stream-${threadId}`;
+            const isDelta = event.type === "assistant_delta";
+            const currentMessages = useAgentStore.getState().messages;
+            const index = currentMessages.findIndex((message) => message.id === id);
+            if (index < 0) {
+                pushMessage({ id, threadId, role: "assistant", title: "Claude", text: chunk, streamId: isDelta ? id : undefined });
+                return;
+            }
+            setAgentState({ messages: currentMessages.map((message, itemIndex) => itemIndex === index ? { ...message, text: isDelta ? `${message.text}${chunk}` : chunk, streamId: isDelta ? id : undefined } : message) });
+            return;
+        }
+        if (event.type === "tool_use" && event.name) {
+            addEventLog(event.name, JSON.stringify(event.input ?? {}).slice(0, 500));
+            return;
+        }
         const log = event.replayed ? null : formatAgentEventLog(event);
         const activity = formatAgentActivity(event);
         if (log) addEventLog(log.title, log.text);
@@ -1665,6 +1723,15 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 right={
                     <>
                         <AgentRepoBadge />
+                        {drivers.length > 1 ? (
+                            <Segmented
+                                size="small"
+                                value={driverId}
+                                aria-label={t("agent.panel.driver")}
+                                onChange={(value) => switchAgentDriver(value as AgentDriverId)}
+                                options={drivers.map((entry) => ({ label: entry.available ? entry.label : `${entry.label} · ${t("agent.panel.driverMissing")}`, value: entry.id, disabled: !entry.available }))}
+                            />
+                        ) : null}
                         <Segmented
                             size="small"
                             value={cliMode ? "cli" : "gui"}

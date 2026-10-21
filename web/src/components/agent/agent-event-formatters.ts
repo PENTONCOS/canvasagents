@@ -25,6 +25,9 @@ export type AgentEventPayload = {
     plan?: unknown;
     usage?: Record<string, unknown>;
     duration_ms?: number;
+    text?: string;
+    name?: string;
+    input?: unknown;
 };
 export type AgentEventItem = {
     id?: string;
