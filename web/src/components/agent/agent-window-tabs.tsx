@@ -1,6 +1,6 @@
-import { useEffect } from "react";
-import { AlertCircle, Loader2, SquarePlus, X } from "lucide-react";
-import { Button, Popconfirm, Tooltip } from "antd";
+import { useEffect, useState } from "react";
+import { AlertCircle, Loader2, Pencil, SquarePlus, X } from "lucide-react";
+import { Button, Input, Modal, Popconfirm, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { AgentPanelTabs } from "./agent-panel-tabs";
@@ -31,6 +31,9 @@ export function AgentWindowTabs() {
     const addWindow = useAgentStore((state) => state.addWindow);
     const removeWindow = useAgentStore((state) => state.removeWindow);
     const selectWindow = useAgentStore((state) => state.selectWindow);
+    const renameWindow = useAgentStore((state) => state.renameWindow);
+    const [renaming, setRenaming] = useState(false);
+    const [renameDraft, setRenameDraft] = useState("");
 
     const active = windows.find((window) => window.id === activeWindowId) ?? windows[0];
     const atLimit = windows.length >= AGENT_WINDOW_LIMIT;
@@ -64,8 +67,19 @@ export function AgentWindowTabs() {
     if (!active) return null;
 
     const closeActive = () => removeWindow(active.id);
+    const openRename = () => {
+        setRenameDraft(active.title?.trim() || toWindowTabLabel(active));
+        setRenaming(true);
+    };
+    const commitRename = () => {
+        const next = renameDraft.trim();
+        // 清空等于恢复默认标题（「会话 N」），不给 store 写空字符串。
+        renameWindow(active.id, next);
+        setRenaming(false);
+    };
 
     return (
+        <>
         <AgentPanelTabs
             variant="windows"
             label={t("agent.window.section")}
@@ -81,6 +95,9 @@ export function AgentWindowTabs() {
             onChange={(id) => selectWindow(id)}
             right={
                 <>
+                    <Tooltip title={t("agent.window.rename")} placement="bottom">
+                        <Button size="small" type="text" className="!h-8 !w-8 !min-w-8 !px-0" aria-label={t("agent.window.rename")} style={{ color: theme.node.muted }} icon={<Pencil className="size-3.5" />} onClick={openRename} />
+                    </Tooltip>
                     <Tooltip title={newWindowLabel} placement="bottom">
                         <Button size="small" type="text" className="!h-8 !w-8 !min-w-8 !px-0 @min-[560px]:!w-auto @min-[560px]:!min-w-0 @min-[560px]:!px-[7px]" aria-label={newWindowLabel} disabled={atLimit} icon={<SquarePlus className="size-3.5" />} onClick={() => addWindow()}>
                             <span className="hidden @min-[560px]:inline">{t("agent.window.newShort")}</span>
@@ -102,5 +119,24 @@ export function AgentWindowTabs() {
                 </>
             }
         />
+        <Modal
+            open={renaming}
+            title={t("agent.window.renameTitle")}
+            okText={t("common.save")}
+            cancelText={t("common.cancel")}
+            onOk={commitRename}
+            onCancel={() => setRenaming(false)}
+            destroyOnHidden
+        >
+            <Input
+                autoFocus
+                maxLength={24}
+                value={renameDraft}
+                placeholder={t("agent.window.renamePlaceholder")}
+                onChange={(event) => setRenameDraft(event.target.value)}
+                onPressEnter={commitRename}
+            />
+        </Modal>
+        </>
     );
 }

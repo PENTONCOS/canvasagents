@@ -1450,6 +1450,9 @@ export default {
             closeLast: "This is the last session window — closing it opens a fresh blank one",
             closeConfirm: "This session is running. Closing it will interrupt the current turn. Close anyway?",
             unread: "{{count}} unread",
+            rename: "Rename this session window",
+            renameTitle: "Name this session window",
+            renamePlaceholder: "e.g. Blue-tone edit",
         },
         repo: {
             badgeLabel: "Latest code",

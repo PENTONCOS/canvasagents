@@ -654,3 +654,10 @@
     border-radius: 0.6rem;
     font-size: 0.75rem;
 }
+
+/* antd 的 tooltip 容器默认会吃掉鼠标事件：会话窗标签悬停后，提示气泡正好压在
+   下面的内容 tab 上，第一次点「历史」会被它挡住。tooltip 本身不需要交互。 */
+.ant-tooltip-container,
+.ant-tooltip {
+    pointer-events: none;
+}

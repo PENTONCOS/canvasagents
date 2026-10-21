@@ -1385,6 +1385,9 @@ export default {
             closeLast: "这是最后一个会话窗，关闭后会新建一个空白窗",
             closeConfirm: "该会话正在运行，关闭会中断当前这一轮。确定关闭？",
             unread: "{{count}} 条未读",
+            rename: "重命名当前会话窗",
+            renameTitle: "给这个会话窗起个名字",
+            renamePlaceholder: "例如：蓝色调改图",
         },
         repo: {
             badgeLabel: "同步最新代码",
