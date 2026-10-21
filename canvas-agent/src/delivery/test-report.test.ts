@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { extractAcIds, parsePlaywrightReport, parseVitestReport, summarizeAcResults } from "./test-report.js";
+import { extractAcIds, isReportType, parsePlaywrightReport, parseReport, parseVitestReport, summarizeAcResults } from "./test-report.js";
 
 /** 构造 Playwright JSON 里最小可用的 spec（只带解析需要的字段）。 */
 function pwSpec(title: string, ok: boolean, extra: Record<string, unknown> = {}) {
@@ -86,4 +86,16 @@ test("summarizeAcResults 任一失败即失败，全跳过才是跳过", () => {
     assert.equal(byId["AC-02"], "pass");
     assert.equal(byId["AC-03"], "skip");
     assert.equal(Object.keys(byId).length, 3);
+});
+
+test("parseReport 按类型分发，未知类型不被当成任一格式", () => {
+    const vitest = { testResults: [{ name: "x.test.ts", assertionResults: [{ title: "@AC-09 深度", status: "passed" }] }] };
+    const viaVitest = parseReport("vitest", vitest);
+    const viaPlaywright = parseReport("playwright", vitest);
+    assert.equal(viaVitest.length, 1);
+    assert.equal(viaVitest[0].acId, "AC-09");
+    // 同一份报告按 Playwright 解析应拿不到条目，证明分发真的生效了，而不是碰巧都能读。
+    assert.equal(viaPlaywright.length, 0);
+    assert.equal(isReportType("vitest"), true);
+    assert.equal(isReportType("jest"), false);
 });

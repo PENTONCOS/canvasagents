@@ -7,6 +7,10 @@ const PORT = Number(process.env.MOCK_AGENT_PORT || 17399);
 const TOKEN = process.env.MOCK_AGENT_TOKEN || "e2e-token";
 
 let deleted = [];
+// M4 验收循环：前 N 次返回失败，之后返回通过，用来验证「失败→修复→再跑」真的会累加轮次。
+let verifyCalls = 0;
+let verifyFailures = 1;
+let verifyResults = null;
 let threads = [
     { id: "thread-a", preview: "@图片1 把这张图变为蓝色调的，同明度…", name: "蓝色调改图", createdAt: 1789000000, updatedAt: 1789100000 },
     { id: "thread-b", preview: "@图片1 把这张图变为蓝色调的，同明度…", name: "第二次尝试", createdAt: 1788000000, updatedAt: 1788100000 },
@@ -50,6 +54,9 @@ const server = createServer(async (req, res) => {
     if (path === "/__state") return json(res, { deleted, threads: threads.map((item) => item.id) });
     if (path === "/__reset") {
         deleted = [];
+        verifyCalls = 0;
+        verifyFailures = 1;
+        verifyResults = null;
         threads = [
             { id: "thread-a", preview: "@图片1 把这张图变为蓝色调的，同明度…", name: "蓝色调改图", createdAt: 1789000000, updatedAt: 1789100000 },
             { id: "thread-b", preview: "@图片1 把这张图变为蓝色调的，同明度…", name: "第二次尝试", createdAt: 1788000000, updatedAt: 1788100000 },
@@ -113,6 +120,31 @@ const server = createServer(async (req, res) => {
     if (path === "/delivery/deploy" && req.method === "POST") {
         await readBody(req).catch(() => "");
         return json(res, { ok: true, command: { ok: true, exitCode: 0, output: "mock deploy" }, health: { ok: true, status: 200, latencyMs: 1, checkedAt: new Date().toISOString() }, status: "healthy" });
+    }
+    // 覆盖脚本：用例想指定「连续失败几轮」或「直接给一组结果」时先打这个口子。
+    if (path === "/__verify-config" && req.method === "POST") {
+        const body = JSON.parse((await readBody(req).catch(() => "{}")) || "{}");
+        if (typeof body.failures === "number") verifyFailures = body.failures;
+        if (Array.isArray(body.results)) verifyResults = body.results;
+        verifyCalls = 0;
+        return json(res, { ok: true, verifyFailures, verifyResults });
+    }
+    if (path === "/delivery/verify" && req.method === "POST") {
+        await readBody(req).catch(() => "");
+        verifyCalls += 1;
+        // 没有显式配置时：第一轮报 AC-01 失败，之后通过——模拟「修完再跑就绿了」。
+        const failing = verifyResults
+            ? verifyResults
+            : [{ acId: "AC-01", result: verifyCalls <= verifyFailures ? "fail" : "pass" }];
+        const failed = failing.some((item) => item.result === "fail");
+        return json(res, {
+            ok: !failed,
+            startedAt: new Date().toISOString(),
+            finishedAt: new Date().toISOString(),
+            command: { ok: !failed, exitCode: failed ? 1 : 0, output: failed ? `expected AC-01 to pass (round ${verifyCalls})` : "all good" },
+            report: { type: "vitest", path: "/tmp/mock-report.json", cases: failing.length, withoutAc: 0 },
+            results: failing,
+        });
     }
     if (path === "/delivery/health" && req.method === "POST") {
         await readBody(req).catch(() => "");

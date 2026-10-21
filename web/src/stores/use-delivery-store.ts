@@ -176,6 +176,15 @@ export const useDeliveryStore = create<DeliveryStore>()(
 
             applyAcResults: (results, runId) => {
                 const { plans, rejected } = planAcStatusUpdates(useDeliveryStore.getState().acceptance, results);
+                // 结果先落到 run 上：即使一条 AC 都迁移不了（例如全是 draft→passing 之外的非法迁移），
+                // 这次运行跑出来的是什么也必须留下痕迹，否则「回放」会变成回放空数据。
+                if (runId) {
+                    set((state) => {
+                        const run = state.runs[runId];
+                        if (!run) return {};
+                        return { runs: { ...state.runs, [runId]: { ...run, results: results.map((item) => ({ acId: item.acId, result: item.result })) } } };
+                    });
+                }
                 if (plans.length === 0) {
                     return { applied: [], rejected: rejected.map((item) => ({ acId: item.acId, reason: item.reason })) };
                 }

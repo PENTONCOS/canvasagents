@@ -667,6 +667,7 @@ export default {
             assets: "Assets",
             prompts: "Prompt Library",
             acceptance: "Acceptance",
+            verifyTitle: "Run acceptance", verifyCommandPlaceholder: "Test command, e.g. bun test", verifyCwdPlaceholder: "Working directory (absolute path)", verifyReportPlaceholder: "Report file (relative to cwd, optional)", verifyRun: "Run", verifyRunning: "Running…", verifyCommandRequired: "Enter a test command first", verifyCwdRequired: "Working directory must be absolute", verifyPassed: "{{count}} acceptance criteria passed this round", verifyFailed: "{{count}} acceptance criteria still failing — fix and run again", verifySkipped: "No judgeable acceptance results this round (missing @AC anchors)", verifyGuardrail: "Stopped: {{reason}}",
             runs: "Runs", runEmpty: "No runs yet. Test runs will show up here.", runTotal: "{{count}} runs", runRounds: "{{count}} rounds", runReplay: "Replay", runReplayDone: "Re-applied {{count}} acceptance results", runReplayNone: "This run has no acceptance results to replay", runFocus: "Focus run node",
             acEmpty: "No acceptance criteria yet. Create an Acceptance node on the canvas.",
             acTotal: "{{count}} total",

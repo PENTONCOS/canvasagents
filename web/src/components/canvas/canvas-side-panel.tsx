@@ -7,7 +7,9 @@ import { useTranslation } from "react-i18next";
 
 import { canvasThemes, type CanvasTheme } from "@/lib/canvas-theme";
 import { AC_STATUS_COLOR, acStatusLabelKey, countAcByStatus } from "@/lib/delivery/ac-status";
+import { createOrchestrator, reduceOrchestrator, replayOrchestrator } from "@/lib/delivery/orchestrator";
 import { RUN_STATUS_COLOR, runStatusLabelKey } from "@/lib/delivery/run-status";
+import { acResultsFromVerify, roundFromVerify, type VerifyPayload } from "@/lib/delivery/verify-plan";
 import { exportCanvasNodes } from "@/lib/canvas/canvas-export";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { cn } from "@/lib/utils";
@@ -16,11 +18,13 @@ import { fetchSourcePrompts, type Prompt } from "@/services/api/prompts";
 import { uploadMediaFile } from "@/services/file-storage";
 import { previewUrlFor, subscribeImagePreviews, getImagePreviewRevision, uploadImage } from "@/services/image-storage";
 import { useAssetStore, type Asset, type AssetKind } from "@/stores/use-asset-store";
+import { useAgentStore } from "@/stores/use-agent-store";
 import { useDeliveryStore } from "@/stores/use-delivery-store";
 import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
 import { CANVAS_SIDE_PANEL_MAX_WIDTH, CANVAS_SIDE_PANEL_MIN_WIDTH, CANVAS_SIDE_PANEL_MOTION_MS, useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
+import { nextEntityId } from "@/types/delivery";
 
 import type { InsertAssetPayload } from "./asset-picker-modal";
 
@@ -188,65 +192,154 @@ function DeliveryAcceptanceTab({ theme, onFocusNode }: { theme: CanvasTheme; onF
     );
 }
 
-// M4: 运行历史。每轮失败都要能看到是哪条 AC/哪个用例，回放只重放当时的真实结果。
+// M4: 运行历史 + 验收执行。浏览器只发一次 /delivery/verify，跑不跑下一轮由编排器决定。
 function DeliveryRunsTab({ theme, onFocusNode }: { theme: CanvasTheme; onFocusNode: (nodeId: string) => void }) {
     const { t } = useTranslation();
     const { message } = App.useApp();
     const runs = useDeliveryStore((state) => state.runs);
     const replayRun = useDeliveryStore((state) => state.replayRun);
+    const upsertRun = useDeliveryStore((state) => state.upsertRun);
+    const appendRunRound = useDeliveryStore((state) => state.appendRunRound);
+    const applyAcResults = useDeliveryStore((state) => state.applyAcResults);
+    const agentUrl = useAgentStore((state) => state.url);
+    const agentToken = useAgentStore((state) => state.token);
     const items = useMemo(() => Object.values(runs).sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || "")), [runs]);
 
-    if (items.length === 0) {
-        return (
-            <div className="px-4 py-6 text-xs" style={{ color: theme.node.muted }} data-testid="runs-empty">
-                {t("canvas.sidePanel.runEmpty")}
-            </div>
-        );
-    }
+    const [command, setCommand] = useState("bun test");
+    const [cwd, setCwd] = useState("");
+    const [reportPath, setReportPath] = useState("");
+    const [reportType, setReportType] = useState<"playwright" | "vitest">("playwright");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState("");
+    // 编排状态不单独存：轮次已经写进 run，按落库数据重建即可，切 tab / 刷新都不会丢进度。
+    const activeRun = useMemo(() => Object.values(runs).sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || ""))[0], [runs]);
+    const orchestrator = useMemo(() => replayOrchestrator(activeRun?.rounds || []), [activeRun]);
+
+    // 一轮一块：第一次点「运行」开一次运行，之后每次点都是同一次运行的下一轮（修完再跑）。
+    const startVerify = async () => {
+        if (busy) return;
+        if (!command.trim()) {
+            setError(t("canvas.sidePanel.verifyCommandRequired"));
+            return;
+        }
+        if (!cwd.trim().startsWith("/")) {
+            setError(t("canvas.sidePanel.verifyCwdRequired"));
+            return;
+        }
+        setBusy(true);
+        setError("");
+        try {
+            const response = await fetch(`${agentUrl.replace(/\/$/, "")}/delivery/verify`, {
+                method: "POST",
+                headers: { "content-type": "application/json", ...(agentToken ? { "x-canvas-agent-token": agentToken } : {}) },
+                body: JSON.stringify({ command, cwd, reportPath, reportType }),
+            });
+            const payload = (await response.json()) as VerifyPayload;
+            const at = new Date().toISOString();
+            // 以 store 里的最新数据为准：闭包里的 runs 可能是上一次渲染的旧值。
+            const stored = useDeliveryStore.getState().runs;
+            const latest = Object.values(stored).sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || ""))[0];
+            let state = latest ? replayOrchestrator(latest.rounds || []) : createOrchestrator();
+            let runId = latest?.id || "";
+            // 上一次运行已经全绿或已升级，就开新的一次运行；否则这一轮属于同一次运行的修复循环。
+            const fresh = !runId || state.phase === "passed" || state.phase === "escalated";
+            if (fresh) {
+                runId = nextEntityId(Object.keys(stored), "RUN");
+                upsertRun({ id: runId, kind: "test", command, cwd, startedAt: at, status: "running", results: [], rounds: [] });
+                state = reduceOrchestrator(createOrchestrator(), { type: "start", at });
+            }
+            const index = (stored[runId]?.rounds?.length || 0) + 1;
+            const round = roundFromVerify(index, payload, at);
+            state = reduceOrchestrator(state, { type: "round", at: round.finishedAt || at, round });
+            appendRunRound(runId, round);
+            applyAcResults(acResultsFromVerify(payload), runId);
+            if (state.phase === "passed") message.success(t("canvas.sidePanel.verifyPassed", { count: round.passed }));
+            else if (state.phase === "escalated") message.warning(t("canvas.sidePanel.verifyGuardrail", { reason: state.stopReason || "" }));
+            else if (round.status === "skipped") message.info(t("canvas.sidePanel.verifySkipped"));
+            else message.info(t("canvas.sidePanel.verifyFailed", { count: round.failed }));
+            if (payload.error) setError(String(payload.error));
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+        } finally {
+            setBusy(false);
+        }
+    };
 
     return (
-        <div className="h-full overflow-y-auto px-3 pb-4" data-testid="runs-list">
-            <div className="px-1 py-2 text-[11px]" style={{ color: theme.node.muted }}>
-                {t("canvas.sidePanel.runTotal", { count: items.length })}
-            </div>
-            {items.map((run) => (
-                <div key={run.id} className="mb-1 rounded-md px-2 py-1.5 text-xs" style={{ background: theme.node.fill, color: theme.node.text }} data-run-id={run.id} data-run-status={run.status}>
-                    <div className="flex items-center gap-2">
-                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: RUN_STATUS_COLOR[run.status] }} />
-                        <span className="font-medium">{run.id}</span>
-                        <span className="rounded px-1 text-[10px]" style={{ background: `${RUN_STATUS_COLOR[run.status]}22`, color: RUN_STATUS_COLOR[run.status] }}>
-                            {t(runStatusLabelKey(run.status))}
-                        </span>
-                        <span className="text-[10px]" style={{ color: theme.node.muted }}>
-                            {run.kind}
-                            {run.rounds?.length ? ` · ${t("canvas.sidePanel.runRounds", { count: run.rounds.length })}` : ""}
-                        </span>
-                    </div>
-                    {run.rounds?.length ? (
-                        <div className="mt-1 flex flex-col gap-0.5 pl-4 text-[10px]" style={{ color: theme.node.muted }}>
-                            {run.rounds.map((round) => (
-                                <span key={round.index} data-round-index={round.index}>
-                                    #{round.index} · {round.failed} {t("canvas.sidePanel.acFailing", { count: round.failed })}
-                                </span>
-                            ))}
-                        </div>
-                    ) : null}
-                    <div className="mt-1 flex gap-2 pl-4">
-                        <button type="button" className="text-[10px] underline-offset-2 hover:underline" style={{ color: theme.node.muted }} onClick={() => {
-                                const result = replayRun(run.id);
-                                if (result.applied.length > 0) message.success(t("canvas.sidePanel.runReplayDone", { count: result.applied.length }));
-                                else message.info(t("canvas.sidePanel.runReplayNone"));
-                            }} data-run-replay>
-                            {t("canvas.sidePanel.runReplay")}
-                        </button>
-                        {run.nodeId ? (
-                            <button type="button" className="text-[10px] underline-offset-2 hover:underline" style={{ color: theme.node.muted }} onClick={() => onFocusNode(String(run.nodeId))}>
-                                {t("canvas.sidePanel.runFocus")}
-                            </button>
-                        ) : null}
-                    </div>
+        <div className="h-full overflow-y-auto px-3 pb-4" data-testid="runs-panel">
+            <div className="mb-2 rounded-md p-2" style={{ background: theme.node.fill }} data-testid="verify-form">
+                <div className="mb-1 text-[11px] font-medium" style={{ color: theme.node.text }}>
+                    {t("canvas.sidePanel.verifyTitle")}
                 </div>
-            ))}
+                <Input size="small" className="mb-1" value={command} onChange={(event) => setCommand(event.target.value)} placeholder={t("canvas.sidePanel.verifyCommandPlaceholder")} data-testid="verify-command" />
+                <Input size="small" className="mb-1" value={cwd} onChange={(event) => setCwd(event.target.value)} placeholder={t("canvas.sidePanel.verifyCwdPlaceholder")} data-testid="verify-cwd" />
+                <Input size="small" className="mb-1" value={reportPath} onChange={(event) => setReportPath(event.target.value)} placeholder={t("canvas.sidePanel.verifyReportPlaceholder")} data-testid="verify-report" />
+                <div className="flex flex-wrap items-center gap-2">
+                    <Select size="small" value={reportType} onChange={(value: "playwright" | "vitest") => setReportType(value)} options={[{ value: "playwright", label: "Playwright" }, { value: "vitest", label: "Vitest" }]} style={{ width: 110 }} data-testid="verify-report-type" />
+                    <button type="button" disabled={busy} onClick={() => void startVerify()} className="rounded px-2 py-1 text-[11px] disabled:opacity-50" style={{ background: theme.toolbar.activeText, color: theme.node.fill }} data-testid="verify-run">
+                        {busy ? t("canvas.sidePanel.verifyRunning") : t("canvas.sidePanel.verifyRun")}
+                    </button>
+                </div>
+                {orchestrator.stopReason ? (
+                    <div className="mt-1 text-[10px]" style={{ color: RUN_STATUS_COLOR.error }} data-testid="verify-stop">
+                        {orchestrator.stopReason}
+                    </div>
+                ) : null}
+                {error ? (
+                    <div className="mt-1 text-[10px]" style={{ color: RUN_STATUS_COLOR.failed }} data-testid="verify-error">
+                        {error}
+                    </div>
+                ) : null}
+            </div>
+            {items.length === 0 ? (
+                <div className="px-1 py-4 text-xs" style={{ color: theme.node.muted }} data-testid="runs-empty">
+                    {t("canvas.sidePanel.runEmpty")}
+                </div>
+            ) : (
+                <div data-testid="runs-list">
+                    <div className="px-1 py-2 text-[11px]" style={{ color: theme.node.muted }}>
+                        {t("canvas.sidePanel.runTotal", { count: items.length })}
+                    </div>
+                    {items.map((run) => (
+                        <div key={run.id} className="mb-1 rounded-md px-2 py-1.5 text-xs" style={{ background: theme.node.fill, color: theme.node.text }} data-run-id={run.id} data-run-status={run.status}>
+                            <div className="flex items-center gap-2">
+                                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: RUN_STATUS_COLOR[run.status] }} />
+                                <span className="font-medium">{run.id}</span>
+                                <span className="rounded px-1 text-[10px]" style={{ background: `${RUN_STATUS_COLOR[run.status]}22`, color: RUN_STATUS_COLOR[run.status] }}>
+                                    {t(runStatusLabelKey(run.status))}
+                                </span>
+                                <span className="text-[10px]" style={{ color: theme.node.muted }}>
+                                    {run.kind}
+                                    {run.rounds?.length ? ` · ${t("canvas.sidePanel.runRounds", { count: run.rounds.length })}` : ""}
+                                </span>
+                            </div>
+                            {run.rounds?.length ? (
+                                <div className="mt-1 flex flex-col gap-0.5 pl-4 text-[10px]" style={{ color: theme.node.muted }}>
+                                    {run.rounds.map((round) => (
+                                        <span key={round.index} data-round-index={round.index} data-round-status={round.status}>
+                                            #{round.index} · {round.status} · {t("canvas.sidePanel.acFailing", { count: round.failed })}
+                                        </span>
+                                    ))}
+                                </div>
+                            ) : null}
+                            <div className="mt-1 flex gap-2 pl-4">
+                                <button type="button" className="text-[10px] underline-offset-2 hover:underline" style={{ color: theme.node.muted }} onClick={() => {
+                                        const result = replayRun(run.id);
+                                        if (result.applied.length > 0) message.success(t("canvas.sidePanel.runReplayDone", { count: result.applied.length }));
+                                        else message.info(t("canvas.sidePanel.runReplayNone"));
+                                    }} data-run-replay>
+                                    {t("canvas.sidePanel.runReplay")}
+                                </button>
+                                {run.nodeId ? (
+                                    <button type="button" className="text-[10px] underline-offset-2 hover:underline" style={{ color: theme.node.muted }} onClick={() => onFocusNode(String(run.nodeId))}>
+                                        {t("canvas.sidePanel.runFocus")}
+                                    </button>
+                                ) : null}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }

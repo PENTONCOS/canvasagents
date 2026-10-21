@@ -20,6 +20,7 @@ import { terminalManager } from "./terminal.js";
 import { captureWall, listWall, listWindows, pickCaptureWindow, readWallFile } from "./capture.js";
 import { rewriteAgentDriverPath } from "./agent-driver-route.js";
 import { deploymentStatus, probeHealth, runCommand } from "../delivery/deployer.js";
+import { isReportType, parseReport, summarizeAcResults } from "../delivery/test-report.js";
 
 export type StartHttpServerOptions = { skipVersionCheck?: boolean };
 
@@ -219,6 +220,45 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
         const result = await runCommand(command, cwd, Number(req.body?.timeoutMs) || 120_000);
         const health = target ? await probeHealth(target, Number(req.body?.healthTimeoutMs) || 8000) : undefined;
         res.json({ ok: result.ok && (health ? health.ok : true), command: result, health, status: health ? deploymentStatus(health) : "unknown" });
+    }));
+    /**
+     * 跑验收命令 → 读报告 → 汇总到 AC 粒度。
+     *
+     * 这里刻意不「猜」测试命令，也不自动改代码：桥端只回答「跑出来是什么」，
+     * 修与不修、什么时候停，由前端编排器按护栏决定。
+     */
+    app.post("/delivery/verify", route(async (req, res) => {
+        const command = String(req.body?.command || "");
+        const cwd = String(req.body?.cwd || "");
+        const reportPath = String(req.body?.reportPath || "");
+        const reportType = String(req.body?.reportType || "playwright");
+        if (!command) return void res.status(400).json({ ok: false, error: "command required" });
+        if (!path.isAbsolute(cwd)) return void res.status(400).json({ ok: false, error: "cwd must be absolute" });
+        if (!isReportType(reportType)) return void res.status(400).json({ ok: false, error: `unsupported report type: ${reportType}` });
+
+        const startedAt = new Date().toISOString();
+        const commandResult = await runCommand(command, cwd, Number(req.body?.timeoutMs) || 180_000);
+        const resolvedReport = reportPath ? path.resolve(cwd, reportPath) : "";
+        if (!resolvedReport) {
+            // 没有报告就只有退出码，不编造 AC 结果。
+            return void res.json({ ok: commandResult.ok, startedAt, finishedAt: new Date().toISOString(), command: commandResult, report: null, results: [] });
+        }
+        let report: unknown;
+        try {
+            report = JSON.parse(await readFile(resolvedReport, "utf8"));
+        } catch (error) {
+            return void res.status(422).json({ ok: false, error: `报告读取失败：${error instanceof Error ? error.message : String(error)}`, command: commandResult, resolvedReport });
+        }
+        const parsed = parseReport(reportType as "playwright" | "vitest", report);
+        const results = summarizeAcResults(parsed);
+        res.json({
+            ok: commandResult.ok,
+            startedAt,
+            finishedAt: new Date().toISOString(),
+            command: commandResult,
+            report: { type: reportType, path: resolvedReport, cases: parsed.length, withoutAc: parsed.filter((item) => !item.acId).length },
+            results,
+        });
     }));
     app.get("/repos", route(async (_req, res) => {
         const repos = (config.repos || []).map((repo) => ({ ...repo, ...readRepoGitInfo(repo.path) }));

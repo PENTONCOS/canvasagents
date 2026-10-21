@@ -130,6 +130,21 @@ export function parseVitestReport(report: unknown): ParsedTestResult[] {
     return results;
 }
 
+export type ReportType = "playwright" | "vitest";
+
+/**
+ * 按报告类型分发。放在这里而不是 http 路由里，是因为「Vitest 报告长什么样」
+ * 属于解析知识，不该让路由层知道。
+ */
+export function parseReport(type: ReportType, report: unknown): ParsedTestResult[] {
+    return type === "vitest" ? parseVitestReport(report) : parsePlaywrightReport(report);
+}
+
+/** 未知类型不静默当成 Playwright：静默兜底会把 Vitest 报告解析成 0 条结果，看起来像「全绿」。 */
+export function isReportType(value: string): value is ReportType {
+    return value === "playwright" || value === "vitest";
+}
+
 /**
  * 汇总到 AC 粒度：任一失败即失败（回归没通过就不能算绿），
  * 否则有通过即通过，全跳过则跳过。

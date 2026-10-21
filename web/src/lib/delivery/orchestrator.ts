@@ -34,7 +34,7 @@ export function failureSignature(round: Pick<DeliveryRunRound, "failures">): str
 
 export type OrchestratorPhase = "idle" | "running" | "fixing" | "deploying" | "passed" | "escalated";
 
-export type GuardrailCode = "max-rounds" | "test-files-touched" | "no-progress" | "human-stop";
+export type GuardrailCode = "max-rounds" | "test-files-touched" | "no-progress" | "no-anchors" | "human-stop";
 
 export type Guardrail = { code: GuardrailCode; message: string };
 
@@ -91,8 +91,14 @@ export function reduceOrchestrator(state: OrchestratorState, event: Orchestrator
             const rounds = [...state.rounds, event.round];
             const next: OrchestratorState = { ...state, rounds, events: pushEvent(state, event) };
 
-            if (event.round.status === "passed" || event.round.status === "skipped") {
+            if (event.round.status === "passed") {
                 return { ...next, phase: "passed", events: pushEvent(next, { type: "done", at: event.at }) };
+            }
+
+            // 跳过 ≠ 通过：一条 AC 都没判出来（没有 @AC 锚点、用例全被跳过）时，
+            // 继续跑循环没有意义，继续修也没有方向，直接升级给人补锚点。
+            if (event.round.status === "skipped") {
+                return escalate(next, { code: "no-anchors", message: "这一轮没有可判定的 AC 结果（缺 @AC 锚点或用例全被跳过），停止并升级" }, event.at);
             }
 
             if (rounds.length >= state.maxRounds) {
@@ -134,6 +140,23 @@ export function reduceOrchestrator(state: OrchestratorState, event: Orchestrator
         default:
             return state;
     }
+}
+
+/**
+ * 从已落库的轮次重建状态。
+ *
+ * 为什么不在组件里存 ref：切换侧栏 tab 会卸载组件，ref 里的进度就没了，
+ * 用户再点一次「运行」会变成「新开一次运行」。轮次已经写进 run，重建是确定性的，
+ * 也不需要额外持久化编排器状态。
+ */
+export function replayOrchestrator(rounds: DeliveryRunRound[], maxRounds: number = DEFAULT_MAX_ROUNDS): OrchestratorState {
+    let state = createOrchestrator(maxRounds);
+    if (rounds.length === 0) return state;
+    state = reduceOrchestrator(state, { type: "start", at: rounds[0].startedAt });
+    for (const round of rounds) {
+        state = reduceOrchestrator(state, { type: "round", at: round.finishedAt || round.startedAt, round });
+    }
+    return state;
 }
 
 export type NextAction = "start" | "run-tests" | "fix" | "deploy" | "stop" | "wait";

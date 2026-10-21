@@ -131,3 +131,22 @@ describe("验收循环编排器", () => {
         expect(decideNextAction(passed)).toBe("deploy");
     });
 });
+
+describe("skipped 不算通过", () => {
+    test("一轮里一条 AC 都没判出来（skipped）→ 立即升级为 no-anchors", () => {
+        const state = run(
+            createOrchestrator(),
+            { type: "start", at: AT },
+            { type: "round", at: AT, round: round(1, "skipped") },
+        );
+        expect(state.phase).toBe("escalated");
+        expect(state.guardrails.map((item) => item.code)).toContain("no-anchors");
+        expect(decideNextAction(state)).toBe("stop");
+    });
+
+    test("升级后不再接受新轮次（状态不再变化）", () => {
+        const escalated = run(createOrchestrator(), { type: "start", at: AT }, { type: "round", at: AT, round: round(1, "skipped") });
+        const after = reduceOrchestrator(escalated, { type: "round", at: AT, round: round(2, "passed") });
+        expect(after).toBe(escalated);
+    });
+});
