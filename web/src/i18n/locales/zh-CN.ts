@@ -28,6 +28,30 @@ export default {
         durationSeconds: "{{seconds}}秒",
         imageReadFailed: "读取图片失败",
     },
+    marketing: {
+        nav: { pricing: "定价", courses: "课程", app: "进入画布" },
+        pricing: {
+            title: "定价",
+            subtitle: "画布上把需求做到上线。下面三档覆盖个人试用到团队协作。",
+            note: "当前为演示定价，尚未接入支付；额度上限可在本地配置中调整。",
+            plans: {
+                free: { name: "免费", price: "¥0", period: "/ 月", cta: "开始使用", features: ["单画布项目", "Codex / Claude 驱动", "每月 50 次验收运行", "本地技能市场"] },
+                pro: { name: "专业", price: "¥99", period: "/ 月", cta: "查看画布", features: ["无限画布项目", "自动验收循环与回滚", "每月 1000 次验收运行", "预发布 / 生产环境节点"] },
+                team: { name: "团队", price: "¥299", period: "/ 人 / 月", cta: "查看画布", features: ["多人协作与修订号", "共享技能与模板库", "批量投喂问题单", "审计与用量报表"] },
+            },
+        },
+        courses: {
+            title: "课程",
+            subtitle: "从一句话需求到上线，按交付流程学，而不是按按钮学。",
+            cta: "在画布中练习",
+            meta: "{{lessons}} 课 · 约 {{minutes}} 分钟",
+            items: {
+                basics: { title: "画布基础：需求与旅程", description: "用便签写需求，拆成用户旅程，每一步都落到画布节点上。" },
+                delivery: { title: "验收驱动开发", description: "把验收标准写成可执行测试的锚点，让失败自己变红、修复自己变绿。" },
+                automation: { title: "多 Agent 协作", description: "一个画布调度一批 agent：开发、验收、修复各司其职，切换驱动不丢上下文。" },
+            },
+        },
+    },
     settingsPanels: {
         common: { auto: "自动", low: "低", medium: "中", high: "高", xhigh: "极高", max: "最高" },
         image: {

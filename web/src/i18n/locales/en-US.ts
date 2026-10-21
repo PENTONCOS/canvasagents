@@ -28,6 +28,30 @@ export default {
         durationSeconds: "{{seconds}}s",
         imageReadFailed: "Failed to read image",
     },
+    marketing: {
+        nav: { pricing: "Pricing", courses: "Courses", app: "Open canvas" },
+        pricing: {
+            title: "Pricing",
+            subtitle: "Take a requirement from canvas to production. Three tiers cover solo trials through team delivery.",
+            note: "Demo pricing only — payments are not wired up yet. Budgets can be adjusted in local config.",
+            plans: {
+                free: { name: "Free", price: "$0", period: "/ mo", cta: "Get started", features: ["Single canvas project", "Codex / Claude drivers", "50 verification runs / mo", "Local skill market"] },
+                pro: { name: "Pro", price: "$14", period: "/ mo", cta: "Open canvas", features: ["Unlimited canvas projects", "Verification loop with rollback", "1,000 verification runs / mo", "Staging / production nodes"] },
+                team: { name: "Team", price: "$39", period: "/ seat / mo", cta: "Open canvas", features: ["Multiplayer with revisions", "Shared skills and templates", "Batch bug hand-off", "Audit and usage reports"] },
+            },
+        },
+        courses: {
+            title: "Courses",
+            subtitle: "Learn the delivery flow from one-line requirement to launch, not button by button.",
+            cta: "Practice in canvas",
+            meta: "{{lessons}} lessons · about {{minutes}} min",
+            items: {
+                basics: { title: "Canvas basics: requirements and journeys", description: "Write requirements as notes, split them into user journeys, land every step on a canvas node." },
+                delivery: { title: "Acceptance-driven development", description: "Anchor acceptance criteria to executable tests so failures turn red and fixes turn green on their own." },
+                automation: { title: "Multi-agent collaboration", description: "Drive a fleet of agents from one canvas — build, verify, fix — switching drivers without losing context." },
+            },
+        },
+    },
     settingsPanels: {
         common: { auto: "Auto", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Maximum" },
         image: {

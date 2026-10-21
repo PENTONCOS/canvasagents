@@ -9,6 +9,7 @@ import AuthPage from "@/pages/auth";
 import CanvasPage from "@/pages/canvas";
 import CanvasProjectPage from "@/pages/canvas/project";
 import NotFound from "@/pages/not-found";
+import PricingPage, { CoursesPage } from "@/pages/marketing";
 
 // Legacy routes (/image /video /assets /prompts /config) intentionally redirect to /canvas
 // so old links keep working; the capability now lives inside the canvas (M1 immersive redesign).
@@ -23,6 +24,8 @@ export const router = createBrowserRouter([
         children: [
             { path: "/login", element: <AuthPage mode="login" /> },
             { path: "/register", element: <AuthPage mode="register" /> },
+            { path: "/pricing", element: <PricingPage /> },
+            { path: "/courses", element: <CoursesPage /> },
             {
                 // AccountOnboardingBanner lives here (not in ClientRootInit) because it needs
                 // router context; ClientRootInit renders outside <RouterProvider>.
