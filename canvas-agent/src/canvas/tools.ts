@@ -31,7 +31,36 @@ export function compactNode(node: CanvasNode) {
         metadata.content = `${metadata.content.slice(0, NODE_CONTENT_PREVIEW_LIMIT)}...`;
         metadata.contentTruncated = true;
     }
+    compactDeliveryMetadata(node.type, metadata);
     return { id: node.id, type: node.type, title: node.title, position: node.position, width: node.width, height: node.height, metadata };
+}
+
+/** 交付域节点类型集合（与前端 types/canvas.ts 的 M0 枚举值一致）。 */
+const DELIVERY_NODE_TYPES = new Set([
+    "requirement",
+    "journey",
+    "journey.step",
+    "design",
+    "acceptance",
+    "testcase",
+    "bug",
+    "environment",
+    "run",
+]);
+
+/**
+ * 交付域节点压缩（M0）：交付对象的短文本就是语义本体，整段保留；
+ * 大体积媒体字段（图片引用/时间线/编辑历史）对 Agent 无意义，直接剔除，
+ * 避免占用上下文预算。异常长的 statement 仍按预览上限截断并打标。
+ */
+function compactDeliveryMetadata(nodeType: string, metadata: Record<string, unknown>) {
+    if (!DELIVERY_NODE_TYPES.has(nodeType)) return;
+    for (const key of ["images", "references", "timeline", "history"]) delete metadata[key];
+    const statement = metadata.statement;
+    if (typeof statement === "string" && statement.length > NODE_CONTENT_PREVIEW_LIMIT) {
+        metadata.statement = `${statement.slice(0, NODE_CONTENT_PREVIEW_LIMIT)}.`;
+        metadata.statementTruncated = true;
+    }
 }
 
 /**

@@ -48,3 +48,34 @@ test("canvas_get_node 已注册为画布工具", () => {
     assert.equal(isToolName("canvas_get_node"), true);
     assert.equal(isToolName("canvas_get_node_full"), false);
 });
+
+test("compactNode 交付域节点剔除媒体字段并保留 statement 全文", () => {
+    const node: CanvasNode = {
+        id: "n1", type: "acceptance", title: "AC-01", position: { x: 0, y: 0 }, width: 320, height: 160,
+        metadata: { status: "idle", acId: "AC-01", statement: "改约后立即显示新时间", images: [{ id: "big" }], timeline: [1, 2, 3] },
+    };
+    const out = compactNode(node);
+    assert.equal((out.metadata as Record<string, unknown>).statement, "改约后立即显示新时间");
+    assert.equal((out.metadata as Record<string, unknown>).acId, "AC-01");
+    assert.equal((out.metadata as Record<string, unknown>).images, undefined);
+    assert.equal((out.metadata as Record<string, unknown>).timeline, undefined);
+});
+
+test("compactNode 非交付域节点不受影响", () => {
+    const node: CanvasNode = {
+        id: "n2", type: "image", position: { x: 0, y: 0 }, width: 340, height: 240,
+        metadata: { content: "pic", images: [{ id: "keep" }] },
+    };
+    const out = compactNode(node);
+    assert.deepEqual((out.metadata as Record<string, unknown>).images, [{ id: "keep" }]);
+});
+
+test("compactNode 交付域 statement 超长时截断并打标", () => {
+    const node: CanvasNode = {
+        id: "n3", type: "requirement", position: { x: 0, y: 0 }, width: 280, height: 160,
+        metadata: { statement: "a".repeat(NODE_CONTENT_PREVIEW_LIMIT + 1) },
+    };
+    const out = compactNode(node);
+    assert.equal((out.metadata as Record<string, unknown>).statementTruncated, true);
+    assert.equal(String((out.metadata as Record<string, unknown>).statement).length, NODE_CONTENT_PREVIEW_LIMIT + 1);
+});
