@@ -3,6 +3,7 @@ import { FileText, Group, Image as ImageIcon, Music2, Settings2, Video } from "l
 import i18n from "@/i18n";
 
 import { NODE_SPECS } from "@/constant/canvas";
+import { DELIVERY_DEFINITIONS } from "@/components/canvas/nodes/delivery-nodes";
 import { registerNodeDefinitions } from "@/lib/canvas/node-registry";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import type { CanvasNodeDefinition, CanvasNodeResource } from "@/types/canvas-plugin";
@@ -36,4 +37,6 @@ export function registerBuiltinNodes() {
     if (registered) return;
     registered = true;
     registerNodeDefinitions(BUILTIN_DEFINITIONS, "builtin");
+    // M0: delivery-domain nodes share the builtin owner so they ship with the app.
+    registerNodeDefinitions(DELIVERY_DEFINITIONS, "builtin");
 }
