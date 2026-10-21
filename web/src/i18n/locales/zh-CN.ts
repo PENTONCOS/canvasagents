@@ -1593,6 +1593,12 @@ export default {
                 kind: { image: "图片", video: "视频", audio: "音频", text: "文本" },
             },
         },
+        quota: {
+            quotaWarnTokens: "Token 用量已接近上限（{{used}} / {{limit}}），继续会很快用完。",
+            quotaWarnRuns: "验收运行次数已接近上限（{{used}} / {{limit}}）。",
+            quotaExhaustedTokens: "Token 额度已用尽（{{used}} / {{limit}}），请调整额度后再继续。",
+            quotaExhaustedRuns: "验收运行次数已用尽（{{used}} / {{limit}}），运行按钮已停用。",
+        },
         panel: {
 driver: "Agent 驱动",
 driverMissing: "未安装",

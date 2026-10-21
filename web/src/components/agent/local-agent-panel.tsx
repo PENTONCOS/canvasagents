@@ -18,8 +18,10 @@ import { randomId } from "@/lib/utils";
 import { uploadImage } from "@/services/image-storage";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
+import { useDeliveryStore } from "@/stores/use-delivery-store";
 import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import { useShallow } from "zustand/react/shallow";
+import { canSpendQuota, quotaMessageKey, quotaSnapshot } from "@/lib/agent/quota";
 import { useAgentStore, type AgentAttachment, type AgentBootstrapStatus, type AgentCanvasContext, type AgentCanvasReference, type AgentChatItem, type AgentConversationState, type AgentModel, type AgentPendingApproval, type AgentPendingToolCall, type AgentPermissionMode, type AgentReasoningEffort, type AgentThreadSummary, agentWindowById, agentWindowIdForConversation, agentWindowIdForThread, withWindowPatchTarget } from "@/stores/use-agent-store";
 import { backgroundUnreadKey } from "@/lib/agent/agent-windows";
 import { needsThreadPrepare, threadResetRetryDelay } from "@/lib/agent/agent-thread-retry";
@@ -190,6 +192,15 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const skillCount = useAgentSkillStore((state) => state.skills.length);
     const messageCount = useAgentStore((state) => state.messages.length);
+    const deliveryRunCount = useDeliveryStore((state) => Object.keys(state.runs).length);
+    const quota = useMemo(() => quotaSnapshot(tokenUsage, deliveryRunCount), [tokenUsage, deliveryRunCount]);
+    const quotaKey = quotaMessageKey(quota);
+    const quotaText = quotaKey
+        ? t(quotaKey, {
+            used: quota.reason === "runs" ? quota.runsUsed : quota.tokensUsed,
+            limit: quota.reason === "runs" ? quota.runsUsed + quota.runsRemaining : quota.tokensUsed + quota.tokensRemaining,
+        })
+        : "";
     const canvasContextRef = useRef<AgentCanvasContext | null>(useAgentStore.getState().canvasContext);
     const confirmToolsRef = useRef(confirmTools);
     const pendingToolRef = useRef<AgentPendingToolCall | null>(null);
@@ -778,6 +789,12 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             message.warning(rt(canvasReferences.length ? "someCanvasReferencesMissing" : "canvasReferencesMissing"));
         }
         const requestPrompt = promptWithCanvasReferences(promptWithAttachments(text, files), canvasReferences);
+        const liveQuota = quotaSnapshot(currentState.tokenUsage, Object.keys(useDeliveryStore.getState().runs).length);
+        if (!canSpendQuota(liveQuota, "message")) {
+            const key = quotaMessageKey(liveQuota);
+            if (key) message.error(t(key, { used: liveQuota.tokensUsed, limit: liveQuota.tokensUsed + liveQuota.tokensRemaining }));
+            return;
+        }
         if (!currentState.connected || !requestPrompt || currentState.sending || currentState.waiting || currentState.loadingThreads || !["ready", "warning"].includes(currentState.conversation.status)) return;
         let referenceImages: AgentAttachment[] = [];
         if (canvasReferences.some((item) => item.kind === "image")) {
@@ -1753,6 +1770,19 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                     </>
                 }
             />
+
+            {quotaKey ? (
+                <div
+                    role="status"
+                    className="mx-3 mt-2 rounded-md px-3 py-1.5 text-xs"
+                    style={{
+                        background: quota.level === "exhausted" ? "rgba(239,68,68,0.12)" : "rgba(245,158,11,0.12)",
+                        color: quota.level === "exhausted" ? "#ef4444" : "#f59e0b",
+                    }}
+                >
+                    {quotaText}
+                </div>
+            ) : null}
 
             {cliMode ? (
                 <EmbeddedTerminal agentUrl={endpoint} agentToken={token} canvasId={`agent-panel-${activeWindowId}`} session={cliSession} onSession={(id) => setAgentState({ cliSession: id })} />

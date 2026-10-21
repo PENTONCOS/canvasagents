@@ -1682,6 +1682,12 @@ export default {
                 kind: { image: "Image", video: "Video", audio: "Audio", text: "Text" },
             },
         },
+        quota: {
+            quotaWarnTokens: "Token usage is close to the limit ({{used}} / {{limit}}).",
+            quotaWarnRuns: "Verification runs are close to the limit ({{used}} / {{limit}}).",
+            quotaExhaustedTokens: "Token budget exhausted ({{used}} / {{limit}}). Raise the budget to continue.",
+            quotaExhaustedRuns: "Verification run budget exhausted ({{used}} / {{limit}}). The run button is disabled.",
+        },
         panel: {
 driver: "Agent driver",
 driverMissing: "not installed",
