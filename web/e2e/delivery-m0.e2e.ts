@@ -19,6 +19,11 @@ async function openFreshCanvas(page: Page) {
     await expect(page.locator("main").first()).toBeVisible({ timeout: 30_000 });
 }
 
+async function createFromMenu(page: Page, title: string) {
+    await openNodeCreateMenu(page);
+    await page.getByText(title).first().click();
+}
+
 async function openNodeCreateMenu(page: Page) {
     // 双击画布空白处 → NodeCreateMenu。
     const canvas = page.locator("main").first();
@@ -53,3 +58,27 @@ test("创建需求节点 → 刷新后仍在（持久化）", async ({ page }) =
 });
 
 export { DELIVERY_MENU_TITLES };
+
+test("创建旅程 → 自动排出 3 个步骤并连线", async ({ page }) => {
+    await openFreshCanvas(page);
+    await createFromMenu(page, "旅程");
+    // 1 个旅程 + 3 个步骤 = 4 个画布节点。
+    await expect(page.locator("[data-node-id]")).toHaveCount(4, { timeout: 10_000 });
+    // 连线：旅程 -> 每个步骤各一条。
+    await expect(page.locator("[data-connection-id]")).toHaveCount(3, { timeout: 10_000 });
+    // 步骤正文带序号，避免三个空白步骤分不清。
+    await expect(page.getByText("步骤 1")).toBeVisible();
+    await expect(page.getByText("步骤 3")).toBeVisible();
+});
+
+test("创建设计稿 → 三版并排，默认只选中 A 版", async ({ page }) => {
+    await openFreshCanvas(page);
+    await createFromMenu(page, "设计稿");
+    await expect(page.locator("[data-node-id]")).toHaveCount(3, { timeout: 10_000 });
+    // 三个版本标签 A / B / C 都要出现。
+    for (const label of ["A", "B", "C"]) {
+        await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+    }
+    // 「已选定」徽章只能有一个 —— 多选会让「选定版本才进上下文」失去意义。
+    await expect(page.getByText("已选定")).toHaveCount(1);
+});

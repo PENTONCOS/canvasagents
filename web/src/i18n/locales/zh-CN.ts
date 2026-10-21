@@ -607,7 +607,7 @@ export default {
             retry: "重试",
             missingPlugin: "缺少插件",
             missingPluginDescription: "节点类型“{{type}}”的插件未安装或未启用",
-            delivery: { selected: "已选定", emptyHint: "双击编辑内容" },
+            delivery: { selected: "已选定", emptyHint: "双击编辑内容", stepTitle: "步骤 {{index}}" },
             generateImage: "用文本生图",
             generate: "生图",
             editText: "双击编辑文字",

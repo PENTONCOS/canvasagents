@@ -27,6 +27,7 @@ import { fitNodeSize, nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
 import { captureVideoFrame, type VideoFramePosition } from "@/lib/canvas/canvas-video-frame";
 import { App, Button, Modal } from "antd";
 import { NODE_DEFAULT_SIZE, getNodeSpec } from "@/constant/canvas";
+import { layoutDesignVariants, layoutJourneySteps } from "@/lib/canvas/journey-layout";
 import { ActiveConnectionPath, ConnectionPath } from "@/components/canvas/canvas-connections";
 import { CanvasConfigComposer } from "@/components/canvas/canvas-config-composer";
 import { CanvasConfigNodePanel } from "@/components/canvas/canvas-config-node-panel";
@@ -1037,7 +1038,48 @@ function InfiniteCanvasPage() {
                     : undefined;
             const newNode = createCanvasNode(type, targetPosition, configMetadata);
 
-            setNodes((prev) => [...prev, newNode]);
+            // M1: 旅程自动排布三个步骤；设计稿自动出三版并排、默认选中 A 版。
+            // 交付域节点的语义在 metadata 上，画布只负责摆放与连线。
+            const extraNodes: CanvasNodeData[] = [];
+            const extraConnections: CanvasConnection[] = [];
+            if (type === CanvasNodeType.Journey) {
+                const stepSpec = getNodeSpec(CanvasNodeType.JourneyStep);
+                const stepPositions = layoutJourneySteps({
+                    origin: newNode.position,
+                    journeySize: { width: newNode.width, height: newNode.height },
+                    stepSize: { width: stepSpec.width, height: stepSpec.height },
+                    count: 3,
+                });
+                stepPositions.forEach((position, index) => {
+                    const step = createCanvasNode(CanvasNodeType.JourneyStep, {
+                        x: position.x + stepSpec.width / 2,
+                        y: position.y + stepSpec.height / 2,
+                    });
+                    step.metadata = {
+                        ...step.metadata,
+                        statement: t("canvas.node.delivery.stepTitle", { index: index + 1 }),
+                    };
+                    extraNodes.push(step);
+                    extraConnections.push({ id: nanoid(), fromNodeId: newNode.id, toNodeId: step.id, type: "specifies" });
+                });
+            }
+            if (type === CanvasNodeType.Design) {
+                const centers = layoutDesignVariants(
+                    { x: newNode.position.x + newNode.width / 2, y: newNode.position.y + newNode.height / 2 },
+                    { width: newNode.width, height: newNode.height },
+                    3,
+                );
+                newNode.position = { x: centers[0].x - newNode.width / 2, y: centers[0].y - newNode.height / 2 };
+                newNode.metadata = { ...newNode.metadata, variantLabel: "A", selected: true, variantOf: newNode.id };
+                ["B", "C"].forEach((label, index) => {
+                    const variant = createCanvasNode(CanvasNodeType.Design, centers[index + 1]);
+                    variant.metadata = { ...variant.metadata, variantLabel: label, selected: false, variantOf: newNode.id };
+                    extraNodes.push(variant);
+                });
+            }
+
+            setNodes((prev) => [...prev, newNode, ...extraNodes]);
+            if (extraConnections.length > 0) setConnections((prev) => [...prev, ...extraConnections]);
             setSelectedNodeIds(new Set([newNode.id]));
             setSelectedConnectionId(null);
             const definition = getNodeDefinition(type);
@@ -1053,7 +1095,7 @@ function InfiniteCanvasPage() {
                     : isBuiltinType(type) && type !== CanvasNodeType.Text && type !== CanvasNodeType.Audio && type !== CanvasNodeType.Group;
             if (wantsPanel) setDialogNodeId(newNode.id);
         },
-        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, getCanvasCenter],
+        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, getCanvasCenter, t],
     );
 
     // M1 immersive redesign: ⌘K palette requests a node cross-page; consume it here.

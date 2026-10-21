@@ -56,6 +56,13 @@ const DELIVERY_NODE_TYPES = new Set([
 function compactDeliveryMetadata(nodeType: string, metadata: Record<string, unknown>) {
     if (!DELIVERY_NODE_TYPES.has(nodeType)) return;
     for (const key of ["images", "references", "timeline", "history"]) delete metadata[key];
+    // 设计稿只告诉 Agent「哪一版被选中」：三版内容同时进上下文会让它无从选择，
+    // 也与产品规则「选定版本才进上下文」冲突。
+    if (nodeType === "design") {
+        delete metadata.content;
+        delete metadata.images;
+        delete metadata.status;
+    }
     const statement = metadata.statement;
     if (typeof statement === "string" && statement.length > NODE_CONTENT_PREVIEW_LIMIT) {
         metadata.statement = `${statement.slice(0, NODE_CONTENT_PREVIEW_LIMIT)}.`;

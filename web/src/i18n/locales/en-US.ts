@@ -636,7 +636,7 @@ export default {
             retry: "Retry",
             missingPlugin: "Plugin missing",
             missingPluginDescription: "The plugin for node type “{{type}}” is not installed or enabled",
-            delivery: { selected: "Selected", emptyHint: "Double-click to edit" },
+            delivery: { selected: "Selected", emptyHint: "Double-click to edit", stepTitle: "Step {{index}}" },
             generateImage: "Generate image from text",
             generate: "Generate",
             editText: "Double-click to edit text",

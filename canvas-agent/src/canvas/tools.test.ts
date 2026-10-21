@@ -79,3 +79,18 @@ test("compactNode 交付域 statement 超长时截断并打标", () => {
     assert.equal((out.metadata as Record<string, unknown>).statementTruncated, true);
     assert.equal(String((out.metadata as Record<string, unknown>).statement).length, NODE_CONTENT_PREVIEW_LIMIT + 1);
 });
+
+test("compactNode 设计节点只保留版本与选定信息", () => {
+    const node: CanvasNode = {
+        id: "d1", type: "design", position: { x: 0, y: 0 }, width: 340, height: 240,
+        metadata: { variantLabel: "B", variantOf: "d0", selected: true, content: "data:image/png;base64,xxx", status: "success" },
+    };
+    const out = compactNode(node);
+    const meta = out.metadata as Record<string, unknown>;
+    assert.equal(meta.variantLabel, "B");
+    assert.equal(meta.variantOf, "d0");
+    assert.equal(meta.selected, true);
+    // 图片本体和状态不进快照。
+    assert.equal(meta.content, undefined);
+    assert.equal(meta.status, undefined);
+});

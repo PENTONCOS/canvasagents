@@ -557,6 +557,7 @@ function DeliveryNodeContent({ node, theme }: NodeContentRendererProps) {
     if (meta?.severity) badges.push(meta.severity);
     if (meta?.envName) badges.push(meta.envName);
     if (meta?.runKind) badges.push(meta.runKind);
+    if (meta?.variantLabel) badges.push(String(meta.variantLabel));
     if (meta?.selected) badges.push(t("canvas.node.delivery.selected"));
     return (
         <div className="flex h-full flex-col gap-1 overflow-hidden p-2" style={{ color: theme.node.text }}>
