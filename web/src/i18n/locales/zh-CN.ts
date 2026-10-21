@@ -1377,8 +1377,11 @@ export default {
         status: { failed: "连接失败", connected: "已连接", connecting: "连接中", disconnected: "未连接" },
         window: {
             defaultTitle: "会话 {{index}}",
-            new: "新建会话",
-            close: "关闭会话",
+            section: "会话窗",
+            new: "新建会话窗",
+            newShort: "新建",
+            limit: "最多 {{count}} 个会话窗，先关掉一个再建",
+            close: "关闭当前会话窗",
             closeConfirm: "该会话正在运行，关闭会中断当前这一轮。确定关闭？",
             unread: "{{count}} 条未读",
         },

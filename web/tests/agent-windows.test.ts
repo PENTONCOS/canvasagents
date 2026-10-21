@@ -15,6 +15,7 @@ import {
     nextWindowNumber,
     parsePersistedWindows,
     projectPersistedWindows,
+    toWindowTabHint,
     toWindowTabLabel,
     updateAgentWindow,
     withAppendedChatItem,
@@ -144,8 +145,13 @@ describe("event log", () => {
 
 describe("展示辅助", () => {
     test("tab 文案从 1 开始", () => {
-        expect(toWindowTabLabel(win("a", { title: "精灵模式" }), 0)).toBe("1: 精灵模式");
-        expect(toWindowTabLabel(win("b", { title: "landingpage 改版" }), 1)).toBe("2: landingpage 改版");
+        expect(toWindowTabLabel(win("a", { title: "精灵模式" }))).toBe("精灵模式");
+        expect(toWindowTabLabel(win("b", { title: "landingpage 改版" }))).toBe("landingpage 改版");
+    });
+
+    test("tab 提示带快捷键序号", () => {
+        expect(toWindowTabHint(win("a", { title: "会话 1" }), 0)).toBe("⌘1 · 会话 1");
+        expect(toWindowTabHint(win("b", { title: "改版" }), 8)).toBe("⌘9 · 改版");
     });
 
     test("状态推导：发送/等待即 running，error 优先", () => {

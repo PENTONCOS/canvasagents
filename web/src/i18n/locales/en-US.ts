@@ -1442,8 +1442,11 @@ export default {
         status: { failed: "Connection failed", connected: "Connected", connecting: "Connecting", disconnected: "Disconnected" },
         window: {
             defaultTitle: "Session {{index}}",
-            new: "New session",
-            close: "Close session",
+            section: "Sessions",
+            new: "New session window",
+            newShort: "New",
+            limit: "Up to {{count}} session windows — close one first",
+            close: "Close this session window",
             closeConfirm: "This session is running. Closing it will interrupt the current turn. Close anyway?",
             unread: "{{count}} unread",
         },

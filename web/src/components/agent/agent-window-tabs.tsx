@@ -1,10 +1,10 @@
 import { useEffect } from "react";
-import { AlertCircle, Loader2, Plus, X } from "lucide-react";
+import { AlertCircle, Loader2, SquarePlus, X } from "lucide-react";
 import { Button, Popconfirm, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { AgentPanelTabs } from "./agent-panel-tabs";
-import { AGENT_WINDOW_LIMIT, toWindowTabLabel, type AgentWindowStatus } from "@/lib/agent/agent-windows";
+import { AGENT_WINDOW_LIMIT, toWindowTabHint, toWindowTabLabel, type AgentWindowStatus } from "@/lib/agent/agent-windows";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -34,6 +34,7 @@ export function AgentWindowTabs() {
 
     const active = windows.find((window) => window.id === activeWindowId) ?? windows[0];
     const atLimit = windows.length >= AGENT_WINDOW_LIMIT;
+    const newWindowLabel = atLimit ? t("agent.window.limit", { count: AGENT_WINDOW_LIMIT }) : t("agent.window.new");
 
     useEffect(() => {
         const onKeyDown = (event: KeyboardEvent) => {
@@ -64,19 +65,24 @@ export function AgentWindowTabs() {
 
     return (
         <AgentPanelTabs
+            variant="windows"
+            label={t("agent.window.section")}
             value={activeWindowId}
             theme={theme}
             items={windows.map((window, index) => ({
                 value: window.id,
-                label: toWindowTabLabel(window, index),
+                label: toWindowTabLabel(window),
                 icon: statusIcon(window.status),
-                count: window.unread || undefined,
+                dot: Boolean(window.unread),
+                hint: window.unread ? `${toWindowTabHint(window, index)} · ${t("agent.window.unread", { count: window.unread })}` : toWindowTabHint(window, index),
             }))}
             onChange={(id) => selectWindow(id)}
             right={
                 <>
-                    <Tooltip title={atLimit ? t("agent.window.new") : t("agent.window.new")} placement="bottom">
-                        <Button size="small" type="text" className="!h-8 !w-8 !min-w-8 !px-0" aria-label={t("agent.window.new")} disabled={atLimit} icon={<Plus className="size-3.5" />} onClick={() => addWindow()} />
+                    <Tooltip title={newWindowLabel} placement="bottom">
+                        <Button size="small" type="text" className="!h-8 !w-8 !min-w-8 !px-0 @min-[560px]:!w-auto @min-[560px]:!min-w-0 @min-[560px]:!px-[7px]" aria-label={newWindowLabel} disabled={atLimit} icon={<SquarePlus className="size-3.5" />} onClick={() => addWindow()}>
+                            <span className="hidden @min-[560px]:inline">{t("agent.window.newShort")}</span>
+                        </Button>
                     </Tooltip>
                     {active.status === "running" ? (
                         <Popconfirm title={t("agent.window.closeConfirm")} okText={t("agent.window.close")} cancelText={t("common.cancel")} onConfirm={closeActive}>

@@ -173,9 +173,18 @@ export function deriveWindowStatus(window: Pick<AgentWindow, "status" | "sending
     return window.sending || window.waiting ? "running" : "idle";
 }
 
-/** tab 文案：`1: 标题`（下标从 1 开始）。 */
-export function toWindowTabLabel(window: Pick<AgentWindow, "title">, index: number): string {
-    return `${index + 1}: ${window.title}`;
+/**
+ * tab 文案：只用窗口标题。
+ * 默认标题本身就是「会话 1 / 会话 2」，再前缀一个序号会出现「1: 会话 1」这种重复噪音。
+ * 序号仍然有用，放在 tooltip 的快捷键提示里（见 toWindowTabHint）。
+ */
+export function toWindowTabLabel(window: Pick<AgentWindow, "title">): string {
+    return window.title;
+}
+
+/** tab 的悬停提示：`⌘1 · 会话 1`，说明这个窗对应哪个切换快捷键。 */
+export function toWindowTabHint(window: Pick<AgentWindow, "title">, index: number): string {
+    return `⌘${index + 1} · ${window.title}`;
 }
 
 /**

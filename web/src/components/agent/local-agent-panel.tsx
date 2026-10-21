@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { App, Button, Segmented, Tooltip } from "antd";
 import dayjs from "dayjs";
-import { Bot, History, Images, MessageSquare, PanelRightClose, PlugZap, Plus, Sparkles, Terminal } from "lucide-react";
+import { Bot, History, Images, MessageSquare, MessageSquarePlus, PanelRightClose, PlugZap, Sparkles, Terminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { APP_ID } from "@/constant/brand";
@@ -1676,7 +1676,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                             ]}
                         />
                         <Tooltip title={t("agent.history.newThread")} placement="bottom">
-                            <Button size="small" type="text" className="!h-8 !w-8 !min-w-8 !px-0 @min-[560px]:!w-auto @min-[560px]:!min-w-0 @min-[560px]:!px-[7px]" aria-label={t("agent.history.newThread")} disabled={!connected || loadingThreads || sending || waiting || conversationBusy} icon={<Plus className="size-3.5" />} onClick={startNewThread}>
+                            <Button size="small" type="text" className="!h-8 !w-8 !min-w-8 !px-0 @min-[560px]:!w-auto @min-[560px]:!min-w-0 @min-[560px]:!px-[7px]" aria-label={t("agent.history.newThread")} disabled={!connected || loadingThreads || sending || waiting || conversationBusy} icon={<MessageSquarePlus className="size-3.5" />} onClick={startNewThread}>
                                 <span className="hidden @min-[560px]:inline">{t("agent.history.newThread")}</span>
                             </Button>
                         </Tooltip>
