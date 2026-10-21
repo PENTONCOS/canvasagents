@@ -19,6 +19,7 @@ import { IMAGE_PARSE_BODY_LIMIT, requestUpstream, resolveImageParseUrl, truncate
 import { terminalManager } from "./terminal.js";
 import { captureWall, listWall, listWindows, pickCaptureWindow, readWallFile } from "./capture.js";
 import { rewriteAgentDriverPath } from "./agent-driver-route.js";
+import { deploymentStatus, probeHealth, runCommand } from "../delivery/deployer.js";
 
 export type StartHttpServerOptions = { skipVersionCheck?: boolean };
 
@@ -200,6 +201,24 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
     app.post("/terminal/sessions/:id/close", route(async (req, res) => {
         await terminalManager.remove(routeParam(req.params.id));
         res.json({ ok: true });
+    }));
+    // M4: 部署器只暴露两个动作——探测健康状态、跑部署命令后再探测。
+    // 回滚由前端按部署历史决定目标版本，桥端不替用户「猜」该回哪一版。
+    app.post("/delivery/health", route(async (req, res) => {
+        const target = String(req.body?.url || "");
+        if (!target) return void res.status(400).json({ ok: false, error: "url required" });
+        const health = await probeHealth(target, Number(req.body?.timeoutMs) || 8000);
+        res.json({ ok: true, health, status: deploymentStatus(health) });
+    }));
+    app.post("/delivery/deploy", route(async (req, res) => {
+        const command = String(req.body?.command || "");
+        const cwd = String(req.body?.cwd || "");
+        const target = String(req.body?.url || "");
+        if (!command) return void res.status(400).json({ ok: false, error: "command required" });
+        if (!path.isAbsolute(cwd)) return void res.status(400).json({ ok: false, error: "cwd must be absolute" });
+        const result = await runCommand(command, cwd, Number(req.body?.timeoutMs) || 120_000);
+        const health = target ? await probeHealth(target, Number(req.body?.healthTimeoutMs) || 8000) : undefined;
+        res.json({ ok: result.ok && (health ? health.ok : true), command: result, health, status: health ? deploymentStatus(health) : "unknown" });
     }));
     app.get("/repos", route(async (_req, res) => {
         const repos = (config.repos || []).map((repo) => ({ ...repo, ...readRepoGitInfo(repo.path) }));

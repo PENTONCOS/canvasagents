@@ -14,7 +14,7 @@ let threads = [
 
 function cors(res) {
     res.setHeader("access-control-allow-origin", "*");
-    res.setHeader("access-control-allow-headers", "content-type, authorization");
+    res.setHeader("access-control-allow-headers", "content-type, authorization, x-canvas-agent-token");
     res.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
 }
 
@@ -107,6 +107,17 @@ const server = createServer(async (req, res) => {
     if (path === "/agent/wall") return json(res, { items: [] });
     if (path === "/agent/codex/history/ack") return json(res, { ok: true });
     if (path === "/health") return json(res, { ok: true, protocolVersion: 6 });
+
+    // M4 部署链路：命令恒成功，健康检查恒通过。E2E 验证的是前端「部署→留痕→回滚」，
+    // 真命令执行与真探测由桥端单测覆盖，不在浏览器测试里跑 shell。
+    if (path === "/delivery/deploy" && req.method === "POST") {
+        await readBody(req).catch(() => "");
+        return json(res, { ok: true, command: { ok: true, exitCode: 0, output: "mock deploy" }, health: { ok: true, status: 200, latencyMs: 1, checkedAt: new Date().toISOString() }, status: "healthy" });
+    }
+    if (path === "/delivery/health" && req.method === "POST") {
+        await readBody(req).catch(() => "");
+        return json(res, { ok: true, health: { ok: true, status: 200, latencyMs: 1, checkedAt: new Date().toISOString() }, status: "healthy" });
+    }
 
     await readBody(req).catch(() => "");
     return json(res, { ok: true });

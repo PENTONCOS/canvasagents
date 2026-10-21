@@ -213,6 +213,8 @@ export type CanvasNodeMetadata = {
     violates?: string[]; // bug -> violated AC ids
     envId?: string; // environment business id ("ENV-01")
     envName?: string; // environment name (staging/production/…)
+    envVersion?: string; // deployed version shown on the node ("v0.1.0")
+    runId?: string; // run business id ("RUN-01"); node status is read from the store
     url?: string; // environment URL
     runKind?: "test" | "deploy";
     bytes?: number;

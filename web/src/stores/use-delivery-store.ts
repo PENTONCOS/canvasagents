@@ -10,6 +10,7 @@ import {
     type DeliveryBug,
     type DeliveryEnvironment,
     type DeliveryRun,
+    type DeliveryRunRound,
     nextAnnotationLabel,
     type DeliveryAnnotation,
     type DeliveryTestCase,
@@ -63,6 +64,10 @@ type DeliveryActions = {
     /** 新建圈注：编号在画布内递增，删除中间编号也不复用。 */
     addAnnotation: (input: Omit<DeliveryAnnotation, "id" | "label" | "createdAt">) => DeliveryAnnotation;
     upsertRun: (run: DeliveryRun) => void;
+    /** M4: 追加一轮运行记录，并把 run 状态推进到该轮结果。 */
+    appendRunRound: (runId: string, round: DeliveryRunRound) => void;
+    /** M4: 回放一次历史运行，把当时的测试结果重新回填到 AC 上（不伪造通过）。 */
+    replayRun: (runId: string) => { applied: string[]; rejected: { acId: string; reason: string }[] };
     upsertEnvironment: (env: DeliveryEnvironment) => void;
     removeEnvironment: (id: string) => void;
     resetDelivery: () => void;
@@ -84,7 +89,7 @@ const EMPTY_STATE: DeliveryState = {
 
 export const useDeliveryStore = create<DeliveryStore>()(
     persist(
-        (set) => ({
+        (set, get) => ({
             ...EMPTY_STATE,
 
             upsertJourney: (journey) =>
@@ -242,6 +247,29 @@ export const useDeliveryStore = create<DeliveryStore>()(
             },
 
             upsertRun: (run) => set((state) => ({ runs: { ...state.runs, [run.id]: run } })),
+
+            appendRunRound: (runId, round) =>
+                set((state) => {
+                    const run = state.runs[runId];
+                    if (!run) return {};
+                    const rounds = [...(run.rounds || []), round];
+                    const status = round.status === "passed" ? "passed" : round.status === "error" ? "error" : "failed";
+                    return {
+                        runs: {
+                            ...state.runs,
+                            [runId]: { ...run, rounds, status, finishedAt: round.finishedAt || run.finishedAt },
+                        },
+                    };
+                }),
+
+            replayRun: (runId) => {
+                const run = get().runs[runId];
+                if (!run) return { applied: [], rejected: [{ acId: "-", reason: "run not found" }] };
+                const results: AcResultInput[] = run.results
+                    .filter((item) => Boolean(item.acId))
+                    .map((item) => ({ acId: item.acId as string, result: item.result }));
+                return get().applyAcResults(results, runId);
+            },
 
             upsertEnvironment: (env) =>
                 set((state) => ({ environments: { ...state.environments, [env.id]: env } })),

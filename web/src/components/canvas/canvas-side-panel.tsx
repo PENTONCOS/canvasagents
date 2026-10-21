@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { canvasThemes, type CanvasTheme } from "@/lib/canvas-theme";
 import { AC_STATUS_COLOR, acStatusLabelKey, countAcByStatus } from "@/lib/delivery/ac-status";
+import { RUN_STATUS_COLOR, runStatusLabelKey } from "@/lib/delivery/run-status";
 import { exportCanvasNodes } from "@/lib/canvas/canvas-export";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { cn } from "@/lib/utils";
@@ -26,7 +27,7 @@ import type { InsertAssetPayload } from "./asset-picker-modal";
 const PANEL_MOTION_SECONDS = CANVAS_SIDE_PANEL_MOTION_MS / 1000;
 const PANEL_EASE = [0.22, 1, 0.36, 1] as const;
 
-type PanelTab = "canvas" | "assets" | "prompts" | "acceptance";
+type PanelTab = "canvas" | "assets" | "prompts" | "acceptance" | "runs";
 
 type Props = {
     nodes: CanvasNodeData[];
@@ -107,6 +108,7 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
                     <TabButton label={t("canvas.sidePanel.assets")} active={tab === "assets"} theme={theme} onClick={() => setTab("assets")} />
                     <TabButton label={t("canvas.sidePanel.prompts")} active={tab === "prompts"} theme={theme} onClick={() => setTab("prompts")} />
                     <TabButton label={t("canvas.sidePanel.acceptance")} active={tab === "acceptance"} theme={theme} onClick={() => setTab("acceptance")} />
+                    <TabButton label={t("canvas.sidePanel.runs")} active={tab === "runs"} theme={theme} onClick={() => setTab("runs")} />
                 </div>
                 <div className="mt-2 min-h-0 flex-1 overflow-hidden">
                     {tab === "canvas" ? (
@@ -115,8 +117,10 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
                         <CanvasAssetsTab onInsert={onInsertAsset} theme={theme} />
                     ) : tab === "prompts" ? (
                         <CanvasPromptsTab onInsert={onInsertAsset} theme={theme} />
-                    ) : (
+                    ) : tab === "acceptance" ? (
                         <DeliveryAcceptanceTab theme={theme} onFocusNode={onFocusNode} />
+                    ) : (
+                        <DeliveryRunsTab theme={theme} onFocusNode={onFocusNode} />
                     )}
                 </div>
                 <button type="button" className="absolute inset-y-0 right-0 z-40 w-4 translate-x-1/2 cursor-col-resize" onPointerDown={startResize} aria-label={t("canvas.sidePanel.resize")} />
@@ -179,6 +183,69 @@ function DeliveryAcceptanceTab({ theme, onFocusNode }: { theme: CanvasTheme; onF
                         </span>
                     </span>
                 </button>
+            ))}
+        </div>
+    );
+}
+
+// M4: 运行历史。每轮失败都要能看到是哪条 AC/哪个用例，回放只重放当时的真实结果。
+function DeliveryRunsTab({ theme, onFocusNode }: { theme: CanvasTheme; onFocusNode: (nodeId: string) => void }) {
+    const { t } = useTranslation();
+    const { message } = App.useApp();
+    const runs = useDeliveryStore((state) => state.runs);
+    const replayRun = useDeliveryStore((state) => state.replayRun);
+    const items = useMemo(() => Object.values(runs).sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || "")), [runs]);
+
+    if (items.length === 0) {
+        return (
+            <div className="px-4 py-6 text-xs" style={{ color: theme.node.muted }} data-testid="runs-empty">
+                {t("canvas.sidePanel.runEmpty")}
+            </div>
+        );
+    }
+
+    return (
+        <div className="h-full overflow-y-auto px-3 pb-4" data-testid="runs-list">
+            <div className="px-1 py-2 text-[11px]" style={{ color: theme.node.muted }}>
+                {t("canvas.sidePanel.runTotal", { count: items.length })}
+            </div>
+            {items.map((run) => (
+                <div key={run.id} className="mb-1 rounded-md px-2 py-1.5 text-xs" style={{ background: theme.node.fill, color: theme.node.text }} data-run-id={run.id} data-run-status={run.status}>
+                    <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: RUN_STATUS_COLOR[run.status] }} />
+                        <span className="font-medium">{run.id}</span>
+                        <span className="rounded px-1 text-[10px]" style={{ background: `${RUN_STATUS_COLOR[run.status]}22`, color: RUN_STATUS_COLOR[run.status] }}>
+                            {t(runStatusLabelKey(run.status))}
+                        </span>
+                        <span className="text-[10px]" style={{ color: theme.node.muted }}>
+                            {run.kind}
+                            {run.rounds?.length ? ` · ${t("canvas.sidePanel.runRounds", { count: run.rounds.length })}` : ""}
+                        </span>
+                    </div>
+                    {run.rounds?.length ? (
+                        <div className="mt-1 flex flex-col gap-0.5 pl-4 text-[10px]" style={{ color: theme.node.muted }}>
+                            {run.rounds.map((round) => (
+                                <span key={round.index} data-round-index={round.index}>
+                                    #{round.index} · {round.failed} {t("canvas.sidePanel.acFailing", { count: round.failed })}
+                                </span>
+                            ))}
+                        </div>
+                    ) : null}
+                    <div className="mt-1 flex gap-2 pl-4">
+                        <button type="button" className="text-[10px] underline-offset-2 hover:underline" style={{ color: theme.node.muted }} onClick={() => {
+                                const result = replayRun(run.id);
+                                if (result.applied.length > 0) message.success(t("canvas.sidePanel.runReplayDone", { count: result.applied.length }));
+                                else message.info(t("canvas.sidePanel.runReplayNone"));
+                            }} data-run-replay>
+                            {t("canvas.sidePanel.runReplay")}
+                        </button>
+                        {run.nodeId ? (
+                            <button type="button" className="text-[10px] underline-offset-2 hover:underline" style={{ color: theme.node.muted }} onClick={() => onFocusNode(String(run.nodeId))}>
+                                {t("canvas.sidePanel.runFocus")}
+                            </button>
+                        ) : null}
+                    </div>
+                </div>
             ))}
         </div>
     );

@@ -97,6 +97,19 @@ export type DeliveryBug = {
 
 export type VerificationRunStatus = "running" | "passed" | "failed" | "error";
 
+/** M4: 一次运行里的单轮记录。修复循环的每一轮都要留痕，回放时按轮看。 */
+export type DeliveryRunRound = {
+    index: number;
+    startedAt: string;
+    finishedAt?: string;
+    status: "passed" | "failed" | "error" | "skipped";
+    passed: number;
+    failed: number;
+    skipped: number;
+    failures: { acId?: string; testCaseId?: string; message?: string }[];
+    changedFiles?: string[];
+};
+
 export type DeliveryRun = {
     id: string;
     kind: "test" | "deploy";
@@ -108,6 +121,17 @@ export type DeliveryRun = {
     results: { acId?: string; testCaseId?: string; result: TestCaseResult; message?: string }[];
     logsPath?: string;
     envId?: string;
+    nodeId?: string;
+    /** 修复循环的轮次记录；单轮运行可以没有。 */
+    rounds?: DeliveryRunRound[];
+};
+
+/** M4: 一次部署留痕。history 队首即当前线上版本，回滚就是取第二条。 */
+export type DeploymentRecord = {
+    version: string;
+    url: string;
+    deployedAt: string;
+    status: "healthy" | "unhealthy";
 };
 
 export type DeliveryEnvironment = {
@@ -117,6 +141,8 @@ export type DeliveryEnvironment = {
     version?: string;
     status: "unknown" | "healthy" | "unhealthy";
     deployedAt?: string;
+    /** 部署历史（新→旧）；回滚目标与「现在线上是哪一版」都从这里读。 */
+    history?: DeploymentRecord[];
     nodeId?: string;
 };
 

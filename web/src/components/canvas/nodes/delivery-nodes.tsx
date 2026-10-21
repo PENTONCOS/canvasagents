@@ -3,6 +3,8 @@ import { Bug, ClipboardList, FlaskConical, Play, Route, Server, SquareCheck, Squ
 import { useTranslation } from "react-i18next";
 
 import { NODE_SPECS } from "@/constant/canvas";
+import { applyDeployment, planRollback } from "@/lib/delivery/deploy-plan";
+import { useAgentStore } from "@/stores/use-agent-store";
 import { useDeliveryStore } from "@/stores/use-delivery-store";
 import { CanvasNodeType } from "@/types/canvas";
 import type { CanvasNodeContext, CanvasNodeDefinition } from "@/types/canvas-plugin";
@@ -65,24 +67,77 @@ export const DELIVERY_DEFINITIONS: CanvasNodeDefinition[] = (
     ...(type === CanvasNodeType.Environment ? { Panel: EnvironmentPanel, autoOpenPanel: true } : {}),
 }));
 
-// M3: 环境面板。环境的 URL/版本改的是实体，节点 metadata 只留 envId 与展示值，
-// 这样侧栏、Agent 快照、画布三处读到的是同一份数据。
+// M4: 环境面板。URL/版本/部署历史全部落在实体上，节点 metadata 只留展示值。
+// 部署走桥端「跑命令 + 健康检查」，回滚由前端按 history 决定目标版本——桥端不猜。
 function EnvironmentPanel({ ctx, onClose }: { ctx: CanvasNodeContext; onClose: () => void }) {
     const { t } = useTranslation();
     const meta = ctx.node.metadata || {};
     const environments = useDeliveryStore((state) => state.environments);
+    const agentUrl = useAgentStore((state) => state.url);
+    const agentToken = useAgentStore((state) => state.token);
     const envId = meta.envId || Object.values(environments).find((env) => env.nodeId === ctx.node.id)?.id || "";
     const env = envId ? environments[envId] : undefined;
     const [name, setName] = useState(env?.name || meta.envName || "staging");
     const [url, setUrl] = useState(env?.url || meta.url || "");
     const [version, setVersion] = useState(env?.version || "");
+    const [command, setCommand] = useState("");
+    const [cwd, setCwd] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState("");
+    const history = env?.history || [];
 
-    const save = () => {
+    const persist = (patch: Partial<typeof env> & Record<string, unknown>) => {
         const store = useDeliveryStore.getState();
         const id = envId || nextEntityId(Object.keys(store.environments), "ENV");
-        store.upsertEnvironment({ id, name: name.trim() || "staging", url: url.trim(), version: version.trim() || undefined, status: env?.status || "unknown", deployedAt: env?.deployedAt, nodeId: ctx.node.id });
-        ctx.updateMetadata({ envId: id, envName: name.trim() || "staging", url: url.trim() });
+        const base = store.environments[id] || { id, name: name.trim() || "staging", url: url.trim(), status: "unknown" as const, nodeId: ctx.node.id };
+        store.upsertEnvironment({ ...base, ...patch, id, nodeId: ctx.node.id } as never);
+        ctx.updateMetadata({ envId: id, envName: name.trim() || "staging", url: patch.url ?? url.trim(), envVersion: patch.version ?? version });
+        return id;
+    };
+
+    const save = () => {
+        persist({ name: name.trim() || "staging", url: url.trim(), version: version.trim() || undefined });
         onClose();
+    };
+
+    const deploy = async () => {
+        if (!command.trim()) return setError(t("canvas.node.delivery.envCommandRequired"));
+        setBusy(true);
+        setError("");
+        try {
+            const response = await fetch(`${agentUrl.replace(/\/$/, "")}/delivery/deploy`, {
+                method: "POST",
+                headers: { "content-type": "application/json", "x-canvas-agent-token": agentToken },
+                body: JSON.stringify({ command: command.trim(), cwd: cwd.trim(), url: url.trim(), timeoutMs: 120000 }),
+            });
+            const data = (await response.json()) as { ok?: boolean; status?: string; health?: { status?: number }; command?: { output?: string } };
+            // 命令成功但健康检查失败也算部署失败：能跑完不等于服务可用。
+            const status = data?.status === "healthy" ? "healthy" : "unhealthy";
+            const applied = applyDeployment(env || {}, { version: version.trim() || "unversioned", url: url.trim(), status });
+            persist({ ...applied, name: name.trim() || "staging" });
+            if (!data?.ok) setError(`${t("canvas.node.delivery.envDeployFailed")}${data?.health?.status ? ` (HTTP ${data.health.status})` : ""}`);
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const rollback = () => {
+        const plan = planRollback(history);
+        if (!plan.previous) return setError(t("canvas.node.delivery.envNoHistory"));
+        // 回滚不产生新的部署记录：把上一条换到队首即可，否则历史里会出现两条一模一样的版本。
+        setVersion(plan.previous.version);
+        setUrl(plan.previous.url);
+        persist({
+            version: plan.previous.version,
+            url: plan.previous.url,
+            status: plan.previous.status,
+            deployedAt: plan.previous.deployedAt,
+            history: plan.nextHistory,
+            name: name.trim() || "staging",
+        });
+        setError("");
     };
 
     return (
@@ -98,16 +153,48 @@ function EnvironmentPanel({ ctx, onClose }: { ctx: CanvasNodeContext; onClose: (
                 </label>
                 <label className="flex flex-col gap-1 text-[11px] text-[#6b7280]">
                     {t("canvas.node.delivery.envUrl")}
-                    <input className="h-8 rounded-lg border border-black/10 px-2 text-xs text-[#242529] outline-none focus:border-[#3b82f6]" placeholder="https://staging.example.com" value={url} onChange={(event) => setUrl(event.target.value)} />
+                    <input className="h-8 rounded-lg border border-black/10 px-2 text-xs text-[#242529] outline-none focus:border-[#3b82f6]" placeholder="https://staging.example.com" value={url} onChange={(event) => setUrl(event.target.value)} data-env-url />
                 </label>
                 <label className="flex flex-col gap-1 text-[11px] text-[#6b7280]">
                     {t("canvas.node.delivery.envVersion")}
-                    <input className="h-8 rounded-lg border border-black/10 px-2 text-xs text-[#242529] outline-none focus:border-[#3b82f6]" placeholder="v0.1.0" value={version} onChange={(event) => setVersion(event.target.value)} />
+                    <input className="h-8 rounded-lg border border-black/10 px-2 text-xs text-[#242529] outline-none focus:border-[#3b82f6]" placeholder="v0.1.0" value={version} onChange={(event) => setVersion(event.target.value)} data-env-version />
+                </label>
+                <label className="flex flex-col gap-1 text-[11px] text-[#6b7280]">
+                    {t("canvas.node.delivery.envCommand")}
+                    <input className="h-8 rounded-lg border border-black/10 px-2 text-xs text-[#242529] outline-none focus:border-[#3b82f6]" placeholder="pnpm run deploy" value={command} onChange={(event) => setCommand(event.target.value)} data-env-command />
+                </label>
+                <label className="flex flex-col gap-1 text-[11px] text-[#6b7280]">
+                    {t("canvas.node.delivery.envCwd")}
+                    <input className="h-8 rounded-lg border border-black/10 px-2 text-xs text-[#242529] outline-none focus:border-[#3b82f6]" placeholder="/path/to/repo" value={cwd} onChange={(event) => setCwd(event.target.value)} data-env-cwd />
                 </label>
             </div>
+            {error ? <p className="mt-2 text-[11px] text-[#ef4444]" data-env-error>{error}</p> : null}
+            <div className="mt-3 flex items-center gap-2 text-[10px] text-[#6b7280]">
+                <span className="inline-flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full" style={{ background: env?.status === "healthy" ? "#22c55e" : env?.status === "unhealthy" ? "#ef4444" : "#94a3b8" }} />
+                    {env?.status || "unknown"}
+                </span>
+                <span>{t("canvas.node.delivery.envHistory", { count: history.length })}</span>
+            </div>
+            {history.length > 0 ? (
+                <ul className="mt-1 max-h-24 overflow-y-auto text-[10px] text-[#6b7280]" data-env-history>
+                    {history.map((item) => (
+                        <li key={`${item.version}-${item.deployedAt}`} className="flex justify-between gap-2">
+                            <span className="truncate">{item.version}</span>
+                            <span>{item.status}</span>
+                        </li>
+                    ))}
+                </ul>
+            ) : null}
             <div className="mt-3 flex justify-end gap-2">
                 <button type="button" className="h-8 rounded-lg px-3 text-xs text-[#6b7280] hover:bg-[#f0f0f1]" onClick={onClose}>
                     {t("canvas.node.delivery.cancel")}
+                </button>
+                <button type="button" className="h-8 rounded-lg border border-[#e5e7eb] px-3 text-xs text-[#242529] disabled:opacity-40" disabled={history.length < 2 || busy} onClick={rollback} data-env-rollback>
+                    {t("canvas.node.delivery.envRollback")}
+                </button>
+                <button type="button" className="h-8 rounded-lg border border-[#e5e7eb] px-3 text-xs text-[#242529] disabled:opacity-40" disabled={busy} onClick={() => void deploy()} data-env-deploy>
+                    {busy ? t("canvas.node.delivery.envDeploying") : t("canvas.node.delivery.envDeploy")}
                 </button>
                 <button type="button" className="h-8 rounded-lg bg-[#242529] px-3 text-xs font-medium text-white" onClick={save} data-env-save>
                     {t("canvas.node.delivery.save")}

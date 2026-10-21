@@ -9,6 +9,7 @@ import { previewUrlFor, subscribeImagePreviews, getImagePreviewRevision } from "
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
 import { AC_STATUS_COLOR, acStatusLabelKey } from "@/lib/delivery/ac-status";
+import { RUN_STATUS_COLOR, runStatusLabelKey } from "@/lib/delivery/run-status";
 import { CanvasAnnotationLayer } from "./canvas-annotation-layer";
 import { useDeliveryStore } from "@/stores/use-delivery-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -593,6 +594,8 @@ function DeliveryNodeContent({ node, theme }: NodeContentRendererProps) {
     const meta = node.metadata;
     // AC 的状态以 store 为准（测试结果回填的是实体，不是节点元数据）。
     const acStatus = useDeliveryStore((state) => (meta?.acId ? state.acceptance[meta.acId]?.status : undefined));
+    // M4: 运行节点显示的是最近一次运行的真实状态，不是节点上的静态文案。
+    const runStatus = useDeliveryStore((state) => (meta?.runId ? state.runs[meta.runId]?.status : undefined));
     const body = meta?.statement || meta?.content || "";
     const badges: { text: string; color?: string; status?: string }[] = [];
     if (meta?.acId) badges.push({ text: meta.acId });
@@ -604,6 +607,9 @@ function DeliveryNodeContent({ node, theme }: NodeContentRendererProps) {
     if (meta?.selected) badges.push({ text: t("canvas.node.delivery.selected") });
     if (acStatus) {
         badges.push({ text: t(acStatusLabelKey(acStatus)), color: AC_STATUS_COLOR[acStatus], status: acStatus });
+    }
+    if (runStatus) {
+        badges.push({ text: t(runStatusLabelKey(runStatus)), color: RUN_STATUS_COLOR[runStatus] });
     }
     return (
         <div className="flex h-full flex-col gap-1 overflow-hidden p-2" style={{ color: theme.node.text }}>
