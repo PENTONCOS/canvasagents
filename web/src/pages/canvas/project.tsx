@@ -29,7 +29,8 @@ import { App, Button, Modal } from "antd";
 import { NODE_DEFAULT_SIZE, getNodeSpec } from "@/constant/canvas";
 import { layoutDesignVariants, layoutJourneySteps } from "@/lib/canvas/journey-layout";
 import { useDeliveryStore } from "@/stores/use-delivery-store";
-import { nextEntityId, nextStepId, nextVariantId, type DesignVariant, type JourneyStep } from "@/types/delivery";
+import { planBugsFromAnnotations } from "@/lib/delivery/annotation-bugs";
+import { nextEntityId, nextStepId, nextVariantId, type DeliveryAnnotation, type DesignVariant, type JourneyStep } from "@/types/delivery";
 import { ActiveConnectionPath, ConnectionPath } from "@/components/canvas/canvas-connections";
 import { CanvasConfigComposer } from "@/components/canvas/canvas-config-composer";
 import { CanvasConfigNodePanel } from "@/components/canvas/canvas-config-node-panel";
@@ -3247,6 +3248,48 @@ function InfiniteCanvasPage() {
     }, []);
 
     const retryBatchImage = useCallback((node: CanvasNodeData, imageId: string) => void handleRetryNode(node, imageId), [handleRetryNode]);
+    // M3: 截图圈注 → 问题单。一条圈注出一个 BUG-xx，节点贴着截图往右排，
+    // 圈注带 acId 时补一条 violates 边回验收节点，保证问题单可追溯到验收标准。
+    const createBugFromAnnotations = useCallback(
+        (node: CanvasNodeData, annotationIds: string[]) => {
+            const delivery = useDeliveryStore.getState();
+            const picked = annotationIds.map((id) => delivery.annotations[id]).filter((annotation): annotation is DeliveryAnnotation => Boolean(annotation) && !annotation.bugId);
+            if (picked.length === 0) return;
+            const spec = getNodeSpec(CanvasNodeType.Bug);
+            const planned = planBugsFromAnnotations(picked, Object.keys(delivery.bugs));
+            const newNodes: CanvasNodeData[] = [];
+            const newConnections: CanvasConnection[] = [];
+            const pickedById = new Map(picked.map((item) => [item.id, item]));
+            planned.forEach(({ annotationId, bug }, index) => {
+                const annotation = pickedById.get(annotationId);
+                if (!annotation) return;
+                const bugNode = createCanvasNode(CanvasNodeType.Bug, {
+                    x: node.position.x + node.width + 96 + spec.width / 2,
+                    y: node.position.y + node.height / 2 + index * (spec.height + 24),
+                });
+                bugNode.title = `${bug.id} ${bug.title}`;
+                bugNode.metadata = { ...bugNode.metadata, bugId: bug.id, severity: bug.severity, violates: bug.violates };
+                newNodes.push(bugNode);
+                delivery.upsertBug({ ...bug, nodeId: bugNode.id });
+                delivery.upsertAnnotation({ ...annotation, bugId: bug.id });
+                for (const acId of bug.violates) {
+                    const acNode = nodesRef.current.find((item) => item.metadata?.acId === acId);
+                    if (acNode) newConnections.push({ id: nanoid(), fromNodeId: bugNode.id, toNodeId: acNode.id, type: "violates" });
+                }
+            });
+            const nextNodes = [...nodesRef.current, ...newNodes];
+            const nextConnections = [...connectionsRef.current, ...newConnections];
+            nodesRef.current = nextNodes;
+            connectionsRef.current = nextConnections;
+            setNodes(nextNodes);
+            setConnections(nextConnections);
+            setSelectedNodeIds(new Set(newNodes.map((item) => item.id)));
+            setSelectedConnectionId(null);
+        },
+        [connectionsRef, nodesRef, setConnections, setNodes, setSelectedConnectionId, setSelectedNodeIds],
+    );
+
+
 
     const generateImageFromTextNode = useCallback(
         (node: CanvasNodeData) => {
@@ -3610,6 +3653,7 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
                             onDownloadBatchImage={downloadBatchImage}
                             onRetryBatchImage={retryBatchImage}
                             onDeleteBatchImage={deleteBatchImage}
+                            onCreateBugFromAnnotations={createBugFromAnnotations}
                             onRetry={handleNodeRetry}
                             onViewImage={handleNodeViewImage}
                             onSelectReference={selectNodeReference}

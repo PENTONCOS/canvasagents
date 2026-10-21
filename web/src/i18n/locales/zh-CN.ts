@@ -607,7 +607,7 @@ export default {
             retry: "重试",
             missingPlugin: "缺少插件",
             missingPluginDescription: "节点类型“{{type}}”的插件未安装或未启用",
-            delivery: { selected: "已选定", emptyHint: "双击编辑内容", stepTitle: "步骤 {{index}}" , acStatus: { draft: "草稿", ready: "待验", failing: "未通过", passing: "已通过", blocked: "阻塞" }, annotate: "圈注", annotateDone: "完成圈注", annotationHint: "拖拽圈选，Shift+拖拽画箭头" },
+            delivery: { selected: "已选定", emptyHint: "双击编辑内容", stepTitle: "步骤 {{index}}" , acStatus: { draft: "草稿", ready: "待验", failing: "未通过", passing: "已通过", blocked: "阻塞" }, annotate: "圈注", annotateDone: "完成圈注", annotationHint: "拖拽圈选，Shift+拖拽画箭头" , createBug: "生成问题单" },
             generateImage: "用文本生图",
             generate: "生图",
             editText: "双击编辑文字",

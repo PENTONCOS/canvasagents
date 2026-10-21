@@ -59,6 +59,8 @@ type CanvasNodeProps = {
     onDownloadBatchImage?: (node: CanvasNodeData, imageId: string) => void;
     onRetryBatchImage?: (node: CanvasNodeData, imageId: string) => void;
     onDeleteBatchImage?: (nodeId: string, imageId: string) => void;
+    /** M3: 由截图圈注生成问题单（实体 + 节点 + violates 连线）。 */
+    onCreateBugFromAnnotations?: (node: CanvasNodeData, annotationIds: string[]) => void;
     onRetry?: (node: CanvasNodeData) => void;
     onViewImage?: (node: CanvasNodeData, imageId?: string) => void;
     onUseAsHd?: (node: CanvasNodeData) => void;
@@ -87,6 +89,7 @@ type NodeContentRendererProps = {
     onDownloadBatchImage?: (imageId: string) => void;
     onRetryBatchImage?: (imageId: string) => void;
     onDeleteBatchImage?: (imageId: string) => void;
+    onCreateBugFromAnnotations?: (annotationIds: string[]) => void;
     onViewBatchImage?: (imageId: string) => void;
     groupChildCount: number;
 };
@@ -126,6 +129,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     onDownloadBatchImage,
     onRetryBatchImage,
     onDeleteBatchImage,
+    onCreateBugFromAnnotations,
     onRetry,
     onViewImage,
     onUseAsHd,
@@ -447,6 +451,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                         onDownloadBatchImage={(imageId) => onDownloadBatchImage?.(data, imageId)}
                         onRetryBatchImage={(imageId) => onRetryBatchImage?.(data, imageId)}
                         onDeleteBatchImage={(imageId) => onDeleteBatchImage?.(data.id, imageId)}
+                        onCreateBugFromAnnotations={(annotationIds) => onCreateBugFromAnnotations?.(data, annotationIds)}
                         onViewBatchImage={(imageId) => onViewImage?.(data, imageId)}
                         groupChildCount={groupChildCount}
                     />
@@ -549,12 +554,25 @@ function GroupNodeContent({ node, theme, groupChildCount }: NodeContentRendererP
 }
 
 // M3: 截图圈注入口。默认关闭，避免误拖；开启后拖拽画矩形、Shift+拖拽画箭头，编号自动递增。
-function ImageAnnotationOverlay({ node }: { node: CanvasNodeData }) {
+function ImageAnnotationOverlay({ node, onCreateBug }: { node: CanvasNodeData; onCreateBug?: (annotationIds: string[]) => void }) {
     const { t } = useTranslation();
     const [active, setActive] = useState(false);
+    const annotations = useDeliveryStore((state) => state.annotations);
+    const nodeAnnotations = useMemo(() => Object.values(annotations).filter((annotation) => annotation.nodeId === node.id), [annotations, node.id]);
     return (
         <>
             <CanvasAnnotationLayer nodeId={node.id} size={{ width: node.width, height: node.height }} active={active} />
+            {nodeAnnotations.length > 0 && onCreateBug ? (
+                <button
+                    type="button"
+                    className="absolute right-2 top-11 z-30 flex h-7 items-center rounded-lg border px-2 text-[10px] font-medium shadow-[0_6px_18px_rgba(15,23,42,.16)] backdrop-blur-md"
+                    style={{ background: "#0ea5e9", borderColor: "transparent", color: "#fff" }}
+                    onClick={(event) => (event.stopPropagation(), onCreateBug(nodeAnnotations.map((annotation) => annotation.id)))}
+                    data-create-bug-from-annotations
+                >
+                    {t("canvas.node.delivery.createBug")}
+                </button>
+            ) : null}
             <button
                 type="button"
                 className="absolute right-2 top-2 z-30 flex h-7 items-center rounded-lg border px-2 text-[10px] font-medium opacity-0 shadow-[0_6px_18px_rgba(15,23,42,.16)] backdrop-blur-md transition group-hover/node:opacity-100"
@@ -815,6 +833,7 @@ function ImageNodeContent(props: NodeContentRendererProps) {
             onDownloadBatchImage={props.onDownloadBatchImage}
             onRetryBatchImage={props.onRetryBatchImage}
             onDeleteBatchImage={props.onDeleteBatchImage}
+            onCreateBugFromAnnotations={props.onCreateBugFromAnnotations}
             onViewBatchImage={props.onViewBatchImage}
         />
     );
@@ -876,6 +895,7 @@ function ImageContent({
     onRetryBatchImage,
     onDeleteBatchImage,
     onViewBatchImage,
+    onCreateBugFromAnnotations,
 }: {
     node: CanvasNodeData;
     batchExpanded: boolean;
@@ -887,6 +907,7 @@ function ImageContent({
     onDownloadBatchImage?: (imageId: string) => void;
     onRetryBatchImage?: (imageId: string) => void;
     onDeleteBatchImage?: (imageId: string) => void;
+    onCreateBugFromAnnotations?: (annotationIds: string[]) => void;
     onViewBatchImage?: (imageId: string) => void;
 }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
@@ -947,7 +968,7 @@ function ImageContent({
                 {primaryContent ? (
                     <ImageNodeRegions ctx={pluginContext ?? null} source={node.metadata?.content || ""} naturalWidth={primaryImage?.naturalWidth || node.metadata?.naturalWidth} naturalHeight={primaryImage?.naturalHeight || node.metadata?.naturalHeight} />
                 ) : null}
-                {primaryContent ? <ImageAnnotationOverlay node={node} /> : null}
+                {primaryContent ? <ImageAnnotationOverlay node={node} onCreateBug={onCreateBugFromAnnotations} /> : null}
             </div>
             {primaryImage?.status === "error" ? <BatchImageFailureActions placement="left" onRetry={() => onRetryBatchImage?.(primaryImage.id)} onDelete={() => onDeleteBatchImage?.(primaryImage.id)} /> : null}
             {primaryImage?.content ? (
