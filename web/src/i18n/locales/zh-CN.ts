@@ -1473,6 +1473,10 @@ export default {
         skills: { selectLocal: "选择本地 Skill", search: "搜索 Skill", loading: "正在读取 Skill…", noMatch: "没有匹配的已启用 Skill", none: "还没有可用的 Skill", select: "选择 Skill", connectHint: "连接 Agent 后使用 Skill" },
         skillManager: {
             codexBusy: "Codex 正在运行，请完成当前任务后再提炼 Skill",
+            windowBound: "本窗口已装（点击卸载）",
+            unbindFromWindow: "卸载该技能",
+            bindToWindow: "装到此窗口",
+            windowBoundShort: "已装",
             noConversation: "当前对话还没有可提炼的已完成内容",
             noCanvas: "当前页面没有可提炼的画布",
             connecting: "当前页面仍在连接 Agent，请稍后再试",

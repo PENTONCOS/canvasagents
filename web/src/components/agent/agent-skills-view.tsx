@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { createCodexSkill, createCodexSkillDraft, deleteCodexSkill, fetchCodexSkill, postState, setCodexSkillEnabled, updateCodexSkill, type AgentSkillDetail, type AgentSkillDraft, type AgentSkillInterface, type AgentSkillScope, type AgentSkillSummary } from "@/services/api/canvas-agent";
 import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
+import { boundSkills, isSkillBound } from "@/lib/agent/skill-bindings";
 import { useAgentStore, type AgentChatItem } from "@/stores/use-agent-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 
@@ -42,6 +43,10 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
     const clearSelection = useAgentSkillStore((state) => state.clearSelection);
     const setDraft = useAgentSkillStore((state) => state.setDraft);
     const setGeneratingSource = useAgentSkillStore((state) => state.setGeneratingSource);
+    const bindings = useAgentSkillStore((state) => state.bindings);
+    const toggleWindowSkill = useAgentSkillStore((state) => state.toggleWindowSkill);
+    const activeWindowId = useAgentStore((state) => state.activeWindowId);
+    const windowSkills = boundSkills(bindings, activeWindowId);
     const [query, setQuery] = useState("");
     const [scope, setScope] = useState<ScopeFilter>("all");
     const [editor, setEditor] = useState<SkillEditor | null>(null);
@@ -272,9 +277,26 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
         <div className="flex min-h-0 flex-1 flex-col">
             <div className="shrink-0 border-b px-4 py-3" style={{ borderColor: theme.node.stroke }}>
                 <div className="flex items-center justify-between gap-3">
-                    <div>
+                    <div className="min-w-0">
                         <div className="text-sm font-semibold">{t("agent.skillManager.localSkills")}</div>
                         <div className="mt-0.5 text-xs" style={{ color: theme.node.muted }}>{t("agent.skillManager.localDescription")}</div>
+                        {windowSkills.length ? (
+                            <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                                <span className="text-[11px]" style={{ color: theme.node.faint }}>{t("agent.skillManager.windowBound", { count: windowSkills.length })}</span>
+                                {windowSkills.map((name) => (
+                                    <button
+                                        key={name}
+                                        type="button"
+                                        className="rounded px-1.5 py-0.5 text-[11px] font-mono"
+                                        style={{ background: "rgba(14,165,233,0.12)", color: "#0ea5e9" }}
+                                        title={t("agent.skillManager.unbindFromWindow")}
+                                        onClick={() => toggleWindowSkill(activeWindowId, name)}
+                                    >
+                                        ${name}
+                                    </button>
+                                ))}
+                            </div>
+                        ) : null}
                     </div>
                     <div className="flex items-center gap-1">
                         <Tooltip title={t("agent.skillManager.reload")}>
@@ -333,6 +355,7 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
                                             {t(skill.enabled ? "agent.skillManager.enabled" : "agent.skillManager.disabled")}
                                         </label>
                                         <div className="flex items-center gap-0.5">
+                                            <Button type="text" size="small" disabled={!skill.enabled} icon={isSkillBound(bindings, activeWindowId, skill.name) ? <Check className="size-3.5" /> : <Plus className="size-3.5" />} onClick={() => toggleWindowSkill(activeWindowId, skill.name)}>{t(isSkillBound(bindings, activeWindowId, skill.name) ? "agent.skillManager.windowBoundShort" : "agent.skillManager.bindToWindow")}</Button>
                                             <Button type="text" size="small" disabled={!connected || !skill.enabled || Boolean(busySkill)} icon={selected ? <Check className="size-3.5" /> : <Sparkles className="size-3.5" />} onClick={() => useSkill(skill)}>{t(selected ? "agent.skillManager.selected" : "agent.skillManager.use")}</Button>
                                             {skill.managed ? (
                                                 <>

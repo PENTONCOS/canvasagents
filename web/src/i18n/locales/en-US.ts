@@ -1555,6 +1555,10 @@ export default {
         skills: { selectLocal: "Select local Skill", search: "Search Skills", loading: "Loading Skills…", noMatch: "No matching enabled Skills", none: "No Skills available", select: "Select Skill", connectHint: "Connect the Agent to use Skills" },
         skillManager: {
             codexBusy: "Codex is running. Finish the current task before extracting a Skill.",
+            windowBound: "Installed in this window (click to remove)",
+            unbindFromWindow: "Remove from this window",
+            bindToWindow: "Add to window",
+            windowBoundShort: "Installed",
             noConversation: "This conversation has no completed content to extract",
             noCanvas: "There is no canvas on this page to extract",
             connecting: "This page is still connecting to the Agent. Try again shortly.",

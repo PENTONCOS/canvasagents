@@ -22,6 +22,7 @@ import { useDeliveryStore } from "@/stores/use-delivery-store";
 import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import { useShallow } from "zustand/react/shallow";
 import { canSpendQuota, quotaMessageKey, quotaSnapshot } from "@/lib/agent/quota";
+import { skillPromptPrefix } from "@/lib/agent/skill-bindings";
 import { useAgentStore, type AgentAttachment, type AgentBootstrapStatus, type AgentCanvasContext, type AgentCanvasReference, type AgentChatItem, type AgentConversationState, type AgentModel, type AgentPendingApproval, type AgentPendingToolCall, type AgentPermissionMode, type AgentReasoningEffort, type AgentThreadSummary, agentWindowById, agentWindowIdForConversation, agentWindowIdForThread, withWindowPatchTarget } from "@/stores/use-agent-store";
 import { backgroundUnreadKey } from "@/lib/agent/agent-windows";
 import { needsThreadPrepare, threadResetRetryDelay } from "@/lib/agent/agent-thread-retry";
@@ -788,7 +789,8 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             setAgentState({ canvasReferences });
             message.warning(rt(canvasReferences.length ? "someCanvasReferencesMissing" : "canvasReferencesMissing"));
         }
-        const requestPrompt = promptWithCanvasReferences(promptWithAttachments(text, files), canvasReferences);
+        const skillPrefix = skillPromptPrefix(useAgentSkillStore.getState().bindings, currentState.activeWindowId, text);
+        const requestPrompt = skillPrefix + promptWithCanvasReferences(promptWithAttachments(text, files), canvasReferences);
         const liveQuota = quotaSnapshot(currentState.tokenUsage, Object.keys(useDeliveryStore.getState().runs).length);
         if (!canSpendQuota(liveQuota, "message")) {
             const key = quotaMessageKey(liveQuota);

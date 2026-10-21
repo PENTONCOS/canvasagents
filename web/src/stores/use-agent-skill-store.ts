@@ -3,6 +3,7 @@ import i18n from "@/i18n";
 
 import { fetchCodexSkills, type AgentSkillDraft, type AgentSkillSummary } from "@/services/api/canvas-agent";
 import { useAgentStore } from "@/stores/use-agent-store";
+import { SKILL_BINDINGS_STORAGE_KEY, forgetWindow, normalizeBindings, toggleSkill, type SkillBindings } from "@/lib/agent/skill-bindings";
 
 let loadSequence = 0;
 
@@ -17,6 +18,10 @@ type AgentSkillStore = {
     loading: boolean;
     loaded: boolean;
     errors: string[];
+    /** 窗口 → 已装技能（M5 技能市场）。 */
+    bindings: SkillBindings;
+    toggleWindowSkill: (windowId: string, name: string) => void;
+    forgetWindowBindings: (windowId: string) => void;
     loadSkills: (endpoint: string, token: string, forceReload?: boolean) => Promise<void>;
     selectSkill: (skill: AgentSkillSummary | null, prompt?: string) => void;
     clearSelection: (expectedRevision?: number) => void;
@@ -36,6 +41,19 @@ export const useAgentSkillStore = create<AgentSkillStore>((set, get) => ({
     loading: false,
     loaded: false,
     errors: [],
+    bindings: readBindings(),
+    toggleWindowSkill: (windowId, name) => {
+        const next = toggleSkill(get().bindings, windowId, name);
+        if (next === get().bindings) return;
+        writeBindings(next);
+        set({ bindings: next });
+    },
+    forgetWindowBindings: (windowId) => {
+        const next = forgetWindow(get().bindings, windowId);
+        if (next === get().bindings) return;
+        writeBindings(next);
+        set({ bindings: next });
+    },
     loadSkills: async (endpoint, token, forceReload = false) => {
         const sequence = ++loadSequence;
         set({ loading: true });
@@ -111,6 +129,24 @@ function clearSelectedSkillPrompt(selection: Pick<AgentSkillStore, "selectedSkil
     if (!selection.selectedSkill) return;
     const marker = `$${selection.selectedSkill.name}`;
     if (agent.prompt.includes(marker)) agent.setAgentState({ prompt: agent.prompt.replace(marker, "") });
+}
+
+function readBindings(): SkillBindings {
+    try {
+        const raw = localStorage.getItem(SKILL_BINDINGS_STORAGE_KEY);
+        return raw ? normalizeBindings(JSON.parse(raw)) : {};
+    } catch {
+        // 坏 JSON / 隐私模式：退回空绑定，不阻塞技能面板。
+        return {};
+    }
+}
+
+function writeBindings(bindings: SkillBindings) {
+    try {
+        localStorage.setItem(SKILL_BINDINGS_STORAGE_KEY, JSON.stringify(bindings));
+    } catch {
+        // 写不进去只影响下次打开，不影响本次会话。
+    }
 }
 
 function skillErrorText(value: unknown) {
