@@ -23,6 +23,9 @@ type DeliveryState = {
     environments: Record<string, DeliveryEnvironment>;
 };
 
+/** 持久化实体桶（partialize 收集的字段），迁移函数的输入/输出形状。 */
+type DeliveryPersistedState = Pick<DeliveryState, "acceptance" | "testCases" | "bugs" | "runs" | "environments">;
+
 type DeliveryActions = {
     upsertAc: (ac: AcceptanceCriterion) => void;
     removeAc: (id: string) => void;
@@ -124,6 +127,7 @@ export const useDeliveryStore = create<DeliveryStore>()(
         {
             name: "delivery-store",
             version: 1,
+            migrate: migrateDeliveryState,
             storage: createJSONStorage(() => localForageStorage),
             // Persist entities only; actions are rebuilt on hydration.
             partialize: (state) => ({
@@ -136,3 +140,13 @@ export const useDeliveryStore = create<DeliveryStore>()(
         },
     ),
 );
+
+/** 交付域持久化迁移：旧版本缺实体桶时补空对象，避免 hydrate 后字段为 undefined。 */
+export function migrateDeliveryState(persisted: unknown, version: number) {
+    const base = (persisted && typeof persisted === "object"? persisted: {}) as Record<string, unknown>;
+    for (const key of ["acceptance", "testCases", "bugs", "runs", "environments"]) {
+        if (!base[key] || typeof base[key]!== "object") base[key] = {};
+    }
+    void version;
+    return base as DeliveryPersistedState;
+}
