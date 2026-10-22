@@ -84,8 +84,9 @@ test("A1 Markdown：输入标题/列表/代码块 → 提交 → 刷新后仍在
     const textarea = node.locator("[data-markdown-textarea]");
     await expect(textarea).toBeVisible();
     await textarea.fill("# 改约规则\n\n- 提前 24 小时\n- 支持改期一次\n\n```ts\nconst rule = \"reschedule\";\n```\n");
-    // Meta+Enter 走的是节点自己的 commit 路径（与失焦提交同一个函数）。
-    await textarea.press("Meta+Enter");
+    // 失焦提交：产品的 onBlur={commit}，这是用户最自然的提交路径（也是不做任何
+    // 快捷键记忆时唯一能走通的那条）。
+    await textarea.blur();
 
     const preview = node.locator("[data-markdown-preview]");
     await expect(preview).toBeVisible();
