@@ -129,6 +129,16 @@ export type CanvasNodeRegionsMetadata = {
     selectedRegionId?: string;
 };
 
+// A3: 线框草图节点。图形坐标一律 0..1 归一化（相对节点包围盒），缩放/改尺寸时按比例还原，
+// 与圈注图层（types/delivery 的 clampNormalized/annotationRect）同一套坐标约定。
+export type CanvasSketchShape = {
+    id: string;
+    shape: "rect" | "arrow";
+    from: { x: number; y: number };
+    to: { x: number; y: number };
+};
+export type CanvasNodeSketchMetadata = { shapes?: CanvasSketchShape[] };
+
 // Phase 3: PS-mode editor binding. `engine`/`version` identify the embedded editing engine and
 // `lastSavedAt` records the last save-from-editor round trip shown in the node toolbar.
 export type CanvasNodeEditorMetadata = {
@@ -162,6 +172,7 @@ export type CanvasNodeMetadata = {
     followWindowId?: string; // M2: agent window this node follows (badge + accent outline; cleared when the window closes)
     preview?: { url?: string; autoRefreshMs?: number }; // M4: web preview node iframe target + auto refresh interval (ms, 0 = off)
     code?: CanvasNodeCodeMetadata; // M5: code browser repo binding + tree/file/diff view state
+    sketch?: CanvasNodeSketchMetadata; // A3: 线框草图图形（归一化坐标，随画布持久化）
     regions?: CanvasNodeRegionsMetadata; // M7: image structure layer (parsed regions + edits)
     editor?: CanvasNodeEditorMetadata; // Phase 3: PS-mode editor engine binding + last save time
     // M1: 设计版本标签（其余交付字段见文件末尾的 M0 段，避免重复声明）。

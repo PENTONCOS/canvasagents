@@ -110,6 +110,8 @@ import { registerRepoNode } from "@/components/canvas/nodes/repo-node";
 import { registerServiceNode } from "@/components/canvas/nodes/service-node";
 import { registerImageRegionsNode } from "@/components/canvas/nodes/image-regions-node";
 import { registerEditorNode } from "@/components/canvas/nodes/editor-node";
+import { registerMarkdownNode } from "@/components/canvas/nodes/markdown-node";
+import { registerSketchNode } from "@/components/canvas/nodes/sketch-node";
 import { CanvasConnectionPanel } from "@/components/canvas/canvas-connection-panel";
 import { CanvasPluginManagerModal } from "@/components/canvas/canvas-plugin-manager-modal";
 import { CanvasRefreshShell } from "@/components/canvas/canvas-refresh-shell";
@@ -146,6 +148,9 @@ registerRepoNode();
 registerServiceNode();
 registerImageRegionsNode();
 registerEditorNode();
+// A1/A3: Markdown 与线框草图节点（A2 复用上面的 preview）。
+registerMarkdownNode();
+registerSketchNode();
 
 type CanvasClipboard = {
     nodes: CanvasNodeData[];
@@ -807,7 +812,7 @@ function InfiniteCanvasPage() {
     );
 
     const createConnectedNode = useCallback(
-        (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio, pending: PendingConnectionCreate) => {
+        (type: CanvasNodeTypeId, pending: PendingConnectionCreate) => {
             const metadata = type === CanvasNodeType.Config ? { model: effectiveConfig.imageModel || effectiveConfig.model, size: effectiveConfig.size, count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count) } : undefined;
             const newNode = createCanvasNode(type, pending.position, metadata);
             const connection = normalizeConnection(pending.connection.nodeId, newNode.id, [...nodesRef.current, newNode], pending.connection.handleType);
@@ -819,7 +824,8 @@ function InfiniteCanvasPage() {
             setConnections((prev) => [...prev, { id: nanoid(), ...connection }]);
             setSelectedNodeIds(new Set([newNode.id]));
             setSelectedConnectionId(null);
-            if (type !== CanvasNodeType.Text && type !== CanvasNodeType.Audio) setDialogNodeId(newNode.id);
+            // A1/A3: markdown/sketch 在节点内直接编辑，不弹生成面板；只有生成类节点需要弹框。
+            if (type === CanvasNodeType.Image || type === CanvasNodeType.Video || type === CanvasNodeType.Config) setDialogNodeId(newNode.id);
             setPendingConnectionCreate(null);
             setConnecting(null);
         },
@@ -3837,6 +3843,8 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
                     onAddVideo={() => createNode(CanvasNodeType.Video)}
                     onAddAudio={() => createNode(CanvasNodeType.Audio)}
                     onAddText={() => createNode(CanvasNodeType.Text)}
+                    onAddMarkdown={() => createNode("markdown")}
+                    onAddSketch={() => createNode("sketch")}
                     onAddConfig={() => createNode(CanvasNodeType.Config)}
                     onAddGroup={() => createNode(CanvasNodeType.Group)}
                     onAddExtensionNode={(type) => createNode(type)}

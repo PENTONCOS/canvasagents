@@ -5,7 +5,7 @@ const positionSchema = z.object({ x: z.number(), y: z.number() });
 const viewportSchema = z.object({ x: z.number(), y: z.number(), k: z.number() });
 /**
  * 可创建的节点类型：前 5 个为内置基础节点，其余为网页端已注册的扩展节点
- * （code/repo/service/image-regions/editor/preview/terminal/group）。
+ * （code/repo/service/image-regions/editor/preview/terminal/group/markdown/sketch）。
  * 网页端遇到未注册类型会退回 text，故此处保持与网页注册表一致即可。
  */
 const nodeTypeSchema = z.enum([
@@ -22,6 +22,8 @@ const nodeTypeSchema = z.enum([
     "preview",
     "terminal",
     "group",
+    "markdown",
+    "sketch",
 ]);
 const generationModeSchema = z.enum(["text", "image", "video", "audio"]);
 
