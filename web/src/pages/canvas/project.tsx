@@ -111,6 +111,7 @@ import { registerServiceNode } from "@/components/canvas/nodes/service-node";
 import { registerImageRegionsNode } from "@/components/canvas/nodes/image-regions-node";
 import { registerEditorNode } from "@/components/canvas/nodes/editor-node";
 import { registerMarkdownNode } from "@/components/canvas/nodes/markdown-node";
+import { registerRequirementNode } from "@/components/canvas/nodes/requirement-node";
 import { registerSketchNode } from "@/components/canvas/nodes/sketch-node";
 import { CanvasConnectionPanel } from "@/components/canvas/canvas-connection-panel";
 import { CanvasPluginManagerModal } from "@/components/canvas/canvas-plugin-manager-modal";
@@ -140,6 +141,8 @@ import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
 // Register built-in nodes in the shared registry once when the module loads.
+// A4: 需求便签先注册，创建菜单里排在最前（它是画布的入口内容）。
+registerRequirementNode();
 registerBuiltinNodes();
 registerTerminalNode();
 registerPreviewNode();

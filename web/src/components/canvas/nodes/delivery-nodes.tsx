@@ -45,7 +45,7 @@ const NOT_IN_CREATE_MENU: CanvasNodeType[] = [CanvasNodeType.TestCase, CanvasNod
 
 export const DELIVERY_DEFINITIONS: CanvasNodeDefinition[] = (
     [
-        CanvasNodeType.Requirement,
+        // A4: 需求便签有自己的节点实现（requirement-node.tsx），不在这里注册。
         CanvasNodeType.Journey,
         CanvasNodeType.JourneyStep,
         CanvasNodeType.Design,

@@ -467,6 +467,17 @@ export default {
             emptyTitle: "空 Markdown 文档",
             emptyHint: "点击开始写：支持标题、列表和代码块。",
         },
+        requirement: {
+            description: "一句话需求便签，可作为独立节点并列摆放",
+            label: "需求便签",
+            tag: "需求 #{{index}}",
+            placeholder: "一句话写清要做什么…",
+            edit: "编辑",
+            editHint: "回车或失焦保存，Esc 取消",
+            doubleClickHint: "双击编辑需求",
+            emptyTitle: "写一句需求",
+            emptyHint: "点一下开始写，回车保存。",
+        },
         sketch: {
             description: "手绘矩形与箭头的线框草图",
             toolRect: "矩形",

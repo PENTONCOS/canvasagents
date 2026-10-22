@@ -18,7 +18,8 @@ export const NODE_DEFAULT_SIZE = {
     [CanvasNodeType.Audio]: { width: 340, height: 120, get title() { return i18n.t("canvas.nodeTypes.audio"); } },
     [CanvasNodeType.Group]: { width: 760, height: 480, get title() { return i18n.t("canvas.nodeTypes.group"); } },
     // M0: delivery domain
-    [CanvasNodeType.Requirement]: { width: 280, height: 160, get title() { return i18n.t("canvas.nodeTypes.requirement"); } },
+    // A4: 一句话需求便签，单行高度即可；实际创建尺寸以节点注册表里的 defaultSize 为准。
+    [CanvasNodeType.Requirement]: { width: 340, height: 120, get title() { return i18n.t("canvas.nodeTypes.requirement"); } },
     [CanvasNodeType.Journey]: { width: 620, height: 300, get title() { return i18n.t("canvas.nodeTypes.journey"); } },
     [CanvasNodeType.JourneyStep]: { width: 240, height: 360, get title() { return i18n.t("canvas.nodeTypes.journeyStep"); } },
     [CanvasNodeType.Design]: { width: 340, height: 240, get title() { return i18n.t("canvas.nodeTypes.design"); } },
@@ -56,7 +57,7 @@ export const NODE_SPECS = {
     },
     // M0: delivery domain
     [CanvasNodeType.Requirement]: {
-        width: 280, height: 160, get title() { return NODE_DEFAULT_SIZE[CanvasNodeType.Requirement].title; },
+        width: 340, height: 120, get title() { return NODE_DEFAULT_SIZE[CanvasNodeType.Requirement].title; },
         metadata: { status: "idle", content: "" },
     },
     [CanvasNodeType.Journey]: {

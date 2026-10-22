@@ -498,6 +498,17 @@ export default {
             emptyTitle: "Empty Markdown document",
             emptyHint: "Click to start writing — headings, lists, and code blocks are supported.",
         },
+        requirement: {
+            description: "One-line requirement note that stands on its own and can sit side by side",
+            label: "Requirement note",
+            tag: "Requirement #{{index}}",
+            placeholder: "Write what needs to be done in one sentence…",
+            edit: "Edit",
+            editHint: "Enter or blur to save, Esc to cancel",
+            doubleClickHint: "Double-click to edit the requirement",
+            emptyTitle: "Write a requirement",
+            emptyHint: "Click to start; press Enter to save.",
+        },
         sketch: {
             description: "Wireframe sketch with hand-drawn rectangles and arrows",
             toolRect: "Rectangle",

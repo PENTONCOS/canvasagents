@@ -2,12 +2,15 @@ import { describe, expect, test } from "bun:test";
 
 import { DELIVERY_DEFINITIONS } from "@/components/canvas/nodes/delivery-nodes";
 import { registerBuiltinNodes } from "@/components/canvas/nodes/builtin-nodes";
+import { registerRequirementNode } from "@/components/canvas/nodes/requirement-node";
 import { NODE_SPECS } from "@/constant/canvas";
 import { getNodeDefinition, getNodeSpec, isBuiltinNodeType, listNodeDefinitions } from "@/lib/canvas/node-registry";
 import { CanvasNodeType } from "@/types/canvas";
 
 // Production registers in project.tsx; tests must do the same before querying the registry.
 registerBuiltinNodes();
+// A4: 需求便签有自己的节点实现，独立注册。
+registerRequirementNode();
 
 const DELIVERY_TYPES = [
     CanvasNodeType.Requirement,
@@ -61,6 +64,7 @@ describe("node registry (M0 delivery nodes)", () => {
         expect(byType.get(CanvasNodeType.Bug)?.showInCreateMenu).toBe(false);
         expect(byType.get(CanvasNodeType.Run)?.showInCreateMenu).toBe(false);
         expect(byType.get(CanvasNodeType.Requirement)?.showInCreateMenu).not.toBe(false);
+        expect(getNodeDefinition(CanvasNodeType.Requirement)?.showInCreateMenu).not.toBe(false);
         expect(byType.get(CanvasNodeType.Acceptance)?.showInCreateMenu).not.toBe(false);
     });
 

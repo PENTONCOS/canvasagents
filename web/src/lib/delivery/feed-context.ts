@@ -177,6 +177,11 @@ function lineForNode(node: CanvasNodeData, kind: FeedKind, lookup: FeedLookup): 
         }
         case "image":
             return `- ${node.title}（${i18n.t("canvas.nodeToolbar.feedImageTag")}）`;
+        case "requirement": {
+            // A4: 一句话需求便签；多条并列时靠正文本身区分，摘要行直接带需求内容。
+            const body = excerpt(metadata?.content || metadata?.statement);
+            return body ? `- ${node.title}：${body}` : `- ${node.title}`;
+        }
         case "markdown": {
             // 只带摘要：整篇 Markdown 可能很长，Agent 需要全文时按标题回画布取。
             const body = excerpt(metadata?.content);

@@ -148,4 +148,32 @@ describe("框选任意节点 → 结构化投喂", () => {
         const prompt = buildFeedPrompt([node({ id: "journey", type: CanvasNodeType.Journey, title: "节点上的旧名字" })], { ...emptyLookup, journeys });
         expect(prompt).toContain("J-01 新用户注册");
     });
+
+    test("A4 多条需求便签并列：归入【需求】分组，摘要带正文且顺序稳定", () => {
+        const nodes = [
+            node({ id: "req-1", type: CanvasNodeType.Requirement, title: "需求便签 1", metadata: { content: "支持提前 24 小时改约" } }),
+            node({ id: "req-2", type: CanvasNodeType.Requirement, title: "需求便签 2", metadata: { content: "改约成功后短信通知双方" } }),
+            node({ id: "txt", type: CanvasNodeType.Text, title: "补充说明", metadata: { content: "仅工作日可改约" } }),
+        ];
+        expect(nodes.map((item) => feedKindOf(item))).toEqual(["requirement", "requirement", "text"]);
+        const prompt = buildFeedPrompt(nodes, emptyLookup);
+        expect(prompt).toContain("【需求】");
+        expect(prompt).toContain("支持提前 24 小时改约");
+        expect(prompt).toContain("改约成功后短信通知双方");
+        // 需求分组固定在文本之前，组内保持选中顺序。
+        expect(prompt.indexOf("【需求】")).toBeLessThan(prompt.indexOf("【文本】"));
+        expect(prompt.indexOf("支持提前 24 小时改约")).toBeLessThan(prompt.indexOf("改约成功后短信通知双方"));
+        // 同组两条各占一行，不会折叠成一条。
+        expect(prompt.split("\n").filter((line) => line.startsWith("- 需求便签"))).toHaveLength(2);
+        // 再投递一次结果一致（顺序稳定，不依赖对象遍历顺序）。
+        expect(buildFeedPrompt(nodes, emptyLookup)).toBe(prompt);
+    });
+
+    test("A4 需求正文过长时截断，不把整条长文本塞进提示词", () => {
+        const long = "改".repeat(200);
+        const prompt = buildFeedPrompt([node({ id: "req", type: CanvasNodeType.Requirement, metadata: { content: long } })], emptyLookup);
+        expect(prompt).toContain("…");
+        expect(prompt).not.toContain(long);
+        expect(prompt.length).toBeLessThan(long.length);
+    });
 });

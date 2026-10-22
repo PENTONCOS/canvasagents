@@ -521,15 +521,15 @@ function NodeContent(props: NodeContentRendererProps) {
     return <MissingPluginContent theme={props.theme} type={props.node.type} />;
 }
 
-const nodeContentRenderers: Record<CanvasNodeType, (props: NodeContentRendererProps) => ReactNode> = {
+const nodeContentRenderers: Partial<Record<CanvasNodeType, (props: NodeContentRendererProps) => ReactNode>> = {
     [CanvasNodeType.Text]: TextContent,
     [CanvasNodeType.Image]: ImageNodeContent,
     [CanvasNodeType.Config]: EmptyImageContent,
     [CanvasNodeType.Video]: VideoNodeContent,
     [CanvasNodeType.Audio]: AudioNodeContent,
     [CanvasNodeType.Group]: GroupNodeContent,
-    // M0: delivery domain nodes share one compact renderer
-    [CanvasNodeType.Requirement]: DeliveryNodeContent,
+    // M0: delivery domain nodes share one compact renderer.
+    // A4: 需求便签改由 requirement-node.tsx 注册的 Content 渲染（节点内可直接编辑）。
     [CanvasNodeType.Journey]: DeliveryNodeContent,
     [CanvasNodeType.JourneyStep]: DeliveryNodeContent,
     [CanvasNodeType.Design]: DeliveryNodeContent,
