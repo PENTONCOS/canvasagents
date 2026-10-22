@@ -62,6 +62,9 @@ export type AgentConversationState = {
 };
 export type AgentPanelTab = "chat" | "setup" | "history" | "skills" | "log" | "wall";
 
+/** 预览层确认后的待发送内容：文本是用户在预览层里编辑过的最终版本。 */
+export type AgentFeedSendRequest = { text: string; windowId: string; at: number };
+
 /**
  * 「一条会话一份」的字段：这些字段的读写都会落到当前激活的会话窗上，
  * 其余字段（连接、模型、面板尺寸等）保持全局共享。
@@ -146,6 +149,8 @@ type AgentStore = {
     connectError: string;
     pendingTool: AgentPendingToolCall | null;
     pendingApprovals: AgentPendingApproval[];
+    /** C3 投喂预览：预览层点「发送」时排给面板的一次发送请求（画布侧不复制发送逻辑）。 */
+    feedSendRequest: AgentFeedSendRequest | null;
     cliMode: boolean;
     cliSession: string;
     queueOpen: boolean;
@@ -164,6 +169,8 @@ type AgentStore = {
     addWindow: () => boolean;
     removeWindow: (id: string) => void;
     selectWindow: (id: string) => void;
+    requestFeedSend: (input: { text: string; windowId: string }) => void;
+    clearFeedSend: () => void;
     renameWindow: (id: string, title: string) => void;
     noteWindowOutput: (windowId: string, dedupeKey?: string) => void;
 };
@@ -291,6 +298,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     silentConnect: false,
     fragmentBootstrap: false,
     prompt: "",
+    feedSendRequest: null,
     activeTab: "setup",
     confirmTools: false,
     permissionMode: typeof window === "undefined" ? "request" : (localStorage.getItem("canvas-agent-permission-mode") as AgentPermissionMode) || "request",
@@ -368,6 +376,8 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         const resolved = windows.find((window) => window.id === nextActiveId) ?? windows[0];
         return { windows, activeWindowId: resolved.id, ...projectAgentWindow(resolved) };
     }),
+    requestFeedSend: ({ text, windowId }) => set({ feedSendRequest: { text, windowId, at: Date.now() } }),
+    clearFeedSend: () => set({ feedSendRequest: null }),
     selectWindow: (id) => set((state) => {
         if (!state.windows.some((window) => window.id === id)) return {};
         const windows = clearUnread(state.windows, id);

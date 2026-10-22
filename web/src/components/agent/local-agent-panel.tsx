@@ -788,8 +788,10 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             document.removeEventListener("visibilitychange", activateVisible);
         };
     }, [connected, endpoint, token]);
-    const sendPrompt = async () => {
-        const text = prompt.trim();
+    // C3：预览层只负责「看和改」，发送仍走这里——画布侧不另开一条发送通道。
+    // 传 textOverride 时以预览层里编辑后的文本为准，其余逻辑与原发送路径完全一致。
+    const sendPrompt = async (textOverride?: string) => {
+        const text = (textOverride ?? prompt).trim();
         const files = attachments;
         const skillState = useAgentSkillStore.getState();
         const selectedSkill = skillState.selectedSkill;
@@ -920,6 +922,30 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             addEventLog(rt("sendFailed"), error);
         }
     };
+
+    /** 预览层排队的一次发送：等到「连接上 + 会话就绪 + 没在跑」再交给 sendPrompt。 */
+    const feedSendRequest = useAgentStore((state) => state.feedSendRequest);
+    useEffect(() => {
+        if (!feedSendRequest) return;
+        if (feedSendRequest.windowId !== activeWindowId) return;
+        if (!connected || loadingThreads || sending || waiting || !["ready", "warning"].includes(conversation.status)) return;
+        // 草稿被改过说明用户另有意图，这条排队发送作废，不能把它盖回去。
+        if (prompt.trim() !== feedSendRequest.text.trim()) {
+            useAgentStore.getState().clearFeedSend();
+            return;
+        }
+        useAgentStore.getState().clearFeedSend();
+        void sendPrompt(feedSendRequest.text);
+    }, [activeWindowId, connected, conversation.status, feedSendRequest, loadingThreads, prompt, sendPrompt, sending, waiting]);
+
+    // 排队发送不能无限悬着：60 秒还没发出去就作废（内容仍在输入框里，用户可手动发）。
+    useEffect(() => {
+        if (!feedSendRequest) return;
+        const timer = setTimeout(() => {
+            if (useAgentStore.getState().feedSendRequest === feedSendRequest) useAgentStore.getState().clearFeedSend();
+        }, 60_000);
+        return () => clearTimeout(timer);
+    }, [feedSendRequest]);
 
     const stopTurn = async () => {
         if (!connected || (!sending && !waiting)) return;

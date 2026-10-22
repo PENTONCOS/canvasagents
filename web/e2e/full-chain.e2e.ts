@@ -246,18 +246,16 @@ test("全链路：需求 → 旅程 → 设计选定 → 验收失败定位 → 
     await expect(targetItem).toBeVisible({ timeout: 10_000 });
     await targetItem.click();
 
-    // 7) 投喂会自动展开面板并切到目标窗，草稿栏里真的有三类内容的分组。
-    await expect(targetTab).toHaveAttribute("aria-selected", "true", { timeout: 15_000 });
-    await expect(page.locator("aside").filter({ has: page.locator(WINDOW_TABS) })).toBeInViewport({ timeout: 15_000 });
-    const editor = page.locator('aside [role="textbox"]').first();
-    await expect(editor).toHaveAttribute("contenteditable", "true", { timeout: 30_000 });
-    await expect(editor).toContainText("【Markdown 文档】", { timeout: 15_000 });
-    await expect(editor).toContainText("【网页预览】");
-    await expect(editor).toContainText("【线框草图】");
+    // 7) C3：投喂先出预览层。分组标题与正文都在预览全文里，且能看出会发到哪个窗。
+    const previewText = page.locator("[data-feed-preview-text]");
+    await expect(previewText).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator("[data-feed-preview-target]")).toContainText(targetLabel);
+    await expect(previewText).toHaveValue(/【Markdown 文档】/);
+    await expect(previewText).toHaveValue(/【网页预览】/);
+    await expect(previewText).toHaveValue(/【线框草图】/);
 
-    // 8) 发送这一轮：服务端 /__state 里必须有真实内容摘要。
-    await editor.click();
-    await editor.press("Enter");
+    // 8) 点「发送」：走的就是原来的发送路径，服务端 /__state 里必须有真实内容摘要。
+    await page.locator("[data-feed-preview-send]").click();
     await expect
         .poll(async () => (await agentState(page)).turns.length, { timeout: 20_000 })
         .toBeGreaterThan(0);
@@ -276,7 +274,11 @@ test("全链路：需求 → 旅程 → 设计选定 → 验收失败定位 → 
     expect(text).toContain("【验收标准】");
     expect(text).toContain("【设计稿】");
 
-    // 9) 发出去之后草稿清空（同一份内容不会滞留在输入框里被重复发送）。
+    // 9) 面板自动展开并切到目标窗；发出去之后草稿清空（同一份内容不会滞留被重复发送）。
+    await expect(targetTab).toHaveAttribute("aria-selected", "true", { timeout: 15_000 });
+    await expect(page.locator("aside").filter({ has: page.locator(WINDOW_TABS) })).toBeInViewport({ timeout: 15_000 });
+    const editor = page.locator('aside [role="textbox"]').first();
+    await expect(editor).toHaveAttribute("contenteditable", "true", { timeout: 30_000 });
     await expect(editor).not.toContainText("【Markdown 文档】", { timeout: 15_000 });
 
     // 10) 新开第二个会话窗：它必须自己建线程（threads/reset）并进入 ready。
@@ -302,19 +304,21 @@ test("全链路：需求 → 旅程 → 设计选定 → 验收失败定位 → 
     console.log(`第二个会话窗就绪耗时 ${readyMs}ms`);
     expect(readyMs).toBeLessThan(20_000);
 
-    // 11) 投喂到新窗：内容落在新窗自己的草稿栏里。
+    // 11) 投喂到新窗：预览层先出，发送后内容进新窗自己的线程。
     const feedButtonToSecond = await selectAllAndRevealFeed(page);
     await feedButtonToSecond.click();
     const secondItem = page.locator(".ant-dropdown").getByText(secondLabel, { exact: true }).first();
     await expect(secondItem).toBeVisible({ timeout: 10_000 });
     await secondItem.click();
+    const secondPreviewText = page.locator("[data-feed-preview-text]");
+    await expect(secondPreviewText).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator("[data-feed-preview-target]")).toContainText(secondLabel);
+    await expect(secondPreviewText).toHaveValue(/【Markdown 文档】/);
+    await expect(secondPreviewText).toHaveValue(/【线框草图】/);
+    await page.locator("[data-feed-preview-send]").click();
     await expect(secondTab).toHaveAttribute("aria-selected", "true", { timeout: 15_000 });
-    await expect(secondEditor).toContainText("【Markdown 文档】", { timeout: 15_000 });
-    await expect(secondEditor).toContainText("【线框草图】");
 
     // 12) 新窗发送：服务端收到的是第二个线程，且第一个窗的草稿栏没被污染。
-    await secondEditor.click();
-    await secondEditor.press("Enter");
     await expect.poll(async () => (await agentState(page)).turns.length, { timeout: 20_000 }).toBe(2);
     const stateAfterSecondWindow = await agentState(page);
     expect(stateAfterSecondWindow.turns[1].threadId).toBeTruthy();

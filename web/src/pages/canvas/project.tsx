@@ -31,7 +31,9 @@ import { NODE_DEFAULT_SIZE, getNodeSpec } from "@/constant/canvas";
 import { layoutDesignVariants, layoutJourneySteps } from "@/lib/canvas/journey-layout";
 import { useDeliveryStore } from "@/stores/use-delivery-store";
 import { planBugsFromAnnotations } from "@/lib/delivery/annotation-bugs";
-import { buildFeedPrompt, collectEvidenceNodeIds, feedableNodes } from "@/lib/delivery/feed-context";
+import { collectEvidenceNodeIds, feedableNodes } from "@/lib/delivery/feed-context";
+import { confirmFeedPreview, createFeedPreview, type FeedPreview, type FeedPreviewOutcome } from "@/lib/delivery/feed-preview";
+import { FeedPreviewModal } from "@/components/canvas/feed-preview-modal";
 import { nextEntityId, nextStepId, nextVariantId, type DeliveryAnnotation, type DesignVariant, type JourneyStep } from "@/types/delivery";
 import { ActiveConnectionPath, ConnectionPath } from "@/components/canvas/canvas-connections";
 import { CanvasConfigComposer } from "@/components/canvas/canvas-config-composer";
@@ -351,6 +353,8 @@ function InfiniteCanvasPage() {
     const [backgroundMode, setBackgroundMode] = useState<CanvasBackgroundMode>("lines");
     const [showImageInfo, setShowImageInfo] = useState(false);
     const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+    // C3：投喂前预览。草稿在打开预览的那一刻按当前选择拼装，关掉即丢弃。
+    const [feedPreview, setFeedPreview] = useState<{ preview: FeedPreview; references: CanvasResourceReference[] } | null>(null);
     const [assetPickerOpen, setAssetPickerOpen] = useState(false);
     const [projectLoaded, setProjectLoaded] = useState(false);
     const [toolbarNodeId, setToolbarNodeId] = useState<string | null>(null);
@@ -3436,12 +3440,13 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
 }, []);
 
 
-    // P0-1: 框选任意画布内容一次投喂。投喂不限于问题单——换 agent 交接时，
+    // P0-1/C3: 框选任意画布内容一次投喂。投喂不限于问题单——换 agent 交接时，
     // 把需求、旅程、验收标准、设计稿重新框选一遍就能续上上下文，
     // 这正是参考产品让「画布充当上下文中介」的做法。
     // 证据截图仍沿「问题单 → 圈注 → 截图节点」取；若这些截图绑在同一个 Agent 窗上，
     // 就切到那个窗，沿用开发阶段的上下文。
-    const feedSelectionToAgent = useCallback((selection: CanvasNodeData[], targetWindowId?: string) => {
+    // C3：这里只负责把「要发什么」算出来弹预览，真正写进草稿与发送在 resolveFeedPreview。
+    const openFeedPreview = useCallback((selection: CanvasNodeData[], targetWindowId?: string) => {
         const feedNodes = feedableNodes(selection);
         if (feedNodes.length === 0) return;
         const delivery = useDeliveryStore.getState();
@@ -3452,22 +3457,45 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
         const followId = evidenceNodes.map((node) => node.metadata?.followWindowId).find(Boolean);
         // 目标窗优先级：用户显式选的窗 > 证据截图绑定的窗 > 当前窗。
         const target = [targetWindowId, followId].find((id) => Boolean(id) && agent.windows.some((window) => window.id === id)) ?? agent.activeWindowId;
-        // prompt 不是窗口级字段，必须先切窗再写，否则草稿会落在原来那个窗里。
-        if (target !== agent.activeWindowId) agent.selectWindow(target);
-        const latest = useAgentStore.getState();
-        latest.setAgentState({
-            prompt: buildFeedPrompt(feedNodes, {
+        const index = agent.windows.findIndex((window) => window.id === target);
+        const preview = createFeedPreview({
+            nodes: feedNodes,
+            lookup: {
                 bugs: delivery.bugs,
                 annotations: delivery.annotations,
                 acceptance: delivery.acceptance,
                 journeys: delivery.journeys,
                 designs: delivery.designs,
                 environments: delivery.environments,
-            }),
-            canvasReferences: [...latest.canvasReferences.filter((item) => !references.some((reference) => reference.nodeId === item.nodeId)), ...references],
+            },
+            targetWindowId: target,
+            // 「序号:名称」复用窗口命名，预览层要能看出这段文字会交给哪个窗。
+            targetLabel: index >= 0 ? toWindowTabLabel(agent.windows[index], index) : target,
+        });
+        if (!preview) return;
+        setFeedPreview({ preview, references });
+    }, [nodesRef]);
+
+    /**
+     * 预览层的两个出口：取消什么都不做（草稿不被污染），
+     * 发送才把编辑后的文本写进目标窗草稿，并沿既有发送路径发出去。
+     */
+    const resolveFeedPreview = useCallback((outcome: FeedPreviewOutcome) => {
+        const pending = feedPreview;
+        setFeedPreview(null);
+        if (!pending || outcome.kind === "cancel") return;
+        const agent = useAgentStore.getState();
+        // prompt 不是窗口级字段，必须先切窗再写，否则草稿会落在原来那个窗里。
+        if (agent.activeWindowId !== pending.preview.targetWindowId && agent.windows.some((window) => window.id === pending.preview.targetWindowId)) agent.selectWindow(pending.preview.targetWindowId);
+        const latest = useAgentStore.getState();
+        latest.setAgentState({
+            prompt: outcome.text,
+            canvasReferences: [...latest.canvasReferences.filter((item) => !pending.references.some((reference) => reference.nodeId === item.nodeId)), ...pending.references],
         });
         latest.openPanel();
-    }, [nodesRef]);
+        // 已连接才排队自动发送；没连上就先落进输入框，避免请求悬在半空。
+        if (latest.connected) latest.requestFeedSend({ text: outcome.text, windowId: pending.preview.targetWindowId });
+    }, [feedPreview]);
 
     const handleNodeViewImage = useCallback((node: CanvasNodeData, imageId?: string) => {
         setPreviewNodeId(node.id);
@@ -3829,7 +3857,7 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
                         onGroup={groupSelection}
                         onUngroup={ungroupSelection}
                         canFeed={feedableNodes(selectedNodes).length > 0}
-                        onFeed={(windowId) => feedSelectionToAgent(selectedNodes, windowId)}
+                        onFeed={(windowId) => openFeedPreview(selectedNodes, windowId)}
                         feedTargets={agentWindows.map((window, index) => ({ id: window.id, label: toWindowTabLabel(window, index) }))}
                     />
                 ) : null}
@@ -3945,6 +3973,8 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
                         }}
                     />
                 ) : null}
+
+                <FeedPreviewModal preview={feedPreview?.preview ?? null} open={Boolean(feedPreview)} onResolve={resolveFeedPreview} />
 
                 {cropNode?.metadata?.content ? <CanvasNodeCropDialog dataUrl={cropNode.metadata.content} open={Boolean(cropNode)} onClose={() => setCropNodeId(null)} onConfirm={(crop) => void cropImageNode(cropNode!, crop)} /> : null}
 

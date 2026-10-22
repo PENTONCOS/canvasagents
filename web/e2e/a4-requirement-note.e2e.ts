@@ -167,14 +167,27 @@ test("A4 需求便签：并列两条 → 各写一句 → 刷新仍在 → 框�
     await expect(targetItem).toBeVisible({ timeout: 10_000 });
     await targetItem.click();
 
-    // 6) 草稿里按【需求】分组、带上两句话，且顺序与画布一致。
-    const editor = page.locator('aside [role="textbox"]').first();
-    await expect(editor).toHaveAttribute("contenteditable", "true", { timeout: 30_000 });
-    await expect(editor).toContainText("【需求】", { timeout: 15_000 });
-    const prompt = await editor.innerText();
+    // 6) C3：先出预览层，全文可改；按【需求】分组、带上两句话，且顺序与画布一致。
+    const previewText = page.locator("[data-feed-preview-text]");
+    await expect(previewText).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator("[data-feed-preview-target]")).toContainText(targetLabel);
+    const prompt = await previewText.inputValue();
+    expect(prompt).toContain("【需求】");
     const firstAt = prompt.indexOf("支持提前 48 小时免费改约");
     const secondAt = prompt.indexOf("改约成功后短信通知双方");
     expect(firstAt).toBeGreaterThan(-1);
     expect(secondAt).toBeGreaterThan(-1);
     expect(firstAt).toBeLessThan(secondAt);
+
+    // 7) 点「发送」后内容真的发到服务端（不是只填进输入框）。
+    await page.locator("[data-feed-preview-send]").click();
+    await expect.poll(async () => (await agentState(page)).turns.length, { timeout: 20_000 }).toBeGreaterThan(0);
+    const sent = (await agentState(page)).turns[0].text;
+    expect(sent).toContain("支持提前 48 小时免费改约");
+    expect(sent).toContain("改约成功后短信通知双方");
 });
+
+async function agentState(page: Page) {
+    const response = await page.request.get(`${AGENT_URL}/__state`);
+    return response.json() as Promise<{ turns: { text: string }[] }>;
+}
