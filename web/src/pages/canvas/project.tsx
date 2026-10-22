@@ -30,8 +30,8 @@ import { NODE_DEFAULT_SIZE, getNodeSpec } from "@/constant/canvas";
 import { layoutDesignVariants, layoutJourneySteps } from "@/lib/canvas/journey-layout";
 import { useDeliveryStore } from "@/stores/use-delivery-store";
 import { planBugsFromAnnotations } from "@/lib/delivery/annotation-bugs";
-import { buildBugFeedPrompt, collectEvidenceNodeIds } from "@/lib/delivery/bug-batch";
-import { nextEntityId, nextStepId, nextVariantId, type DeliveryAnnotation, type DeliveryBug, type DesignVariant, type JourneyStep } from "@/types/delivery";
+import { buildFeedPrompt, collectEvidenceNodeIds, feedableNodes } from "@/lib/delivery/feed-context";
+import { nextEntityId, nextStepId, nextVariantId, type DeliveryAnnotation, type DesignVariant, type JourneyStep } from "@/types/delivery";
 import { ActiveConnectionPath, ConnectionPath } from "@/components/canvas/canvas-connections";
 import { CanvasConfigComposer } from "@/components/canvas/canvas-config-composer";
 import { CanvasConfigNodePanel } from "@/components/canvas/canvas-config-node-panel";
@@ -3426,24 +3426,30 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
 }, []);
 
 
-    // M3: 框选一批问题单一次投喂。证据截图沿「问题单 → 圈注 → 截图节点」取，
-    // 若这些截图绑在同一个 Agent 窗上，就切到那个窗，沿用开发阶段的上下文。
-    const feedBugsToAgent = useCallback((selection: CanvasNodeData[]) => {
+    // P0-1: 框选任意画布内容一次投喂。投喂不限于问题单——换 agent 交接时，
+    // 把需求、旅程、验收标准、设计稿重新框选一遍就能续上上下文，
+    // 这正是参考产品让「画布充当上下文中介」的做法。
+    // 证据截图仍沿「问题单 → 圈注 → 截图节点」取；若这些截图绑在同一个 Agent 窗上，
+    // 就切到那个窗，沿用开发阶段的上下文。
+    const feedSelectionToAgent = useCallback((selection: CanvasNodeData[]) => {
+        const feedNodes = feedableNodes(selection);
+        if (feedNodes.length === 0) return;
         const delivery = useDeliveryStore.getState();
-        const bugs = selection
-            .filter((node) => node.type === CanvasNodeType.Bug)
-            .map((node) => (node.metadata?.bugId ? delivery.bugs[node.metadata.bugId] : undefined))
-            .filter((bug): bug is DeliveryBug => Boolean(bug));
-        if (bugs.length === 0) return;
-        const annotations = Object.values(delivery.annotations);
-        const evidenceIds = collectEvidenceNodeIds(bugs, annotations);
+        const evidenceIds = collectEvidenceNodeIds(selection, { bugs: delivery.bugs, annotations: delivery.annotations });
         const evidenceNodes = nodesRef.current.filter((node) => evidenceIds.includes(node.id));
         const references = buildCanvasResourceReferences(evidenceNodes);
         const agent = useAgentStore.getState();
         const followId = evidenceNodes.map((node) => node.metadata?.followWindowId).find(Boolean);
         if (followId && agent.windows.some((window) => window.id === followId)) agent.selectWindow(followId);
         agent.setAgentState({
-            prompt: buildBugFeedPrompt(bugs, annotations),
+            prompt: buildFeedPrompt(feedNodes, {
+                bugs: delivery.bugs,
+                annotations: delivery.annotations,
+                acceptance: delivery.acceptance,
+                journeys: delivery.journeys,
+                designs: delivery.designs,
+                environments: delivery.environments,
+            }),
             canvasReferences: [...agent.canvasReferences.filter((item) => !references.some((reference) => reference.nodeId === item.nodeId)), ...references],
         });
         agent.openPanel();
@@ -3808,8 +3814,8 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
                         canUngroup={canUngroupSelection}
                         onGroup={groupSelection}
                         onUngroup={ungroupSelection}
-                        canFeedBugs={selectedNodes.some((node) => node.type === CanvasNodeType.Bug)}
-                        onFeedBugs={() => feedBugsToAgent(selectedNodes)}
+                        canFeed={feedableNodes(selectedNodes).length > 0}
+                        onFeed={() => feedSelectionToAgent(selectedNodes)}
                     />
                 ) : null}
 
