@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { canvasThemes, type CanvasTheme } from "@/lib/canvas-theme";
 import { AC_STATUS_COLOR, acStatusLabelKey, countAcByStatus } from "@/lib/delivery/ac-status";
+import { acAnchor } from "@/lib/delivery/ac-testcase";
 import { AcceptanceOverviewModal } from "./acceptance-overview";
 import { createOrchestrator, reduceOrchestrator, replayOrchestrator } from "@/lib/delivery/orchestrator";
 import { RUN_STATUS_COLOR, runStatusLabelKey } from "@/lib/delivery/run-status";
@@ -34,7 +35,8 @@ import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
 import { CANVAS_SIDE_PANEL_MAX_WIDTH, CANVAS_SIDE_PANEL_MIN_WIDTH, CANVAS_SIDE_PANEL_MOTION_MS, useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
-import { nextEntityId, type DeliveryRunRound } from "@/types/delivery";
+import { toWindowTabLabel } from "@/lib/agent/agent-windows";
+import { nextEntityId, type AcceptanceCriterion, type DeliveryRunRound, type DeliveryTestCase, type Journey } from "@/types/delivery";
 
 import type { InsertAssetPayload } from "./asset-picker-modal";
 
@@ -52,6 +54,10 @@ type Props = {
     onPreviewNode: (nodeId: string) => void;
     onHoverNode: (nodeId: string | null) => void;
     onInsertAsset: (payload: InsertAssetPayload) => void;
+    /** D3: AC 正文改动直接落实体，同时同步画布节点上的展示文案。 */
+    onAcStatementChange: (acId: string, statement: string) => void;
+    /** D3: 把 AC 交给 Agent 生成用例——走既有投喂预览层，不另开通道。 */
+    onGenerateTestCases: (acId: string, targetWindowId?: string) => void;
 };
 
 const NODE_TYPE_ICON: Record<string, typeof Square> = {
@@ -70,7 +76,7 @@ const STATUS_COLOR: Record<string, string> = {
     idle: "transparent",
 };
 
-export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, onHoverNode, onInsertAsset }: Props) {
+export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, onHoverNode, onInsertAsset, onAcStatementChange, onGenerateTestCases }: Props) {
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const [tab, setTab] = useState<PanelTab>("canvas");
@@ -134,7 +140,7 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
                     ) : tab === "prompts" ? (
                         <CanvasPromptsTab onInsert={onInsertAsset} theme={theme} />
                     ) : tab === "acceptance" ? (
-                        <DeliveryAcceptanceTab theme={theme} onFocusNode={onFocusNode} />
+                        <DeliveryAcceptanceTab theme={theme} onFocusNode={onFocusNode} onAcStatementChange={onAcStatementChange} onGenerateTestCases={onGenerateTestCases} />
                     ) : (
                         <DeliveryRunsTab nodes={nodes} theme={theme} onFocusNode={onFocusNode} />
                     )}
@@ -155,12 +161,43 @@ function TabButton({ label, active, theme, onClick }: { label: string; active: b
 }
 
 // M2: 验收标签页。状态色与画布节点徽章共用 AC_STATUS_COLOR，保证两处一致。
-function DeliveryAcceptanceTab({ theme, onFocusNode }: { theme: CanvasTheme; onFocusNode: (nodeId: string) => void }) {
+// D3: 每条 AC 下面直接挂用例（数量 + 列表），能从 AC 新建用例（锚点自动生成），
+// 也能把这条 AC 连同旅程/步骤交给 Agent 生成用例——生成提示词同样走投喂预览层。
+function DeliveryAcceptanceTab({
+    theme,
+    onFocusNode,
+    onAcStatementChange,
+    onGenerateTestCases,
+}: {
+    theme: CanvasTheme;
+    onFocusNode: (nodeId: string) => void;
+    onAcStatementChange: (acId: string, statement: string) => void;
+    onGenerateTestCases: (acId: string, targetWindowId?: string) => void;
+}) {
     const { t } = useTranslation();
     const acceptance = useDeliveryStore((state) => state.acceptance);
+    const testCases = useDeliveryStore((state) => state.testCases);
+    const journeys = useDeliveryStore((state) => state.journeys);
+    const windows = useAgentStore((state) => state.windows);
+    const activeWindowId = useAgentStore((state) => state.activeWindowId);
     const items = useMemo(() => Object.values(acceptance).sort((a, b) => a.id.localeCompare(b.id)), [acceptance]);
     const counts = useMemo(() => countAcByStatus(items.map((item) => item.status)), [items]);
+    // 用例按 acId 归堆一次，侧栏每条 AC 只做一次查表，不重复扫全量。
+    const casesByAc = useMemo(() => {
+        const map = new Map<string, DeliveryTestCase[]>();
+        for (const testCase of Object.values(testCases)) {
+            const bucket = map.get(testCase.acId);
+            if (bucket) bucket.push(testCase);
+            else map.set(testCase.acId, [testCase]);
+        }
+        for (const bucket of map.values()) bucket.sort((a, b) => a.id.localeCompare(b.id));
+        return map;
+    }, [testCases]);
+    const journeyList = useMemo(() => Object.values(journeys).sort((a, b) => a.id.localeCompare(b.id)), [journeys]);
     const [overviewOpen, setOverviewOpen] = useState(false);
+    // 投喂目标窗默认当前窗；目标窗被关掉时回落，避免预览指向一个不存在的窗。
+    const [targetWindowId, setTargetWindowId] = useState(activeWindowId);
+    const target = windows.some((window) => window.id === targetWindowId) ? targetWindowId : activeWindowId;
 
     if (items.length === 0) {
         return (
@@ -186,31 +223,235 @@ function DeliveryAcceptanceTab({ theme, onFocusNode }: { theme: CanvasTheme; onF
                     {t("canvas.acOverview.open")}
                 </button>
             </div>
+            {windows.length > 0 ? (
+                <label className="mb-1 flex items-center gap-1 px-1 text-[10px]" style={{ color: theme.node.muted }}>
+                    <span>{t("canvas.sidePanel.acGenTarget")}</span>
+                    <select
+                        className="h-6 min-w-0 flex-1 rounded border px-1 text-[10px]"
+                        style={{ borderColor: theme.node.stroke, background: theme.node.fill, color: theme.node.text }}
+                        value={target}
+                        onChange={(event) => setTargetWindowId(event.target.value)}
+                        data-testid="ac-gen-target"
+                    >
+                        {windows.map((window, index) => (
+                            <option key={window.id} value={window.id}>
+                                {toWindowTabLabel(window, index)}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+            ) : null}
             {items.map((item) => (
-                <button
+                <AcCard
                     key={item.id}
-                    type="button"
-                    onClick={() => item.nodeId && onFocusNode(item.nodeId)}
-                    className="mb-1 flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-opacity hover:opacity-80"
-                    style={{ background: theme.node.fill, color: theme.node.text }}
-                    data-ac-id={item.id}
-                    data-ac-status={item.status}
-                >
-                    <span className="mt-1 h-2 w-2 shrink-0 rounded-full" style={{ background: AC_STATUS_COLOR[item.status] }} />
-                    <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-2">
-                            <span className="font-medium">{item.id}</span>
-                            <span className="rounded px-1 text-[10px]" style={{ background: `${AC_STATUS_COLOR[item.status]}22`, color: AC_STATUS_COLOR[item.status] }}>
-                                {t(acStatusLabelKey(item.status))}
-                            </span>
-                        </span>
-                        <span className="line-clamp-2 block" style={{ color: theme.node.muted }}>
-                            {item.statement}
-                        </span>
-                    </span>
-                </button>
+                    ac={item}
+                    theme={theme}
+                    cases={casesByAc.get(item.id) || []}
+                    journeys={journeyList}
+                    onFocusNode={onFocusNode}
+                    onAcStatementChange={onAcStatementChange}
+                    onGenerateTestCases={() => onGenerateTestCases(item.id, target)}
+                />
             ))}
             <AcceptanceOverviewModal open={overviewOpen} theme={theme} onClose={() => setOverviewOpen(false)} onFocusNode={onFocusNode} />
+        </div>
+    );
+}
+
+/**
+ * D3: 单条 AC 卡片。正文可改（生成用例必须读得到），用例列表、新建入口、
+ * 旅程/步骤归属都在这里——AC 是这条链的主语，用例是它的证据。
+ */
+function AcCard({
+    ac,
+    theme,
+    cases,
+    journeys,
+    onFocusNode,
+    onAcStatementChange,
+    onGenerateTestCases,
+}: {
+    ac: AcceptanceCriterion;
+    theme: CanvasTheme;
+    cases: DeliveryTestCase[];
+    journeys: Journey[];
+    onFocusNode: (nodeId: string) => void;
+    onAcStatementChange: (acId: string, statement: string) => void;
+    onGenerateTestCases: () => void;
+}) {
+    const { t } = useTranslation();
+    const steps = useDeliveryStore((state) => state.steps);
+    const createTestCaseForAc = useDeliveryStore((state) => state.createTestCaseForAc);
+    const removeTestCase = useDeliveryStore((state) => state.removeTestCase);
+    const setAcJourney = useDeliveryStore((state) => state.setAcJourney);
+    const setAcStep = useDeliveryStore((state) => state.setAcStep);
+    const [statementDraft, setStatementDraft] = useState(ac.statement);
+    const [creating, setCreating] = useState(false);
+    const [titleDraft, setTitleDraft] = useState("");
+
+    useEffect(() => setStatementDraft(ac.statement), [ac.statement]);
+
+    const journeyId = (ac.journeyIds ?? [])[0] || "";
+    const stepId = (ac.stepIds ?? [])[0] || "";
+    const journeySteps = useMemo(
+        () => Object.values(steps).filter((step) => step.journeyId === journeyId).sort((a, b) => a.order - b.order),
+        [steps, journeyId],
+    );
+    const anchor = acAnchor(ac.id);
+
+    const commitStatement = () => {
+        const next = statementDraft.trim();
+        if (next !== ac.statement) onAcStatementChange(ac.id, next);
+    };
+
+    const saveCase = () => {
+        const created = createTestCaseForAc(ac.id, { title: titleDraft });
+        if (!created) return;
+        setTitleDraft("");
+        setCreating(false);
+    };
+
+    return (
+        <div className="mb-1 rounded-md px-2 py-1.5 text-xs transition-opacity" style={{ background: theme.node.fill, color: theme.node.text }} data-ac-id={ac.id} data-ac-status={ac.status}>
+            <div className="flex items-start gap-2">
+                <span className="mt-1 h-2 w-2 shrink-0 rounded-full" style={{ background: AC_STATUS_COLOR[ac.status] }} />
+                <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left transition-opacity hover:opacity-80" onClick={() => ac.nodeId && onFocusNode(ac.nodeId)} data-ac-focus>
+                    <span className="font-medium">{ac.id}</span>
+                    <span className="rounded px-1 text-[10px]" style={{ background: `${AC_STATUS_COLOR[ac.status]}22`, color: AC_STATUS_COLOR[ac.status] }}>
+                        {t(acStatusLabelKey(ac.status))}
+                    </span>
+                    <span className="ml-auto shrink-0 text-[10px]" style={{ color: theme.node.muted }} data-testcase-count={cases.length}>
+                        {t("canvas.sidePanel.acCases", { count: cases.length })}
+                    </span>
+                </button>
+            </div>
+            <input
+                className="mt-1 w-full rounded border-0 bg-transparent px-0 py-0 text-[11px] outline-none"
+                style={{ color: theme.node.muted }}
+                value={statementDraft}
+                placeholder={t("canvas.sidePanel.acStatementPlaceholder")}
+                onChange={(event) => setStatementDraft(event.target.value)}
+                onBlur={commitStatement}
+                onKeyDown={(event) => {
+                    if (event.key === "Enter") commitStatement();
+                    if (event.key === "Escape") setStatementDraft(ac.statement);
+                }}
+                data-testid="ac-statement-input"
+            />
+            {journeys.length > 0 ? (
+                <div className="mt-1 flex items-center gap-1">
+                    <select
+                        className="h-6 min-w-0 flex-1 rounded border px-1 text-[10px]"
+                        style={{ borderColor: theme.node.stroke, background: theme.node.fill, color: theme.node.text }}
+                        value={journeyId}
+                        onChange={(event) => setAcJourney(ac.id, event.target.value || undefined)}
+                        data-testid="ac-journey-select"
+                    >
+                        <option value="">{t("canvas.sidePanel.acLinkNone")}</option>
+                        {journeys.map((journey) => (
+                            <option key={journey.id} value={journey.id}>
+                                {journey.id} {journey.title}
+                            </option>
+                        ))}
+                    </select>
+                    {journeySteps.length > 0 ? (
+                        <select
+                            className="h-6 min-w-0 flex-1 rounded border px-1 text-[10px]"
+                            style={{ borderColor: theme.node.stroke, background: theme.node.fill, color: theme.node.text }}
+                            value={stepId}
+                            onChange={(event) => setAcStep(ac.id, event.target.value || undefined)}
+                            data-testid="ac-step-select"
+                        >
+                            <option value="">{t("canvas.sidePanel.acLinkNone")}</option>
+                            {journeySteps.map((step) => (
+                                <option key={step.id} value={step.id}>
+                                    {step.id} {step.title}
+                                </option>
+                            ))}
+                        </select>
+                    ) : null}
+                </div>
+            ) : null}
+            <ul className="mt-1.5 space-y-0.5 border-t pt-1" style={{ borderColor: `${theme.node.stroke}66` }}>
+                {cases.map((testCase) => (
+                    <li key={testCase.id} className="flex items-center gap-1 text-[10px]" data-testcase-id={testCase.id}>
+                        <span className="min-w-0 flex-1 truncate" title={testCase.title}>
+                            {testCase.id} {testCase.title}
+                        </span>
+                        {/* 用例侧回指：点锚点就回到它验的那条 AC 节点，不用自己找。 */}
+                        <button
+                            type="button"
+                            className="shrink-0 rounded border px-1 transition-opacity hover:opacity-80"
+                            style={{ borderColor: theme.node.stroke, color: theme.node.muted }}
+                            onClick={() => ac.nodeId && onFocusNode(ac.nodeId)}
+                            data-testcase-anchor={testCase.selector || anchor}
+                        >
+                            {t("canvas.sidePanel.acCaseVerifies", { anchor: testCase.selector || anchor })}
+                        </button>
+                        <button type="button" className="shrink-0 px-0.5 transition-opacity hover:opacity-70" style={{ color: theme.node.muted }} onClick={() => removeTestCase(testCase.id)} aria-label={t("canvas.sidePanel.acCaseDelete")} data-testcase-delete>
+                            ×
+                        </button>
+                    </li>
+                ))}
+            </ul>
+            {creating ? (
+                <div className="mt-1 flex items-center gap-1">
+                    <input
+                        className="h-6 min-w-0 flex-1 rounded border px-1 text-[10px]"
+                        style={{ borderColor: theme.node.stroke, background: theme.node.fill, color: theme.node.text }}
+                        value={titleDraft}
+                        placeholder={t("canvas.sidePanel.acNewCasePlaceholder", { anchor })}
+                        onChange={(event) => setTitleDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter") saveCase();
+                            if (event.key === "Escape") {
+                                setCreating(false);
+                                setTitleDraft("");
+                            }
+                        }}
+                        autoFocus
+                        data-testid="ac-new-test-input"
+                    />
+                    <button type="button" className="shrink-0 rounded border px-1 text-[10px] disabled:opacity-40" style={{ borderColor: theme.node.stroke, color: theme.node.text }} disabled={!titleDraft.trim()} onClick={saveCase} data-testid="ac-new-test-save">
+                        {t("canvas.sidePanel.acNewCaseSave")}
+                    </button>
+                    <button
+                        type="button"
+                        className="shrink-0 px-0.5 text-[10px]"
+                        style={{ color: theme.node.muted }}
+                        onClick={() => {
+                            setCreating(false);
+                            setTitleDraft("");
+                        }}
+                    >
+                        {t("canvas.sidePanel.acNewCaseCancel")}
+                    </button>
+                </div>
+            ) : (
+                <div className="mt-1 flex flex-wrap items-center gap-1">
+                    <button
+                        type="button"
+                        className="rounded border px-1.5 py-0.5 text-[10px] transition-opacity hover:opacity-80"
+                        style={{ borderColor: theme.node.stroke, color: theme.node.text }}
+                        onClick={() => setCreating(true)}
+                        data-testid="ac-new-test"
+                    >
+                        {t("canvas.sidePanel.acNewCase")}
+                    </button>
+                    <button
+                        type="button"
+                        className="rounded border px-1.5 py-0.5 text-[10px] transition-opacity hover:opacity-80"
+                        style={{ borderColor: theme.node.stroke, color: theme.node.text }}
+                        onClick={onGenerateTestCases}
+                        data-testid="ac-generate-tests"
+                    >
+                        {t("canvas.sidePanel.acGenerate")}
+                    </button>
+                    <span className="text-[10px]" style={{ color: theme.node.muted }}>
+                        {anchor}
+                    </span>
+                </div>
+            )}
         </div>
     );
 }

@@ -33,6 +33,7 @@ import { useDeliveryStore } from "@/stores/use-delivery-store";
 import { planBugsFromAnnotations } from "@/lib/delivery/annotation-bugs";
 import { collectEvidenceNodeIds, feedableNodes } from "@/lib/delivery/feed-context";
 import { confirmFeedPreview, createFeedPreview, type FeedPreview, type FeedPreviewOutcome } from "@/lib/delivery/feed-preview";
+import { buildAcTestCasePrompt } from "@/lib/delivery/ac-testcase";
 import { FeedPreviewModal } from "@/components/canvas/feed-preview-modal";
 import { nextEntityId, nextStepId, nextVariantId, type DeliveryAnnotation, type DesignVariant, type JourneyStep } from "@/types/delivery";
 import { ActiveConnectionPath, ConnectionPath } from "@/components/canvas/canvas-connections";
@@ -3497,6 +3498,47 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
         if (latest.connected) latest.requestFeedSend({ text: outcome.text, windowId: pending.preview.targetWindowId });
     }, [feedPreview]);
 
+    /**
+     * D3: AC 正文直接落实体，同时同步画布节点上的展示文案，
+     * 否则侧栏改了正文、画布节点还是空的，两处对不上。
+     */
+    const updateAcStatement = useCallback((acId: string, statement: string) => {
+        const delivery = useDeliveryStore.getState();
+        const ac = delivery.acceptance[acId];
+        if (!ac) return;
+        delivery.upsertAc({ ...ac, statement });
+        if (!ac.nodeId) return;
+        setNodes((prev) => prev.map((node) => (node.id === ac.nodeId ? { ...node, metadata: { ...node.metadata, statement } } : node)));
+    }, [setNodes]);
+
+    /**
+     * D3: 从 AC 生成用例。提示词自带 AC 正文、旅程/步骤与已有用例，
+     * 并要求每条用例带 @AC-xx 锚点——报告回填只认这个锚点，缺了就记 skipped。
+     * 发送仍走既有预览层：这里只负责算出文本并弹预览，不另开发送通道。
+     */
+    const openAcTestCasePrompt = useCallback((acId: string, targetWindowId?: string) => {
+        const delivery = useDeliveryStore.getState();
+        const ac = delivery.acceptance[acId];
+        if (!ac) return;
+        const journey = (ac.journeyIds ?? []).map((id) => delivery.journeys[id]).find(Boolean);
+        const steps = (ac.stepIds ?? []).map((id) => delivery.steps[id]).filter(Boolean);
+        const existing = Object.values(delivery.testCases).filter((testCase) => testCase.acId === acId);
+        const prompt = buildAcTestCasePrompt({ ac, journey, steps, existing });
+        const agent = useAgentStore.getState();
+        const target = [targetWindowId].find((id) => Boolean(id) && agent.windows.some((window) => window.id === id)) ?? agent.activeWindowId;
+        const index = agent.windows.findIndex((window) => window.id === target);
+        setFeedPreview({
+            preview: {
+                prompt,
+                count: 1,
+                targetWindowId: target,
+                targetLabel: index >= 0 ? toWindowTabLabel(agent.windows[index], index) : target,
+            },
+            // 生成用例不需要把画布截图当证据，引用留空，避免污染上下文条。
+            references: [],
+        });
+    }, []);
+
     const handleNodeViewImage = useCallback((node: CanvasNodeData, imageId?: string) => {
         setPreviewNodeId(node.id);
         setPreviewImageId(imageId || null);
@@ -3624,7 +3666,16 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
 
     return (
         <main className="flex h-full min-h-0 overflow-hidden" style={{ background: theme.canvas.background, color: theme.node.text }}>
-            <CanvasSidePanel nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={focusNode} onPreviewNode={setPreviewNodeId} onHoverNode={setHoverPreviewNodeId} onInsertAsset={handleAssetInsert} />
+            <CanvasSidePanel
+                nodes={nodes}
+                selectedNodeIds={selectedNodeIds}
+                onFocusNode={focusNode}
+                onPreviewNode={setPreviewNodeId}
+                onHoverNode={setHoverPreviewNodeId}
+                onInsertAsset={handleAssetInsert}
+                onAcStatementChange={updateAcStatement}
+                onGenerateTestCases={openAcTestCasePrompt}
+            />
             <section className="relative min-w-0 flex-1 overflow-hidden">
                 <CanvasTopBar
                     title={currentProject?.title || t("canvas.projectPage.untitledCanvas")}

@@ -2,12 +2,14 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { localForageStorage } from "@/lib/localforage-storage";
+import { createTestCaseDraft, withAcRelations } from "@/lib/delivery/ac-testcase";
 import { planAcStatusUpdates, type AcResultInput } from "@/lib/delivery/run-results";
 import { nextRunStatus } from "@/lib/delivery/run-status";
 import {
     transitionAc,
     type AcceptanceCriterion,
     type AcStatus,
+    type AcTestLayer,
     type DeliveryBug,
     type DeliveryEnvironment,
     type DeliveryRun,
@@ -57,6 +59,12 @@ type DeliveryActions = {
     applyAcResults: (results: AcResultInput[], runId?: string) => { applied: string[]; rejected: { acId: string; reason: string }[] };
     upsertTestCase: (testCase: DeliveryTestCase) => void;
     removeTestCase: (id: string) => void;
+    /** D3: 从 AC 直接建用例——锚点与 acId 一起写死，报告才有得回填。 */
+    createTestCaseForAc: (acId: string, input: { title: string; file?: string; layer?: AcTestLayer }) => DeliveryTestCase | null;
+    /** D3: AC 挂旅程；换旅程时，不属于新旅程的步骤一并摘掉。 */
+    setAcJourney: (acId: string, journeyId?: string) => void;
+    /** D3: AC 挂步骤；步骤必须存在，并且自动把所属旅程补进 journeyIds。 */
+    setAcStep: (acId: string, stepId?: string) => { ok: boolean; error?: string };
     upsertBug: (bug: DeliveryBug) => void;
     removeBug: (id: string) => void;
     setBugStatus: (id: string, status: DeliveryBug["status"]) => void;
@@ -153,7 +161,7 @@ export const useDeliveryStore = create<DeliveryStore>()(
                 }),
 
             upsertAc: (ac) =>
-                set((state) => ({ acceptance: { ...state.acceptance, [ac.id]: ac } })),
+                set((state) => ({ acceptance: { ...state.acceptance, [ac.id]: withAcRelations(ac) } })),
 
             removeAc: (id) =>
                 set((state) => {
@@ -214,14 +222,85 @@ export const useDeliveryStore = create<DeliveryStore>()(
             },
 
             upsertTestCase: (testCase) =>
-                set((state) => ({ testCases: { ...state.testCases, [testCase.id]: testCase } })),
+                set((state) => {
+                    const testCases = { ...state.testCases, [testCase.id]: testCase };
+                    // testCaseIds 是派生索引：以用例自身的 acId 为准，换 AC 时旧的一边也要摘掉。
+                    const acceptance: Record<string, AcceptanceCriterion> = {};
+                    for (const [id, ac] of Object.entries(state.acceptance)) {
+                        const current = ac.testCaseIds ?? [];
+                        const shouldHave = id === testCase.acId;
+                        const has = current.includes(testCase.id);
+                        if (shouldHave === has) continue;
+                        acceptance[id] = {
+                            ...ac,
+                            testCaseIds: shouldHave ? [...current, testCase.id] : current.filter((item) => item !== testCase.id),
+                        };
+                    }
+                    if (Object.keys(acceptance).length === 0) return { testCases };
+                    return { testCases, acceptance: { ...state.acceptance, ...acceptance } };
+                }),
 
             removeTestCase: (id) =>
                 set((state) => {
                     const testCases = { ...state.testCases };
                     delete testCases[id];
-                    return { testCases };
+                    const acceptance = Object.fromEntries(
+                        Object.entries(state.acceptance).map(([acId, ac]) => [
+                            acId,
+                            (ac.testCaseIds ?? []).includes(id)
+                                ? { ...ac, testCaseIds: (ac.testCaseIds ?? []).filter((item) => item !== id) }
+                                : ac,
+                        ]),
+                    );
+                    return { testCases, acceptance };
                 }),
+
+            createTestCaseForAc: (acId, input) => {
+                const state = useDeliveryStore.getState();
+                if (!state.acceptance[acId]) return null;
+                const testCase = createTestCaseDraft({
+                    acId,
+                    title: input.title,
+                    existingIds: Object.keys(state.testCases),
+                    file: input.file,
+                    layer: input.layer,
+                });
+                if (!testCase.title) return null;
+                state.upsertTestCase(testCase);
+                return testCase;
+            },
+
+            setAcJourney: (acId, journeyId) =>
+                set((state) => {
+                    const ac = state.acceptance[acId];
+                    if (!ac) return {};
+                    const id = journeyId || "";
+                    // 换旅程时旧步骤不再属于新旅程，留着会画出「步骤挂错旅程」的错数据。
+                    const stepIds = (ac.stepIds ?? []).filter((stepId) => {
+                        const step = state.steps[stepId];
+                        return Boolean(step) && (!id || step.journeyId === id);
+                    });
+                    return { acceptance: { ...state.acceptance, [acId]: { ...ac, journeyIds: id ? [id] : [], stepIds } } };
+                }),
+
+            setAcStep: (acId, stepId) => {
+                const state = useDeliveryStore.getState();
+                const ac = state.acceptance[acId];
+                if (!ac) return { ok: false, error: `unknown AC ${acId}` };
+                if (!stepId) {
+                    set((current) => ({ acceptance: { ...current.acceptance, [acId]: { ...current.acceptance[acId], stepIds: [] } } }));
+                    return { ok: true };
+                }
+                const step = state.steps[stepId];
+                if (!step) return { ok: false, error: `unknown step ${stepId}` };
+                set((current) => ({
+                    acceptance: {
+                        ...current.acceptance,
+                        [acId]: { ...current.acceptance[acId], stepIds: [stepId], journeyIds: step.journeyId ? [step.journeyId] : [] },
+                    },
+                }));
+                return { ok: true };
+            },
 
             upsertBug: (bug) => set((state) => ({ bugs: { ...state.bugs, [bug.id]: bug } })),
 
@@ -313,7 +392,7 @@ export const useDeliveryStore = create<DeliveryStore>()(
         }),
         {
             name: "delivery-store",
-            version: 3,
+            version: 4,
             migrate: migrateDeliveryState,
             storage: createJSONStorage(() => localForageStorage),
             // Persist entities only; actions are rebuilt on hydration.
@@ -337,6 +416,21 @@ export function migrateDeliveryState(persisted: unknown, version: number) {
     const base = (persisted && typeof persisted === "object"? persisted: {}) as Record<string, unknown>;
     for (const key of ["journeys", "steps", "designs", "acceptance", "testCases", "bugs", "runs", "environments", "annotations"]) {
         if (!base[key] || typeof base[key]!== "object") base[key] = {};
+    }
+    // D3（v4）：AC 的旅程/步骤/用例索引与用例的 acId 都是新加的关联字段，
+    // 老记录上缺这些字段也要能正常读（否则 `.includes` 会在旧数据上直接抛错）。
+    const acceptance = base.acceptance as Record<string, Record<string, unknown>>;
+    for (const ac of Object.values(acceptance)) {
+        if (!ac || typeof ac !== "object") continue;
+        for (const key of ["journeyIds", "stepIds", "testCaseIds"]) {
+            if (!Array.isArray(ac[key])) ac[key] = [];
+        }
+    }
+    const testCases = base.testCases as Record<string, Record<string, unknown>>;
+    for (const testCase of Object.values(testCases)) {
+        if (!testCase || typeof testCase !== "object") continue;
+        if (typeof testCase.acId !== "string") testCase.acId = "";
+        if (testCase.selector !== undefined && typeof testCase.selector !== "string") delete testCase.selector;
     }
     void version;
     return base as DeliveryPersistedState;

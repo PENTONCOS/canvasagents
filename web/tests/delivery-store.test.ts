@@ -162,3 +162,84 @@ describe("delivery store · 旅程与设计版本 (M1)", () => {
         expect(useDeliveryStore.getState().runs["RUN-2"].status).toBe("failed");
     });
 });
+
+// D3: 用例挂 AC + AC 挂旅程/步骤。两点都必须双向一致：
+// 用例上写 acId、AC 上留 testCaseIds，删一边另一边也跟着变。
+describe("delivery store: AC ↔ 用例 / 旅程", () => {
+    function makeStep(id: string, journeyId: string, order: number) {
+        return { id, journeyId, order, title: `步骤 ${order}` };
+    }
+
+    test("createTestCaseForAc 双向挂上，并自动生成 @AC-01 锚点", () => {
+        const store = useDeliveryStore.getState();
+        store.upsertAc(makeAc("AC-01"));
+        const created = store.createTestCaseForAc("AC-01", { title: "  点击后跳转详情  " });
+        expect(created).not.toBeNull();
+        expect(created?.id).toBe("TC-01");
+        expect(created?.acId).toBe("AC-01");
+        expect(created?.selector).toBe("@AC-01");
+        expect(created?.title).toBe("点击后跳转详情");
+        const state = useDeliveryStore.getState();
+        expect(state.testCases["TC-01"].selector).toBe("@AC-01");
+        expect(state.acceptance["AC-01"].testCaseIds).toEqual(["TC-01"]);
+    });
+
+    test("createTestCaseForAc 拒绝未知 AC 与空标题", () => {
+        const store = useDeliveryStore.getState();
+        store.upsertAc(makeAc("AC-01"));
+        expect(store.createTestCaseForAc("AC-99", { title: "x" })).toBeNull();
+        expect(store.createTestCaseForAc("AC-01", { title: "   " })).toBeNull();
+        expect(Object.keys(useDeliveryStore.getState().testCases)).toEqual([]);
+    });
+
+    test("removeTestCase 摘掉 AC 上的索引，AC 本身保留", () => {
+        const store = useDeliveryStore.getState();
+        store.upsertAc(makeAc("AC-01"));
+        const created = store.createTestCaseForAc("AC-01", { title: "用例一" });
+        store.removeTestCase(created?.id ?? "");
+        const state = useDeliveryStore.getState();
+        expect(state.testCases[created?.id ?? ""]).toBeUndefined();
+        expect(state.acceptance["AC-01"].testCaseIds).toEqual([]);
+    });
+
+    test("upsertTestCase 换 AC 时旧 AC 的索引也要摘掉", () => {
+        const store = useDeliveryStore.getState();
+        store.upsertAc(makeAc("AC-01"));
+        store.upsertAc(makeAc("AC-02"));
+        store.upsertTestCase({ id: "TC-01", acId: "AC-01", title: "换挂" });
+        expect(useDeliveryStore.getState().acceptance["AC-01"].testCaseIds).toEqual(["TC-01"]);
+        store.upsertTestCase({ id: "TC-01", acId: "AC-02", title: "换挂", selector: "@AC-02" });
+        const state = useDeliveryStore.getState();
+        expect(state.acceptance["AC-01"].testCaseIds).toEqual([]);
+        expect(state.acceptance["AC-02"].testCaseIds).toEqual(["TC-01"]);
+    });
+
+    test("setAcStep 挂步骤时自动补所属旅程", () => {
+        const store = useDeliveryStore.getState();
+        store.upsertAc(makeAc("AC-01"));
+        store.upsertJourney({ id: "J-01", title: "下单", stepIds: ["J-01-S1"] });
+        store.upsertStep(makeStep("J-01-S1", "J-01", 1));
+        expect(store.setAcStep("AC-01", "J-01-S1").ok).toBe(true);
+        const ac = useDeliveryStore.getState().acceptance["AC-01"];
+        expect(ac.journeyIds).toEqual(["J-01"]);
+        expect(ac.stepIds).toEqual(["J-01-S1"]);
+    });
+
+    test("setAcStep 拒绝未知步骤，setAcJourney 摘掉不属于新旅程的步骤", () => {
+        const store = useDeliveryStore.getState();
+        store.upsertAc(makeAc("AC-01"));
+        store.upsertJourney({ id: "J-01", title: "下单", stepIds: ["J-01-S1"] });
+        store.upsertJourney({ id: "J-02", title: "退款", stepIds: ["J-02-S1"] });
+        store.upsertStep(makeStep("J-01-S1", "J-01", 1));
+        store.upsertStep(makeStep("J-02-S1", "J-02", 1));
+        expect(store.setAcStep("AC-01", "J-99-S9").ok).toBe(false);
+        store.setAcStep("AC-01", "J-01-S1");
+        store.setAcJourney("AC-01", "J-02");
+        const ac = useDeliveryStore.getState().acceptance["AC-01"];
+        expect(ac.journeyIds).toEqual(["J-02"]);
+        // 旧旅程的步骤不能跟着挂到新旅程上。
+        expect(ac.stepIds).toEqual([]);
+        store.setAcJourney("AC-01", undefined);
+        expect(useDeliveryStore.getState().acceptance["AC-01"].journeyIds).toEqual([]);
+    });
+});
