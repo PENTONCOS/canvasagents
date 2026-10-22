@@ -122,4 +122,43 @@ describe("delivery store · 旅程与设计版本 (M1)", () => {
         store.selectDesign("D-99-Z");
         expect(useDeliveryStore.getState().designs["D-01-A"].selected).toBe(true);
     });
+
+    test("appendRunRound 把无锚点轮次记成 skipped，而不是 failed", () => {
+        const store = useDeliveryStore.getState();
+        store.upsertRun({
+            id: "RUN-1",
+            kind: "test",
+            command: "npm test",
+            cwd: "/tmp",
+            startedAt: "2026-10-22T00:00:00.000Z",
+            status: "running",
+            results: [],
+        });
+        store.appendRunRound("RUN-1", {
+            index: 1,
+            startedAt: "2026-10-22T00:00:00.000Z",
+            status: "skipped",
+            passed: 0,
+            failed: 0,
+            skipped: 3,
+            failures: [],
+        });
+        expect(useDeliveryStore.getState().runs["RUN-1"].status).toBe("skipped");
+    });
+
+    test("appendRunRound 里先失败后无锚点，运行仍是 failed", () => {
+        const store = useDeliveryStore.getState();
+        store.upsertRun({
+            id: "RUN-2",
+            kind: "test",
+            command: "npm test",
+            cwd: "/tmp",
+            startedAt: "2026-10-22T00:00:00.000Z",
+            status: "running",
+            results: [],
+        });
+        store.appendRunRound("RUN-2", { index: 1, startedAt: "t1", status: "failed", passed: 0, failed: 1, skipped: 0, failures: [] });
+        store.appendRunRound("RUN-2", { index: 2, startedAt: "t2", status: "skipped", passed: 0, failed: 0, skipped: 2, failures: [] });
+        expect(useDeliveryStore.getState().runs["RUN-2"].status).toBe("failed");
+    });
 });

@@ -1,8 +1,9 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import { planAcStatusUpdates, type AcResultInput } from "@/lib/delivery/run-results";
 import { localForageStorage } from "@/lib/localforage-storage";
+import { planAcStatusUpdates, type AcResultInput } from "@/lib/delivery/run-results";
+import { nextRunStatus } from "@/lib/delivery/run-status";
 import {
     transitionAc,
     type AcceptanceCriterion,
@@ -267,7 +268,8 @@ export const useDeliveryStore = create<DeliveryStore>()(
                     const run = state.runs[runId];
                     if (!run) return {};
                     const rounds = [...(run.rounds || []), round];
-                    const status = round.status === "passed" ? "passed" : round.status === "error" ? "error" : "failed";
+                    // 状态推导集中到 nextRunStatus：skipped（无锚点）不再冒充 failed。
+                    const status = nextRunStatus(rounds);
                     return {
                         runs: {
                             ...state.runs,

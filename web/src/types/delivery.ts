@@ -103,7 +103,7 @@ export type DeliveryBug = {
     nodeId?: string;
 };
 
-export type VerificationRunStatus = "running" | "passed" | "failed" | "error";
+export type VerificationRunStatus = "running" | "passed" | "failed" | "error" | "skipped";
 
 /** M4: 一次运行里的单轮记录。修复循环的每一轮都要留痕，回放时按轮看。 */
 export type DeliveryRunRound = {
