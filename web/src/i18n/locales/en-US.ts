@@ -1711,10 +1711,10 @@ export default {
             },
         },
         quota: {
-            quotaWarnTokens: "Token usage is close to the limit ({{used}} / {{limit}}).",
-            quotaWarnRuns: "Verification runs are close to the limit ({{used}} / {{limit}}).",
-            quotaExhaustedTokens: "Token budget exhausted ({{used}} / {{limit}}). Raise the budget to continue.",
-            quotaExhaustedRuns: "Verification run budget exhausted ({{used}} / {{limit}}). The run button is disabled.",
+            warnTokens: "Token usage is close to the limit ({{used}} / {{limit}}).",
+            warnRuns: "Verification runs are close to the limit ({{used}} / {{limit}}).",
+            exhaustedTokens: "Token budget exhausted ({{used}} / {{limit}}). Raise the budget to continue.",
+            exhaustedRuns: "Verification run budget exhausted ({{used}} / {{limit}}). The run button is disabled.",
         },
         panel: {
             driver: "Agent driver",

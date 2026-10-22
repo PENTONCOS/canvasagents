@@ -1622,10 +1622,10 @@ export default {
             },
         },
         quota: {
-            quotaWarnTokens: "Token 用量已接近上限（{{used}} / {{limit}}），继续会很快用完。",
-            quotaWarnRuns: "验收运行次数已接近上限（{{used}} / {{limit}}）。",
-            quotaExhaustedTokens: "Token 额度已用尽（{{used}} / {{limit}}），请调整额度后再继续。",
-            quotaExhaustedRuns: "验收运行次数已用尽（{{used}} / {{limit}}），运行按钮已停用。",
+            warnTokens: "Token 用量已接近上限（{{used}} / {{limit}}），继续会很快用完。",
+            warnRuns: "验收运行次数已接近上限（{{used}} / {{limit}}）。",
+            exhaustedTokens: "Token 额度已用尽（{{used}} / {{limit}}），请调整额度后再继续。",
+            exhaustedRuns: "验收运行次数已用尽（{{used}} / {{limit}}），运行按钮已停用。",
         },
         panel: {
             driver: "Agent 驱动",

@@ -19,6 +19,22 @@ let threads = [
     { id: "thread-a", preview: "@图片1 把这张图变为蓝色调的，同明度…", name: "蓝色调改图", createdAt: 1789000000, updatedAt: 1789100000 },
     { id: "thread-b", preview: "@图片1 把这张图变为蓝色调的，同明度…", name: "第二次尝试", createdAt: 1788000000, updatedAt: 1788100000 },
 ];
+// M5 验收①③：记录真的收到过哪些 turn（断言「两个 driver 都能干活」），
+// 以及下一次 turn 要回吐多少 token（断言「额度耗尽的提示与拦截」）。
+let turns = [];
+let usageNext = { input_tokens: 1200, cached_input_tokens: 0, output_tokens: 800 };
+const sseClients = new Set();
+
+function broadcast(event, payload) {
+    const chunk = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+    for (const client of sseClients) {
+        try {
+            client.write(chunk);
+        } catch {
+            sseClients.delete(client);
+        }
+    }
+}
 
 function cors(res) {
     res.setHeader("access-control-allow-origin", "*");
@@ -56,9 +72,19 @@ const server = createServer(async (req, res) => {
     }
 
     // 测试辅助：断言服务端到底收到了什么
-    if (path === "/__state") return json(res, { deleted, threads: threads.map((item) => item.id), claudeThreads: claudeThreads.map((item) => item.id) });
+    if (path === "/__state") return json(res, { deleted, threads: threads.map((item) => item.id), claudeThreads: claudeThreads.map((item) => item.id), turns });
+    // 用例要把「额度打爆」时改这里：指定下一轮 turn 回吐的 token 数。
+    if (path === "/__usage-config" && req.method === "POST") {
+        const body = JSON.parse((await readBody(req).catch(() => "{}")) || "{}");
+        if (typeof body.input_tokens === "number") usageNext.input_tokens = body.input_tokens;
+        if (typeof body.cached_input_tokens === "number") usageNext.cached_input_tokens = body.cached_input_tokens;
+        if (typeof body.output_tokens === "number") usageNext.output_tokens = body.output_tokens;
+        return json(res, { ok: true, usageNext });
+    }
     if (path === "/__reset") {
         deleted = [];
+        turns = [];
+        usageNext = { input_tokens: 1200, cached_input_tokens: 0, output_tokens: 800 };
         verifyCalls = 0;
         verifyFailures = 1;
         verifyResults = null;
@@ -84,8 +110,12 @@ const server = createServer(async (req, res) => {
             pendingApprovals: [],
         };
         res.write(`event: hello\ndata: ${JSON.stringify(hello)}\n\n`);
+        sseClients.add(res);
         const keepAlive = setInterval(() => res.write(": ping\n\n"), 15000);
-        req.on("close", () => clearInterval(keepAlive));
+        req.on("close", () => {
+            clearInterval(keepAlive);
+            sseClients.delete(res);
+        });
         return;
     }
 
@@ -179,6 +209,38 @@ const server = createServer(async (req, res) => {
     if (path === "/agent/claude/models") return json(res, { data: [{ id: "claude-sonnet-4-5", displayName: "Claude Sonnet 4.5", isDefault: true }] });
     if (path === "/agent/claude/skills") return json(res, { ok: true, data: [], note: "claude driver 暂不支持技能市场" });
     if (path === "/agent/claude/history/ack") return json(res, { ok: true });
+
+    // M5 验收①：两个 driver 的 turn 都要真的跑一遍。
+    // 响应后异步补事件流，模拟「接单 → 回话 → 报用量」；前端靠事件收尾，
+    // 只回 HTTP 200 的话面板会一直停在「发送中」，正好也能验证事件接线。
+    if (path === "/agent/codex/turn" && req.method === "POST") {
+        const body = JSON.parse((await readBody(req).catch(() => "{}")) || "{}");
+        const threadId = body.threadId || currentThread();
+        const turnId = `turn-${turns.length + 1}`;
+        turns.push({ driver: "codex", threadId, turnId, text: body.messageText || "" });
+        json(res, { ok: true, threadId, turnId });
+        setTimeout(() => {
+            broadcast("codex_state", { busy: true, threadId, turnId });
+            broadcast("agent_event", { type: "item.completed", threadId, turn_id: turnId, item: { type: "agent_message", text: `mock codex reply ${turnId}` } });
+            broadcast("agent_event", { type: "usage.updated", threadId, usage: { ...usageNext } });
+            broadcast("codex_state", { busy: false, threadId, turnId });
+        }, 50);
+        return;
+    }
+
+    if (path === "/agent/claude/turn" && req.method === "POST") {
+        const body = JSON.parse((await readBody(req).catch(() => "{}")) || "{}");
+        const threadId = body.threadId || claudeThreads[0]?.id || "";
+        const turnId = `cturn-${turns.length + 1}`;
+        turns.push({ driver: "claude", threadId, turnId, text: body.messageText || "" });
+        json(res, { ok: true, threadId, turnId });
+        setTimeout(() => {
+            broadcast("agent_event", { type: "assistant_message", threadId, text: `mock claude reply ${turnId}` });
+            broadcast("agent_event", { type: "usage.updated", threadId, usage: { ...usageNext } });
+            broadcast("agent_done", { threadId, code: 0, agent: "claude" });
+        }, 50);
+        return;
+    }
 
     await readBody(req).catch(() => "");
     return json(res, { ok: true });
