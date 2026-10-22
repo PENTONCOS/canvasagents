@@ -5,6 +5,12 @@ export type AcStatus = "draft" | "ready" | "failing" | "passing" | "blocked";
 
 export type TestCaseResult = "pass" | "fail" | "skip";
 
+/** F1: 验收一览里的「怎么验」——一条用例靠哪一层证明。 */
+export type AcTestLayer = "unit" | "component" | "daemon" | "e2e" | "manual";
+
+/** 展示顺序固定：越靠左越便宜，越靠右越接近真实用户。 */
+export const AC_LAYER_ORDER: AcTestLayer[] = ["unit", "component", "daemon", "e2e", "manual"];
+
 export type DeliveryTestCase = {
     id: string;
     acId: string;
@@ -12,6 +18,8 @@ export type DeliveryTestCase = {
     file?: string; // test file path
     selector?: string; // test name / tag anchor ("@AC-04")
     lastResult?: TestCaseResult;
+    /** 这条用例属于哪一层；不填时按文件路径/选择器推断（见 acceptance-overview）。 */
+    layer?: AcTestLayer;
 };
 
 export type AcceptanceCriterion = {

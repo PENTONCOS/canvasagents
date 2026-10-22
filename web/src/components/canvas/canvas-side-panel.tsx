@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { canvasThemes, type CanvasTheme } from "@/lib/canvas-theme";
 import { AC_STATUS_COLOR, acStatusLabelKey, countAcByStatus } from "@/lib/delivery/ac-status";
+import { AcceptanceOverviewModal } from "./acceptance-overview";
 import { createOrchestrator, reduceOrchestrator, replayOrchestrator } from "@/lib/delivery/orchestrator";
 import { RUN_STATUS_COLOR, runStatusLabelKey } from "@/lib/delivery/run-status";
 import { acResultsFromVerify, roundFromVerify, type VerifyPayload } from "@/lib/delivery/verify-plan";
@@ -148,6 +149,7 @@ function DeliveryAcceptanceTab({ theme, onFocusNode }: { theme: CanvasTheme; onF
     const acceptance = useDeliveryStore((state) => state.acceptance);
     const items = useMemo(() => Object.values(acceptance).sort((a, b) => a.id.localeCompare(b.id)), [acceptance]);
     const counts = useMemo(() => countAcByStatus(items.map((item) => item.status)), [items]);
+    const [overviewOpen, setOverviewOpen] = useState(false);
 
     if (items.length === 0) {
         return (
@@ -163,6 +165,15 @@ function DeliveryAcceptanceTab({ theme, onFocusNode }: { theme: CanvasTheme; onF
                 <span>{t("canvas.sidePanel.acTotal", { count: items.length })}</span>
                 <span style={{ color: AC_STATUS_COLOR.passing }}>{t("canvas.sidePanel.acPassing", { count: counts.passing })}</span>
                 <span style={{ color: AC_STATUS_COLOR.failing }}>{t("canvas.sidePanel.acFailing", { count: counts.failing })}</span>
+                <button
+                    type="button"
+                    className="ml-auto rounded border px-1.5 py-0.5 text-[11px] transition-opacity hover:opacity-80"
+                    style={{ borderColor: theme.node.stroke, color: theme.node.text }}
+                    onClick={() => setOverviewOpen(true)}
+                    data-testid="acceptance-overview-open"
+                >
+                    {t("canvas.acOverview.open")}
+                </button>
             </div>
             {items.map((item) => (
                 <button
@@ -188,6 +199,7 @@ function DeliveryAcceptanceTab({ theme, onFocusNode }: { theme: CanvasTheme; onF
                     </span>
                 </button>
             ))}
+            <AcceptanceOverviewModal open={overviewOpen} theme={theme} onClose={() => setOverviewOpen(false)} onFocusNode={onFocusNode} />
         </div>
     );
 }
