@@ -1,4 +1,5 @@
 import i18n from "@/i18n";
+import { readSketchShapes } from "@/lib/canvas/sketch-node-utils";
 import type { CanvasNodeData } from "@/types/canvas";
 import { CanvasNodeType } from "@/types/canvas";
 import type {
@@ -27,10 +28,10 @@ export type FeedLookup = {
     environments: Record<string, DeliveryEnvironment>;
 };
 
-export type FeedKind = "requirement" | "journey" | "acceptance" | "design" | "bug" | "environment" | "image" | "text" | "media" | "other";
+export type FeedKind = "requirement" | "journey" | "acceptance" | "design" | "bug" | "environment" | "image" | "markdown" | "preview" | "sketch" | "text" | "media" | "other";
 
 /** 分组顺序固定：先交付语义，再素材。 */
-export const KIND_ORDER: FeedKind[] = ["requirement", "journey", "acceptance", "design", "bug", "environment", "image", "text", "media", "other"];
+export const KIND_ORDER: FeedKind[] = ["requirement", "journey", "acceptance", "design", "bug", "environment", "image", "markdown", "preview", "sketch", "text", "media", "other"];
 
 const SECTION_KEY: Record<FeedKind, string> = {
     requirement: "canvas.nodeToolbar.feedSectionRequirement",
@@ -40,6 +41,9 @@ const SECTION_KEY: Record<FeedKind, string> = {
     bug: "canvas.nodeToolbar.feedSectionBug",
     environment: "canvas.nodeToolbar.feedSectionEnvironment",
     image: "canvas.nodeToolbar.feedSectionImage",
+    markdown: "canvas.nodeToolbar.feedSectionMarkdown",
+    preview: "canvas.nodeToolbar.feedSectionPreview",
+    sketch: "canvas.nodeToolbar.feedSectionSketch",
     text: "canvas.nodeToolbar.feedSectionText",
     media: "canvas.nodeToolbar.feedSectionMedia",
     other: "canvas.nodeToolbar.feedSectionOther",
@@ -66,6 +70,13 @@ export function feedKindOf(node: CanvasNodeData): FeedKind | null {
             return "environment";
         case CanvasNodeType.Image:
             return "image";
+        // A1/A2/A3：三类内容节点同样要能交接给 Agent，否则「框选任意画布内容」在这三种上会静默丢内容。
+        case "markdown":
+            return "markdown";
+        case "preview":
+            return "preview";
+        case "sketch":
+            return "sketch";
         case CanvasNodeType.Text:
             return "text";
         case CanvasNodeType.Video:
@@ -166,6 +177,21 @@ function lineForNode(node: CanvasNodeData, kind: FeedKind, lookup: FeedLookup): 
         }
         case "image":
             return `- ${node.title}（${i18n.t("canvas.nodeToolbar.feedImageTag")}）`;
+        case "markdown": {
+            // 只带摘要：整篇 Markdown 可能很长，Agent 需要全文时按标题回画布取。
+            const body = excerpt(metadata?.content);
+            return body ? `- ${node.title}：${body}` : `- ${node.title}`;
+        }
+        case "preview": {
+            // 预览节点的地址存在 metadata.preview.url（M4 起就是嵌套结构），
+            // 兼容早期直接写 metadata.url 的旧节点。
+            const url = metadata?.preview?.url || metadata?.url || "";
+            return url ? `- ${node.title}：${url}` : `- ${node.title}`;
+        }
+        case "sketch": {
+            const count = readSketchShapes(metadata?.sketch).length;
+            return `- ${node.title}（${i18n.t("canvas.nodeToolbar.feedSketchShapes", { count })}）`;
+        }
         default: {
             const body = excerpt(metadata?.statement || metadata?.content || metadata?.prompt || metadata?.composerContent);
             return body ? `- ${node.title}：${body}` : `- ${node.title}`;

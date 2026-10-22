@@ -123,6 +123,26 @@ describe("框选任意节点 → 结构化投喂", () => {
         expect(collectEvidenceNodeIds(selected, { bugs: { "BUG-09": bug({ id: "BUG-09" }) }, annotations: {} })).toEqual([]);
     });
 
+    test("三类内容节点（Markdown / 网页预览 / 线框草图）都能投喂，不再静默丢失", () => {
+        const nodes = [
+            node({ id: "md", type: "markdown", title: "改约说明", metadata: { content: "# 改约规则\n- 提前 24 小时" } }),
+            node({ id: "pv", type: "preview", title: "改约页", metadata: { preview: { url: "https://example.com/reschedule" } } }),
+            node({ id: "sk", type: "sketch", title: "预约表单", metadata: { sketch: { shapes: [{ id: "s1", shape: "rect", from: { x: 0, y: 0 }, to: { x: 0.4, y: 0.3 } }] } } }),
+        ];
+        expect(nodes.map((item) => feedKindOf(item))).toEqual(["markdown", "preview", "sketch"]);
+        expect(feedableNodes(nodes)).toHaveLength(3);
+        const prompt = buildFeedPrompt(nodes, emptyLookup);
+        expect(prompt).toContain("【Markdown 文档】");
+        expect(prompt).toContain("【网页预览】");
+        expect(prompt).toContain("【线框草图】");
+        expect(prompt).toContain("改约规则");
+        expect(prompt).toContain("https://example.com/reschedule");
+        expect(prompt).toContain("1 个图形");
+        // 分组顺序固定：Markdown → 网页预览 → 线框草图。
+        const order = ["【Markdown 文档】", "【网页预览】", "【线框草图】"].map((section) => prompt.indexOf(section));
+        expect([...order].sort((a, b) => a - b)).toEqual(order);
+    });
+
     test("旅程节点用实体标题而不是节点标题（节点常被改名）", () => {
         const journeys: Record<string, Journey> = { "J-01": { id: "J-01", title: "新用户注册", stepIds: [], nodeId: "journey" } };
         const prompt = buildFeedPrompt([node({ id: "journey", type: CanvasNodeType.Journey, title: "节点上的旧名字" })], { ...emptyLookup, journeys });

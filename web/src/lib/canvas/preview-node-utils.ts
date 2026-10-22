@@ -74,6 +74,18 @@ export function resolvePreviewFailure(input: { loaded: boolean; failed: boolean;
  * 超时之后再决定文案：探测说服务可达却始终没有 onLoad，基本就是被 X-Frame-Options/CSP 拦了；
  * 探测说不可达则按网络问题提示；探测未知就如实说“超时”。只在已判定要出错误卡后调用。
  */
+/**
+ * Chrome 对「连接被拒绝」的地址也会给 iframe 一个 onLoad（它显示的是自己的错误页），
+ * 而这时 contentDocument 不可读，onError 也不会来——只按 frame 事件判断会永远停在白屏。
+ * 所以补一条兜底：frame 已经 onLoad、但 no-cors 探测连续失败时，按「网络不可达」出错误卡。
+ * 要求连续失败两次（默认），避免一次网络抖动就把能打开的页面盖掉。
+ */
+export function resolveLoadedFrameFailure(input: { loaded: boolean; probeStatus: PreviewProbeStatus; probeFailures: number; minFailures?: number }): PreviewFailure | null {
+    if (!input.loaded) return null;
+    if (input.probeStatus !== "unreachable") return null;
+    return input.probeFailures >= (input.minFailures ?? 2) ? "unreachable" : null;
+}
+
 export function classifyPreviewFailure(failure: PreviewFailure, probeStatus: PreviewProbeStatus): PreviewFailure {
     if (failure !== "timeout") return failure;
     if (probeStatus === "reachable") return "blocked";

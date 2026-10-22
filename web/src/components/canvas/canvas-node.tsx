@@ -10,6 +10,7 @@ import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
 import { AC_STATUS_COLOR, acStatusLabelKey } from "@/lib/delivery/ac-status";
 import { RUN_STATUS_COLOR, runStatusLabelKey } from "@/lib/delivery/run-status";
+import { buildDesignSelectionOps } from "@/lib/delivery/design-selection";
 import { CanvasAnnotationLayer } from "./canvas-annotation-layer";
 import { useDeliveryStore } from "@/stores/use-delivery-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -589,9 +590,23 @@ function ImageAnnotationOverlay({ node, onCreateBug }: { node: CanvasNodeData; o
 
 // M0: shared compact renderer for delivery-domain nodes (requirement/journey/design/…).
 // Shows the type-specific primary text plus status; full editing lives in each node's Panel.
-function DeliveryNodeContent({ node, theme }: NodeContentRendererProps) {
+function DeliveryNodeContent({ node, theme, pluginContext }: NodeContentRendererProps) {
     const { t } = useTranslation();
     const meta = node.metadata;
+    // 设计版本实体以 nodeId 挂回节点；选定动作要同时改实体（store）和节点 metadata（徽标/刷新后仍唯一）。
+    const designs = useDeliveryStore((state) => state.designs);
+    const selectDesign = useDeliveryStore((state) => state.selectDesign);
+    const design = useMemo(() => Object.values(designs).find((item) => item.nodeId === node.id), [designs, node.id]);
+    const canSelectDesign = node.type === CanvasNodeType.Design && Boolean(design) && !meta?.selected;
+    const handleSelectDesign = useCallback(
+        (event: React.MouseEvent<HTMLButtonElement>) => {
+            event.stopPropagation();
+            if (!design || !pluginContext) return;
+            selectDesign(design.id);
+            pluginContext.applyOps(buildDesignSelectionOps(pluginContext.getNodes(), node.id));
+        },
+        [design, node.id, pluginContext, selectDesign],
+    );
     // AC 的状态以 store 为准（测试结果回填的是实体，不是节点元数据）。
     const acStatus = useDeliveryStore((state) => (meta?.acId ? state.acceptance[meta.acId]?.status : undefined));
     // M4: 运行节点显示的是最近一次运行的真实状态，不是节点上的静态文案。
@@ -634,6 +649,18 @@ function DeliveryNodeContent({ node, theme }: NodeContentRendererProps) {
                     {t("canvas.node.delivery.emptyHint")}
                 </p>
             )}
+            {canSelectDesign ? (
+                <button
+                    type="button"
+                    className="mt-auto flex h-6 w-fit items-center rounded-md border px-2 text-[10px] font-medium"
+                    style={{ borderColor: theme.node.stroke, color: theme.node.text }}
+                    onMouseDown={(event) => event.stopPropagation()}
+                    onClick={handleSelectDesign}
+                    data-design-select
+                >
+                    {t("canvas.node.delivery.setSelected")}
+                </button>
+            ) : null}
             {meta?.url && (
                 <span className="truncate text-[10px]" style={{ color: theme.node.muted }}>
                     {meta.url}

@@ -16,7 +16,7 @@ import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
 import { registerNodeDefinitions } from "@/lib/canvas/node-registry";
-import { DEFAULT_PREVIEW_URL, PREVIEW_NODE_TYPE, classifyPreviewFailure, normalizePreviewUrl, resolvePreviewFailure, type PreviewFailure, type PreviewProbeStatus } from "@/lib/canvas/preview-node-utils";
+import { DEFAULT_PREVIEW_URL, PREVIEW_NODE_TYPE, classifyPreviewFailure, normalizePreviewUrl, resolveLoadedFrameFailure, resolvePreviewFailure, type PreviewFailure, type PreviewProbeStatus } from "@/lib/canvas/preview-node-utils";
 import { randomId } from "@/lib/utils";
 import { useAgentStore, type AgentAttachment } from "@/stores/use-agent-store";
 import { requestAgentCaptureSilently } from "@/services/api/canvas-agent";
@@ -126,6 +126,9 @@ function PreviewView({ ctx }: { ctx: CanvasNodeContext }) {
     const [draftUrl, setDraftUrl] = useState(stored.url);
     const [reloadKey, setReloadKey] = useState(0);
     const [status, setStatus] = useState<ProbeStatus>("unknown");
+    // 连续探测失败次数：Chrome 对拒绝连接的地址也给 onLoad（自己的错误页），frame 事件看不到失败，
+    // 只能靠这个计数把白屏错误页换成可读错误卡（见 resolveLoadedFrameFailure）。
+    const [probeFailures, setProbeFailures] = useState(0);
     const [busy, setBusy] = useState(false);
     const [notice, setNotice] = useState("");
     const frameRef = useRef<HTMLIFrameElement>(null);
@@ -179,6 +182,7 @@ function PreviewView({ ctx }: { ctx: CanvasNodeContext }) {
                 await probeDevServer(url, controller.signal);
                 if (!disposed) {
                     setStatus("reachable");
+                    setProbeFailures(0);
                     if (previousStatusRef.current === "unreachable") {
                         const { url: endpoint, token } = useAgentStore.getState();
                         requestAgentCaptureSilently(endpoint, token, { tag: "preview" });
@@ -188,6 +192,7 @@ function PreviewView({ ctx }: { ctx: CanvasNodeContext }) {
             } catch {
                 if (!disposed) {
                     setStatus("unreachable");
+                    setProbeFailures((count) => count + 1);
                     previousStatusRef.current = "unreachable";
                 }
             } finally {
@@ -210,9 +215,12 @@ function PreviewView({ ctx }: { ctx: CanvasNodeContext }) {
     }, [autoRefreshMs, url]);
 
     const current = frame.key === frameKey ? frame : { key: frameKey, loaded: false, failed: false, expired: false, blocked: false };
-    const rawFailure: PreviewFailure | null = current.blocked
-        ? "blocked"
-        : resolvePreviewFailure({ loaded: current.loaded, failed: current.failed, elapsedMs: current.expired ? FRAME_LOAD_TIMEOUT_MS : 0, timeoutMs: FRAME_LOAD_TIMEOUT_MS });
+    const rawFailure: PreviewFailure | null =
+        (current.blocked
+            ? "blocked"
+            : null) ??
+        resolveLoadedFrameFailure({ loaded: current.loaded, probeStatus: status, probeFailures }) ??
+        resolvePreviewFailure({ loaded: current.loaded, failed: current.failed, elapsedMs: current.expired ? FRAME_LOAD_TIMEOUT_MS : 0, timeoutMs: FRAME_LOAD_TIMEOUT_MS });
     const failure: PreviewFailure | null = rawFailure ? classifyPreviewFailure(rawFailure, status) : null;
 
     const handleFrameLoad = useCallback(() => {
@@ -248,6 +256,7 @@ function PreviewView({ ctx }: { ctx: CanvasNodeContext }) {
     const retry = useCallback(() => {
         setNotice("");
         setStatus("unknown");
+        setProbeFailures(0);
         setReloadKey((value) => value + 1);
     }, []);
 

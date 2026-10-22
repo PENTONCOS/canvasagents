@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { classifyPreviewFailure, normalizePreviewUrl, resolvePreviewFailure } from "@/lib/canvas/preview-node-utils";
+import { classifyPreviewFailure, normalizePreviewUrl, resolveLoadedFrameFailure, resolvePreviewFailure } from "@/lib/canvas/preview-node-utils";
 
 describe("preview node utils (A2) — URL normalization", () => {
     test("empty input reports empty instead of falling back to localhost", () => {
@@ -66,5 +66,17 @@ describe("preview node utils (A2) — failure resolution", () => {
         // 明确失败/已判定被拦的情况不受探测影响。
         expect(classifyPreviewFailure("unreachable", "reachable")).toBe("unreachable");
         expect(classifyPreviewFailure("blocked", "unknown")).toBe("blocked");
+    });
+
+    test("frame 已 onLoad 但探测连续失败 → 按不可达出错误卡（Chrome 的错误页也会触发 load）", () => {
+        // 一次失败还不够：网络抖一下不能把能打开的页面盖掉。
+        expect(resolveLoadedFrameFailure({ loaded: true, probeStatus: "unreachable", probeFailures: 1 })).toBeNull();
+        expect(resolveLoadedFrameFailure({ loaded: true, probeStatus: "unreachable", probeFailures: 2 })).toBe("unreachable");
+        // 探测说通/未知，或 frame 还没 load，都不下结论。
+        expect(resolveLoadedFrameFailure({ loaded: true, probeStatus: "reachable", probeFailures: 5 })).toBeNull();
+        expect(resolveLoadedFrameFailure({ loaded: true, probeStatus: "unknown", probeFailures: 0 })).toBeNull();
+        expect(resolveLoadedFrameFailure({ loaded: false, probeStatus: "unreachable", probeFailures: 3 })).toBeNull();
+        // 阈值可调。
+        expect(resolveLoadedFrameFailure({ loaded: true, probeStatus: "unreachable", probeFailures: 2, minFailures: 3 })).toBeNull();
     });
 });
