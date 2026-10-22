@@ -114,6 +114,13 @@ export type DeliveryRunRound = {
     passed: number;
     failed: number;
     skipped: number;
+    /** E2: 报告里的用例总数（含无锚点用例）。 */
+    total?: number;
+    /** E2: 没有 @AC 锚点、只能记 skip 的用例数。 */
+    unanchored?: number;
+    /** E2: 报告内容指纹，用于「同一份报告重复到达」去重。 */
+    reportId?: string;
+    reportPath?: string;
     failures: { acId?: string; testCaseId?: string; message?: string }[];
     changedFiles?: string[];
 };

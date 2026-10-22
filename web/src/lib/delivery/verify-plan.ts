@@ -24,6 +24,10 @@ export type VerifyPayload = {
     results?: VerifyAcResult[];
     command?: { ok?: boolean; exitCode: number | null; output?: string };
     error?: string;
+    /** E2: 桥端解析后的结构化摘要；新桥端必带，老桥端没有时由 verify-report 兼容推导。 */
+    summary?: import("@/lib/delivery/verify-report").VerifyReportSummary;
+    runId?: string;
+    roundIndex?: number;
 };
 
 /** 失败消息只留最后一行，够定位是哪条断言，又不会把整段输出塞进 store。 */

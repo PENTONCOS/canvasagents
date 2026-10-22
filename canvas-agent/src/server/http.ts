@@ -23,6 +23,7 @@ import { captureWall, listWall, listWindows, pickCaptureWindow, readWallFile } f
 import { rewriteAgentDriverPath } from "./agent-driver-route.js";
 import { deploymentStatus, probeHealth, runCommand } from "../delivery/deployer.js";
 import { isReportType, parseReport, summarizeAcResults } from "../delivery/test-report.js";
+import { outputTail, reportFingerprint, summarizeVerifyRaw, summarizeVerifyReport, VERIFY_EVENT_TYPE, type VerifyReportSummary, type VerifyRunEvent } from "../delivery/verify-report.js";
 
 export type StartHttpServerOptions = { skipVersionCheck?: boolean };
 
@@ -234,32 +235,75 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
         const cwd = String(req.body?.cwd || "");
         const reportPath = String(req.body?.reportPath || "");
         const reportType = String(req.body?.reportType || "playwright");
+        // 轮次归属由调用方的编排器给出（runId + roundIndex），桥端只负责回放，不另起编号。
+        const runId = String(req.body?.runId || "");
+        const roundIndex = Number(req.body?.roundIndex) || 0;
         if (!command) return void res.status(400).json({ ok: false, error: "command required" });
         if (!path.isAbsolute(cwd)) return void res.status(400).json({ ok: false, error: "cwd must be absolute" });
         if (!isReportType(reportType)) return void res.status(400).json({ ok: false, error: `unsupported report type: ${reportType}` });
 
         const startedAt = new Date().toISOString();
         const commandResult = await runCommand(command, cwd, Number(req.body?.timeoutMs) || 180_000);
+        const finishedAt = new Date().toISOString();
         const resolvedReport = reportPath ? path.resolve(cwd, reportPath) : "";
+
+        // E2: 每轮结束都把结构化结果推进事件流。网页断线重连/轮次去重都靠 reportId，
+        // 不靠「调了几次接口」——同一份报告重复到达只应记一轮。
+        const publish = (summary: VerifyReportSummary) => {
+            const event: VerifyRunEvent = {
+                type: VERIFY_EVENT_TYPE,
+                ...summary,
+                runId,
+                roundIndex,
+                startedAt,
+                finishedAt,
+                exitCode: commandResult.exitCode,
+                // 失败签名要看得到「这一轮输出变了没」，所以把最后一行带进事件。
+                outputTail: outputTail(commandResult.output),
+            };
+            session.emitAll(VERIFY_EVENT_TYPE, event);
+            return event;
+        };
+
         if (!resolvedReport) {
             // 没有报告就只有退出码，不编造 AC 结果。
-            return void res.json({ ok: commandResult.ok, startedAt, finishedAt: new Date().toISOString(), command: commandResult, report: null, results: [] });
+            const summary = summarizeVerifyReport({ reportType: reportType as "playwright" | "vitest", reportPath: "" });
+            publish(summary);
+            return void res.json({ ok: commandResult.ok, startedAt, finishedAt, command: commandResult, report: null, results: [], summary, runId, roundIndex });
         }
+        let reportText: string;
+        try {
+            reportText = await readFile(resolvedReport, "utf8");
+        } catch (error) {
+            const message = `报告读取失败：${error instanceof Error ? error.message : String(error)}`;
+            const summary = summarizeVerifyReport({ reportType: reportType as "playwright" | "vitest", reportPath: resolvedReport, error: message });
+            publish(summary);
+            return void res.status(422).json({ ok: false, error: message, command: commandResult, resolvedReport, summary, runId, roundIndex });
+        }
+        const reportId = reportFingerprint(reportType, resolvedReport, reportText, startedAt);
         let report: unknown;
         try {
-            report = JSON.parse(await readFile(resolvedReport, "utf8"));
+            report = JSON.parse(reportText);
         } catch (error) {
-            return void res.status(422).json({ ok: false, error: `报告读取失败：${error instanceof Error ? error.message : String(error)}`, command: commandResult, resolvedReport });
+            const message = `报告解析失败：${error instanceof Error ? error.message : String(error)}`;
+            const summary = summarizeVerifyReport({ reportType: reportType as "playwright" | "vitest", reportPath: resolvedReport, reportId, error: message });
+            publish(summary);
+            return void res.status(422).json({ ok: false, error: message, command: commandResult, resolvedReport, summary, runId, roundIndex });
         }
         const parsed = parseReport(reportType as "playwright" | "vitest", report);
+        const summary = summarizeVerifyRaw({ reportType: reportType as "playwright" | "vitest", reportPath: resolvedReport, reportId, raw: report });
         const results = summarizeAcResults(parsed);
+        publish(summary);
         res.json({
             ok: commandResult.ok,
             startedAt,
-            finishedAt: new Date().toISOString(),
+            finishedAt,
             command: commandResult,
             report: { type: reportType, path: resolvedReport, cases: parsed.length, withoutAc: parsed.filter((item) => !item.acId).length },
             results,
+            summary,
+            runId,
+            roundIndex,
         });
     }));
     app.get("/repos", route(async (_req, res) => {

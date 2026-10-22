@@ -11,6 +11,8 @@ export type ParsedTestResult = {
     title: string;
     result: "pass" | "fail" | "skip";
     message?: string;
+    /** 用例所在文件；报告里没写就是空。只用于回指，不参与判定。 */
+    file?: string;
 };
 
 const AC_TAG = /@(AC-\d+)/g;
@@ -31,9 +33,10 @@ export function extractAcIds(...texts: (string | undefined)[]): string[] {
 /** Playwright JSON reporter 输出 → 扁平结果。 */
 export function parsePlaywrightReport(report: unknown): ParsedTestResult[] {
     const results: ParsedTestResult[] = [];
-    const visitSuite = (suite: unknown) => {
+    const visitSuite = (suite: unknown, inheritedFile = "") => {
         if (!suite || typeof suite !== "object") return;
         const node = suite as Record<string, unknown>;
+        const suiteFile = typeof node.file === "string" && node.file ? node.file : inheritedFile;
         const specs = Array.isArray(node.specs) ? node.specs : [];
         for (const rawSpec of specs) {
             if (!rawSpec || typeof rawSpec !== "object") continue;
@@ -43,13 +46,14 @@ export function parsePlaywrightReport(report: unknown): ParsedTestResult[] {
             const acIds = extractAcIds(title, ...tags);
             const status = specStatus(spec);
             const message = specErrorMessage(spec);
-            const entry: ParsedTestResult = { title, result: status, ...(message ? { message } : {}) };
+            const file = typeof spec.file === "string" && spec.file ? spec.file : suiteFile;
+            const entry: ParsedTestResult = { title, result: status, ...(message ? { message } : {}), ...(file ? { file } : {}) };
             if (acIds.length === 0) results.push(entry);
             // 一条用例覆盖多条 AC 时，每条 AC 各记一份结果（覆盖率才不会被漏算）。
             for (const acId of acIds) results.push({ ...entry, acId });
         }
         const suites = Array.isArray(node.suites) ? node.suites : [];
-        for (const child of suites) visitSuite(child);
+        for (const child of suites) visitSuite(child, suiteFile);
     };
     if (report && typeof report === "object") {
         const root = report as Record<string, unknown>;
@@ -122,7 +126,8 @@ export function parseVitestReport(report: unknown): ParsedTestResult[] {
             const failureMessages = Array.isArray(assertion.failureMessages)
                 ? assertion.failureMessages.filter((item): item is string => typeof item === "string")
                 : [];
-            const entry: ParsedTestResult = { title, result: status, ...(failureMessages.length ? { message: failureMessages[0] } : {}) };
+            const file = typeof (rawFile as Record<string, unknown>).name === "string" ? String((rawFile as Record<string, unknown>).name) : "";
+            const entry: ParsedTestResult = { title, result: status, ...(failureMessages.length ? { message: failureMessages[0] } : {}), ...(file ? { file } : {}) };
             if (acIds.length === 0) results.push(entry);
             for (const acId of acIds) results.push({ ...entry, acId });
         }

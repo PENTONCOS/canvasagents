@@ -43,6 +43,17 @@ async function runVerify(page: Page) {
     await page.locator('[data-testid="verify-run"]').click();
 }
 
+/** E3: 摘要行的数字/状态直接读 DOM 上的数据属性，不靠文案措辞。 */
+async function expectSummary(page: Page, expected: { round: number; status: "passed" | "failed" | "skipped" | "error"; passed: number; failed: number }) {
+    const summary = page.locator('[data-testid="verify-summary"]');
+    await expect(summary).toBeVisible({ timeout: 20_000 });
+    await expect(summary).toHaveAttribute("data-verify-round", String(expected.round));
+    await expect(summary).toHaveAttribute("data-verify-status", expected.status);
+    await expect(summary.locator('[data-verify-count="passed"]')).toContainText(String(expected.passed));
+    await expect(summary.locator('[data-verify-count="failed"]')).toContainText(String(expected.failed));
+    return summary;
+}
+
 test("第一轮失败 → 第二轮通过：同一次运行累计两轮，AC-01 由红变绿", async ({ page }) => {
     await openCanvas(page);
     await createAcceptanceNode(page);
@@ -56,6 +67,17 @@ test("第一轮失败 → 第二轮通过：同一次运行累计两轮，AC-01 
     await expect(run.locator('[data-round-index="1"]')).toHaveAttribute("data-round-status", "failed");
     await expect(run).toHaveAttribute("data-run-status", "failed");
 
+    // E3: 失败轮的摘要行给出红字与失败 AC，且失败 AC 可点回画布节点。
+    const failedSummary = await expectSummary(page, { round: 1, status: "failed", passed: 0, failed: 1 });
+    const chip = failedSummary.locator('[data-ac-chip="AC-01"]');
+    await expect(chip).toBeVisible();
+    // 有对应节点 → 渲染成可点的 button（没有节点时是 span + data-ac-clickable="false"）。
+    await expect(chip).toHaveJSProperty("tagName", "BUTTON");
+    await expect(chip).toBeEnabled();
+    // 点一下真的定位到节点：选中态在节点上体现（z-50 即 isSelected）。
+    await chip.click();
+    await expect(page.locator('[data-node-id]').filter({ hasText: "AC-01" }).first()).toHaveClass(/z-50/, { timeout: 10_000 });
+
     // AC-01 应被回填成 failing（draft → ready → failing）。
     const acItem = page.locator('[data-testid="acceptance-list"] [data-ac-id="AC-01"]');
     await page.getByRole("button", { name: "验收", exact: true }).first().click();
@@ -67,6 +89,10 @@ test("第一轮失败 → 第二轮通过：同一次运行累计两轮，AC-01 
     await expect(run.locator('[data-round-index="2"]')).toHaveAttribute("data-round-status", "passed", { timeout: 20_000 });
     await expect(run).toHaveAttribute("data-run-status", "passed");
     await expect(run.locator('[data-round-index="1"]')).toHaveCount(1);
+
+    // E3: 全绿时摘要行不给红——没有任何失败 chip，失败计数为 0。
+    const passedSummary = await expectSummary(page, { round: 2, status: "passed", passed: 1, failed: 0 });
+    await expect(passedSummary.locator("[data-ac-chip]")).toHaveCount(0);
 
     await page.getByRole("button", { name: "验收", exact: true }).first().click();
     await expect(acItem).toHaveAttribute("data-ac-status", "passing", { timeout: 10_000 });

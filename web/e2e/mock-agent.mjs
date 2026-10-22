@@ -168,20 +168,54 @@ const server = createServer(async (req, res) => {
         return json(res, { ok: true, verifyFailures, verifyResults });
     }
     if (path === "/delivery/verify" && req.method === "POST") {
-        await readBody(req).catch(() => "");
+        const body = JSON.parse((await readBody(req).catch(() => "{}")) || "{}");
         verifyCalls += 1;
+        // 轮次归属由前端给出，桩只回显：这正是 E2 要求「轮次编号与编排器一致」的接线点。
+        const runId = typeof body.runId === "string" ? body.runId : "";
+        const roundIndex = Number(body.roundIndex) || verifyCalls;
         // 没有显式配置时：第一轮报 AC-01 失败，之后通过——模拟「修完再跑就绿了」。
-        const failing = verifyResults
+        const results = verifyResults
             ? verifyResults
             : [{ acId: "AC-01", result: verifyCalls <= verifyFailures ? "fail" : "pass" }];
-        const failed = failing.some((item) => item.result === "fail");
+        const failed = results.some((item) => item.result === "fail");
+        const startedAt = new Date().toISOString();
+        const finishedAt = new Date().toISOString();
+        // 和真桥端一样把命令输出最后一行带上：失败签名靠它区分「这一轮到底改了没」，
+        // 否则每轮标题都相同，会被「连续 3 轮原地打转」的护栏提前止损。
+        const output = failed ? `expected AC-01 to pass (round ${verifyCalls})` : "all good";
+        // E2: 结构化摘要（与桥端 summarizeVerifyReport 同形状）。reportId 带轮次，
+        // 同一轮的 HTTP 响应与事件流共用一个 id，前端靠它去重。
+        const summary = {
+            reportId: `mock-${verifyCalls}-${roundIndex}`,
+            reportType: "vitest",
+            reportPath: "/tmp/mock-report.json",
+            status: "parsed",
+            total: results.length,
+            passed: results.filter((item) => item.result === "pass").length,
+            failed: results.filter((item) => item.result === "fail").length,
+            skipped: results.filter((item) => item.result === "skip").length,
+            unanchored: 0,
+            cases: results.map((item) => ({
+                acId: item.acId || null,
+                title: item.acId ? `${item.acId} should pass` : "case without anchor",
+                status: item.result,
+                raw: item.result,
+                file: "e2e/mock.e2e.ts",
+            })),
+        };
+        // 第二条到达路径：与 HTTP 响应并行走 SSE，前端按 reportId 去重后只记一轮。
+        broadcast("delivery_verify", { type: "delivery_verify", ...summary, runId, roundIndex, startedAt, finishedAt, exitCode: failed ? 1 : 0, outputTail: output });
         return json(res, {
             ok: !failed,
-            startedAt: new Date().toISOString(),
-            finishedAt: new Date().toISOString(),
-            command: { ok: !failed, exitCode: failed ? 1 : 0, output: failed ? `expected AC-01 to pass (round ${verifyCalls})` : "all good" },
-            report: { type: "vitest", path: "/tmp/mock-report.json", cases: failing.length, withoutAc: 0 },
-            results: failing,
+            startedAt,
+            finishedAt,
+            command: { ok: !failed, exitCode: failed ? 1 : 0, output },
+            report: { type: "vitest", path: "/tmp/mock-report.json", cases: results.length, withoutAc: 0 },
+            summary,
+            runId,
+            roundIndex,
+            // 老字段保留：证明前端对新旧两种响应都能处理。
+            results,
         });
     }
     if (path === "/delivery/health" && req.method === "POST") {

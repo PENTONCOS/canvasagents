@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
 import { App, Empty, Input, Popconfirm, Select, Spin, Tag } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { History, ChevronDown, BookOpen, Check, ChevronRight, Download, Eye, FileText, Image as ImageIcon, LayoutGrid, ListChecks, Music2, Plus, Rows3, Search, Settings2, Square, Trash2, Type, Video } from "lucide-react";
@@ -11,6 +11,15 @@ import { AcceptanceOverviewModal } from "./acceptance-overview";
 import { createOrchestrator, reduceOrchestrator, replayOrchestrator } from "@/lib/delivery/orchestrator";
 import { RUN_STATUS_COLOR, runStatusLabelKey } from "@/lib/delivery/run-status";
 import { acResultsFromVerify, roundFromVerify, type VerifyPayload } from "@/lib/delivery/verify-plan";
+import { subscribeVerifyEvents } from "@/lib/delivery/verify-events";
+import {
+    acResultsFromVerifyReport,
+    roundFromVerifyReport,
+    summaryFromVerifyPayload,
+    verifySummaryParts,
+    type VerifyReportEvent,
+    type VerifyReportSummary,
+} from "@/lib/delivery/verify-report";
 import { exportCanvasNodes } from "@/lib/canvas/canvas-export";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { cn } from "@/lib/utils";
@@ -25,12 +34,14 @@ import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
 import { CANVAS_SIDE_PANEL_MAX_WIDTH, CANVAS_SIDE_PANEL_MIN_WIDTH, CANVAS_SIDE_PANEL_MOTION_MS, useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
-import { nextEntityId } from "@/types/delivery";
+import { nextEntityId, type DeliveryRunRound } from "@/types/delivery";
 
 import type { InsertAssetPayload } from "./asset-picker-modal";
 
 const PANEL_MOTION_SECONDS = CANVAS_SIDE_PANEL_MOTION_MS / 1000;
 const PANEL_EASE = [0.22, 1, 0.36, 1] as const;
+// 轮次状态比运行状态多一个 skipped（跑了但判不了）；不给它红色，避免把「没法判」画成「失败」。
+const ROUND_STATUS_COLOR: Record<DeliveryRunRound["status"], string> = { ...RUN_STATUS_COLOR, skipped: "#94a3b8" };
 
 type PanelTab = "canvas" | "assets" | "prompts" | "acceptance" | "runs";
 
@@ -125,7 +136,7 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
                     ) : tab === "acceptance" ? (
                         <DeliveryAcceptanceTab theme={theme} onFocusNode={onFocusNode} />
                     ) : (
-                        <DeliveryRunsTab theme={theme} onFocusNode={onFocusNode} />
+                        <DeliveryRunsTab nodes={nodes} theme={theme} onFocusNode={onFocusNode} />
                     )}
                 </div>
                 <button type="button" className="absolute inset-y-0 right-0 z-40 w-4 translate-x-1/2 cursor-col-resize" onPointerDown={startResize} aria-label={t("canvas.sidePanel.resize")} />
@@ -205,17 +216,20 @@ function DeliveryAcceptanceTab({ theme, onFocusNode }: { theme: CanvasTheme; onF
 }
 
 // M4: 运行历史 + 验收执行。浏览器只发一次 /delivery/verify，跑不跑下一轮由编排器决定。
-function DeliveryRunsTab({ theme, onFocusNode }: { theme: CanvasTheme; onFocusNode: (nodeId: string) => void }) {
+// E2/E3: 每轮结束的结果同时走 HTTP 响应与 `delivery_verify` 事件流，按 reportId 去重后落库；
+// 顶部一行摘要直接读最近一轮的结构化结果，失败的 AC 可点回画布节点。
+function DeliveryRunsTab({ nodes, theme, onFocusNode }: { nodes: CanvasNodeData[]; theme: CanvasTheme; onFocusNode: (nodeId: string) => void }) {
     const { t } = useTranslation();
     const { message } = App.useApp();
     const runs = useDeliveryStore((state) => state.runs);
+    const acceptance = useDeliveryStore((state) => state.acceptance);
     const replayRun = useDeliveryStore((state) => state.replayRun);
     const upsertRun = useDeliveryStore((state) => state.upsertRun);
-    const appendRunRound = useDeliveryStore((state) => state.appendRunRound);
-    const applyAcResults = useDeliveryStore((state) => state.applyAcResults);
+    const applyVerifyReport = useDeliveryStore((state) => state.applyVerifyReport);
     const agentUrl = useAgentStore((state) => state.url);
     const agentToken = useAgentStore((state) => state.token);
     const items = useMemo(() => Object.values(runs).sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || "")), [runs]);
+    const nodeIds = useMemo(() => new Set(nodes.map((node) => node.id)), [nodes]);
 
     const [command, setCommand] = useState("bun test");
     const [cwd, setCwd] = useState("");
@@ -226,6 +240,25 @@ function DeliveryRunsTab({ theme, onFocusNode }: { theme: CanvasTheme; onFocusNo
     // 编排状态不单独存：轮次已经写进 run，按落库数据重建即可，切 tab / 刷新都不会丢进度。
     const activeRun = useMemo(() => Object.values(runs).sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || ""))[0], [runs]);
     const orchestrator = useMemo(() => replayOrchestrator(activeRun?.rounds || []), [activeRun]);
+    const latestRound = activeRun?.rounds?.length ? activeRun.rounds[activeRun.rounds.length - 1] : undefined;
+    const summaryParts = useMemo(() => (latestRound ? verifySummaryParts(latestRound) : null), [latestRound]);
+
+    // E2 事件流：桥端每轮结束时广播结构化摘要；这里只负责落地，数字不二次计算。
+    useEffect(() => {
+        if (!agentUrl.trim()) return;
+        return subscribeVerifyEvents({ url: agentUrl, token: agentToken }, (event: VerifyReportEvent) => {
+            const state = useDeliveryStore.getState();
+            const stored = state.runs;
+            const sorted = Object.values(stored).sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || ""));
+            const runId = (event.runId && stored[event.runId] ? event.runId : "") || sorted[0]?.id || "";
+            if (!runId) return;
+            const run = stored[runId];
+            // 轮次编号与编排器一致：沿用请求里带来的编号，缺省时按已有轮次 +1。
+            const index = event.roundIndex && event.roundIndex > 0 ? event.roundIndex : (run.rounds?.length || 0) + 1;
+            const round = roundFromVerifyReport({ ...event, output: event.outputTail || event.output }, index, event.startedAt);
+            state.applyVerifyReport({ runId, round, acResults: acResultsFromVerifyReport(event) });
+        });
+    }, [agentUrl, agentToken]);
 
     // 一轮一块：第一次点「运行」开一次运行，之后每次点都是同一次运行的下一轮（修完再跑）。
     const startVerify = async () => {
@@ -241,34 +274,43 @@ function DeliveryRunsTab({ theme, onFocusNode }: { theme: CanvasTheme; onFocusNo
         setBusy(true);
         setError("");
         try {
-            const response = await fetch(`${agentUrl.replace(/\/$/, "")}/delivery/verify`, {
-                method: "POST",
-                headers: { "content-type": "application/json", ...(agentToken ? { "x-canvas-agent-token": agentToken } : {}) },
-                body: JSON.stringify({ command, cwd, reportPath, reportType }),
-            });
-            const payload = (await response.json()) as VerifyPayload;
             const at = new Date().toISOString();
-            // 以 store 里的最新数据为准：闭包里的 runs 可能是上一次渲染的旧值。
-            const stored = useDeliveryStore.getState().runs;
-            const latest = Object.values(stored).sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || ""))[0];
+            // 运行归属先定下来：桥端事件要带回同一个 runId / 轮次编号，前端才不用猜。
+            const storedBefore = useDeliveryStore.getState().runs;
+            const latest = Object.values(storedBefore).sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || ""))[0];
             let state = latest ? replayOrchestrator(latest.rounds || []) : createOrchestrator();
             let runId = latest?.id || "";
             // 上一次运行已经全绿或已升级，就开新的一次运行；否则这一轮属于同一次运行的修复循环。
             const fresh = !runId || state.phase === "passed" || state.phase === "escalated";
             if (fresh) {
-                runId = nextEntityId(Object.keys(stored), "RUN");
+                runId = nextEntityId(Object.keys(storedBefore), "RUN");
                 upsertRun({ id: runId, kind: "test", command, cwd, startedAt: at, status: "running", results: [], rounds: [] });
                 state = reduceOrchestrator(createOrchestrator(), { type: "start", at });
             }
-            const index = (stored[runId]?.rounds?.length || 0) + 1;
-            const round = roundFromVerify(index, payload, at);
-            state = reduceOrchestrator(state, { type: "round", at: round.finishedAt || at, round });
-            appendRunRound(runId, round);
-            applyAcResults(acResultsFromVerify(payload), runId);
-            if (state.phase === "passed") message.success(t("canvas.sidePanel.verifyPassed", { count: round.passed }));
-            else if (state.phase === "escalated") message.warning(t("canvas.sidePanel.verifyGuardrail", { reason: state.stopReason || "" }));
-            else if (round.status === "skipped") message.info(t("canvas.sidePanel.verifySkipped"));
-            else message.info(t("canvas.sidePanel.verifyFailed", { count: round.failed }));
+            const roundIndex = (useDeliveryStore.getState().runs[runId]?.rounds?.length || 0) + 1;
+            const response = await fetch(`${agentUrl.replace(/\/$/, "")}/delivery/verify`, {
+                method: "POST",
+                headers: { "content-type": "application/json", ...(agentToken ? { "x-canvas-agent-token": agentToken } : {}) },
+                body: JSON.stringify({ command, cwd, reportPath, reportType, runId, roundIndex }),
+            });
+            const payload = (await response.json()) as VerifyPayload;
+            // 数字来自桥端解析后的 summary；老桥端没有 summary 时才按 results 兼容推导。
+            const summary = summaryFromVerifyPayload(payload);
+            // 以 store 里的最新数据为准：闭包里的 runs 可能是上一次渲染的旧值（事件可能已经先到）。
+            const stored = useDeliveryStore.getState().runs;
+            const targetRunId = payload.runId && stored[payload.runId] ? payload.runId : runId;
+            const index = payload.roundIndex && payload.roundIndex > 0 ? payload.roundIndex : ((stored[targetRunId]?.rounds?.length || 0) + 1);
+            const round = roundFromVerifyReport({ ...summary, startedAt: payload.startedAt || at, finishedAt: payload.finishedAt || at, exitCode: payload.command?.exitCode ?? null, output: payload.command?.output }, index, at);
+            const result = applyVerifyReport({ runId: targetRunId, round, acResults: acResultsFromVerifyReport(summary) });
+            state = replayOrchestrator(useDeliveryStore.getState().runs[targetRunId]?.rounds || []);
+            // 事件流先到就是重复到达：同一份报告只累计一轮，也不再重复提示。
+            if (result.applied) {
+                state = reduceOrchestrator(state, { type: "round", at: round.finishedAt || at, round });
+                if (state.phase === "passed") message.success(t("canvas.sidePanel.verifyPassed", { count: round.passed }));
+                else if (state.phase === "escalated") message.warning(t("canvas.sidePanel.verifyGuardrail", { reason: state.stopReason || "" }));
+                else if (round.status === "skipped") message.info(t("canvas.sidePanel.verifySkipped"));
+                else message.info(t("canvas.sidePanel.verifyFailed", { count: round.failed }));
+            }
             if (payload.error) setError(String(payload.error));
         } catch (caught) {
             setError(caught instanceof Error ? caught.message : String(caught));
@@ -303,6 +345,87 @@ function DeliveryRunsTab({ theme, onFocusNode }: { theme: CanvasTheme; onFocusNo
                     </div>
                 ) : null}
             </div>
+            {summaryParts && latestRound ? (
+                <div
+                    className="mb-2 rounded-md px-2 py-1.5 text-[11px]"
+                    data-testid="verify-summary"
+                    data-verify-status={summaryParts.status}
+                    data-verify-round={latestRound.index}
+                    style={{ background: theme.node.fill, color: theme.node.text }}
+                    aria-label={t("canvas.sidePanel.verifySummaryAria")}
+                >
+                    <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
+                        <span aria-hidden="true" className="font-semibold" style={{ color: ROUND_STATUS_COLOR[summaryParts.status] }}>
+                            {summaryParts.status === "passed" ? "✓" : summaryParts.status === "failed" || summaryParts.status === "error" ? "✗" : "–"}
+                        </span>
+                        <span className="font-medium" style={{ color: ROUND_STATUS_COLOR[summaryParts.status] }}>
+                            {t("canvas.sidePanel.verifySummaryRound", { index: latestRound.index })}
+                        </span>
+                        <span style={{ color: summaryParts.status === "passed" ? AC_STATUS_COLOR.passing : theme.node.muted }} data-verify-count="passed">
+                            {t("canvas.sidePanel.verifySummaryPassed", { count: summaryParts.passed })}
+                        </span>
+                        <span style={{ color: theme.node.muted }}>·</span>
+                        <span style={{ color: summaryParts.failed > 0 ? RUN_STATUS_COLOR.failed : theme.node.muted }} data-verify-count="failed">
+                            {t("canvas.sidePanel.verifySummaryFailed", { count: summaryParts.failed })}
+                        </span>
+                        {summaryParts.skipped > 0 ? (
+                            <Fragment>
+                                <span style={{ color: theme.node.muted }}>·</span>
+                                <span style={{ color: theme.node.muted }} data-verify-count="skipped">
+                                    {t("canvas.sidePanel.verifySummarySkipped", { count: summaryParts.skipped })}
+                                </span>
+                            </Fragment>
+                        ) : null}
+                        {summaryParts.failingAcIds.length > 0 ? (
+                            <span className="flex flex-wrap items-center gap-0.5" data-testid="verify-summary-failing">
+                                <span style={{ color: theme.node.muted }}>(</span>
+                                {summaryParts.failingAcIds.map((acId, index) => {
+                                    const nodeId = acceptance[acId]?.nodeId;
+                                    // 节点不存在就不给点，但 AC 仍然展示——不报错、不隐藏失败。
+                                    const canFocus = Boolean(nodeId && nodeIds.has(nodeId));
+                                    return (
+                                        <Fragment key={acId}>
+                                            {index > 0 ? <span style={{ color: theme.node.muted }}>,</span> : null}
+                                            {canFocus ? (
+                                                <button
+                                                    type="button"
+                                                    className="rounded px-0.5 font-medium underline-offset-2 hover:underline"
+                                                    style={{ color: RUN_STATUS_COLOR.failed }}
+                                                    title={t("canvas.sidePanel.verifySummaryJump", { acId })}
+                                                    onClick={() => onFocusNode(String(nodeId))}
+                                                    data-ac-chip={acId}
+                                                >
+                                                    {acId}
+                                                </button>
+                                            ) : (
+                                                <span style={{ color: RUN_STATUS_COLOR.failed }} data-ac-chip={acId} data-ac-clickable="false">
+                                                    {acId}
+                                                </span>
+                                            )}
+                                        </Fragment>
+                                    );
+                                })}
+                                <span style={{ color: theme.node.muted }}>)</span>
+                            </span>
+                        ) : null}
+                    </div>
+                    {summaryParts.unanchored > 0 ? (
+                        <div className="mt-0.5" style={{ color: theme.node.muted }} data-testid="verify-summary-unanchored">
+                            {t("canvas.sidePanel.verifySummaryUnanchored", { count: summaryParts.unanchored })}
+                        </div>
+                    ) : null}
+                    {latestRound.status === "error" ? (
+                        <div className="mt-0.5" style={{ color: RUN_STATUS_COLOR.error }} data-testid="verify-summary-parse-error">
+                            {t("canvas.sidePanel.verifySummaryParseError")}
+                        </div>
+                    ) : null}
+                    {latestRound.status === "skipped" ? (
+                        <div className="mt-0.5" style={{ color: theme.node.muted }} data-testid="verify-summary-skipped">
+                            {t("canvas.sidePanel.verifySummaryNoReport")}
+                        </div>
+                    ) : null}
+                </div>
+            ) : null}
             {items.length === 0 ? (
                 <div className="px-1 py-4 text-xs" style={{ color: theme.node.muted }} data-testid="runs-empty">
                     {t("canvas.sidePanel.runEmpty")}

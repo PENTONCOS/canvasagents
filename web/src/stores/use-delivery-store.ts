@@ -66,6 +66,11 @@ type DeliveryActions = {
     upsertRun: (run: DeliveryRun) => void;
     /** M4: 追加一轮运行记录，并把 run 状态推进到该轮结果。 */
     appendRunRound: (runId: string, round: DeliveryRunRound) => void;
+    /**
+     * E2: 报告摘要 → 一轮运行 + AC 回填。按 reportId 幂等：
+     * 同一份报告重复到达（HTTP 响应与事件流双路径）只累计一轮。
+     */
+    applyVerifyReport: (input: { runId: string; round: DeliveryRunRound; acResults: AcResultInput[] }) => { applied: boolean; reason?: "no-run" | "duplicate" };
     /** M4: 回放一次历史运行，把当时的测试结果重新回填到 AC 上（不伪造通过）。 */
     replayRun: (runId: string) => { applied: string[]; rejected: { acId: string; reason: string }[] };
     upsertEnvironment: (env: DeliveryEnvironment) => void;
@@ -270,6 +275,18 @@ export const useDeliveryStore = create<DeliveryStore>()(
                         },
                     };
                 }),
+
+            applyVerifyReport: ({ runId, round, acResults }) => {
+                const run = useDeliveryStore.getState().runs[runId];
+                if (!run) return { applied: false, reason: "no-run" };
+                // 双路径（HTTP 响应 / SSE 事件）会送来同一份报告；reportId 相同就只记一轮。
+                if (round.reportId && (run.rounds || []).some((item) => item.reportId === round.reportId)) {
+                    return { applied: false, reason: "duplicate" };
+                }
+                get().appendRunRound(runId, round);
+                get().applyAcResults(acResults, runId);
+                return { applied: true };
+            },
 
             replayRun: (runId) => {
                 const run = get().runs[runId];
