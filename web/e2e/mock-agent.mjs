@@ -23,6 +23,14 @@ let threads = [
 // 以及下一次 turn 要回吐多少 token（断言「额度耗尽的提示与拦截」）。
 let turns = [];
 let usageNext = { input_tokens: 1200, cached_input_tokens: 0, output_tokens: 800 };
+// B3 多窗并行：不同线程的 turn 必须能同时在飞。默认 50ms 走完（既有用例不用等），
+// 需要证明「时间区间真的重叠」的用例用 /__turn-config 把它调长。
+// 每个 turn 自己一个定时器 —— 不是一条全局队列，否则两个窗永远串行。
+let turnDelayMs = 50;
+let inflight = 0;
+let maxInflight = 0;
+// turnId -> { timer, threadId, record }：中断时按线程取消对应定时器。
+const turnTimers = new Map();
 // 会话身份与 revision 必须像真桥端一样「每次 reset 就是一次新会话」：
 // canvas-agent 的 /threads/reset 走 session.beginConversation()（新的 conversationId）
 // 再 prepareDraftThread()（新的 threadId），revision 单调递增。
@@ -85,8 +93,16 @@ const server = createServer(async (req, res) => {
         return res.end();
     }
 
-    // 测试辅助：断言服务端到底收到了什么
-    if (path === "/__state") return json(res, { deleted, threads: threads.map((item) => item.id), claudeThreads: claudeThreads.map((item) => item.id), turns });
+    // 测试辅助：断言服务端到底收到了什么。
+    // turns 带 startedAt / finishedAt：用例靠这两个时间戳断言两个 turn 真的交错跑过，
+    // 而不是「先后各跑一遍、只是看起来快」。
+    if (path === "/__state") return json(res, { deleted, threads: threads.map((item) => item.id), claudeThreads: claudeThreads.map((item) => item.id), turns, inflight, maxInflight, turnDelayMs });
+    // 用例要把「一轮跑多久」调长时打这里（用于证明并行：第二个 turn 在第一个结束前就开始了）。
+    if (path === "/__turn-config" && req.method === "POST") {
+        const body = JSON.parse((await readBody(req).catch(() => "{}")) || "{}");
+        if (typeof body.delayMs === "number" && body.delayMs >= 0) turnDelayMs = body.delayMs;
+        return json(res, { ok: true, turnDelayMs });
+    }
     // 用例要把「额度打爆」时改这里：指定下一轮 turn 回吐的 token 数。
     if (path === "/__usage-config" && req.method === "POST") {
         const body = JSON.parse((await readBody(req).catch(() => "{}")) || "{}");
@@ -96,6 +112,12 @@ const server = createServer(async (req, res) => {
         return json(res, { ok: true, usageNext });
     }
     if (path === "/__reset") {
+        // 上一轮用例遗留的定时器必须先清掉，否则它会往新一轮的事件流里补发旧 turn。
+        for (const entry of turnTimers.values()) clearTimeout(entry.timer);
+        turnTimers.clear();
+        inflight = 0;
+        maxInflight = 0;
+        turnDelayMs = 50;
         deleted = [];
         turns = [];
         usageNext = { input_tokens: 1200, cached_input_tokens: 0, output_tokens: 800 };
@@ -290,14 +312,24 @@ const server = createServer(async (req, res) => {
         const body = JSON.parse((await readBody(req).catch(() => "{}")) || "{}");
         const threadId = body.threadId || currentThread();
         const turnId = `turn-${turns.length + 1}`;
-        turns.push({ driver: "codex", threadId, turnId, text: body.messageText || "" });
+        const record = { driver: "codex", threadId, turnId, text: body.messageText || "", startedAt: Date.now(), finishedAt: null, status: "running" };
+        turns.push(record);
+        inflight += 1;
+        maxInflight = Math.max(maxInflight, inflight);
         json(res, { ok: true, threadId, turnId });
-        setTimeout(() => {
-            broadcast("codex_state", { busy: true, threadId, turnId });
-            broadcast("agent_event", { type: "item.completed", threadId, turn_id: turnId, item: { type: "agent_message", text: `mock codex reply ${turnId}` } });
+        // 接单即报 busy：前端据此进入 running（按 threadId 落到各自那窗）。
+        broadcast("codex_state", { busy: true, threadId, turnId });
+        const timer = setTimeout(() => {
+            turnTimers.delete(turnId);
+            inflight -= 1;
+            record.finishedAt = Date.now();
+            record.status = "done";
+            // item.id 是稳定消息标识：真桥端一直带，后台窗靠它去重写入；缺了会让后台窗丢回复。
+            broadcast("agent_event", { type: "item.completed", threadId, turn_id: turnId, item: { id: `msg-${turnId}`, type: "agent_message", text: `mock codex reply ${turnId}` } });
             broadcast("agent_event", { type: "usage.updated", threadId, usage: { ...usageNext } });
             broadcast("codex_state", { busy: false, threadId, turnId });
-        }, 50);
+        }, turnDelayMs);
+        turnTimers.set(turnId, { timer, threadId, record });
         return;
     }
 
@@ -305,14 +337,43 @@ const server = createServer(async (req, res) => {
         const body = JSON.parse((await readBody(req).catch(() => "{}")) || "{}");
         const threadId = body.threadId || claudeThreads[0]?.id || "";
         const turnId = `cturn-${turns.length + 1}`;
-        turns.push({ driver: "claude", threadId, turnId, text: body.messageText || "" });
+        const record = { driver: "claude", threadId, turnId, text: body.messageText || "", startedAt: Date.now(), finishedAt: null, status: "running" };
+        turns.push(record);
+        inflight += 1;
+        maxInflight = Math.max(maxInflight, inflight);
         json(res, { ok: true, threadId, turnId });
-        setTimeout(() => {
+        const timer = setTimeout(() => {
+            turnTimers.delete(turnId);
+            inflight -= 1;
+            record.finishedAt = Date.now();
+            record.status = "done";
             broadcast("agent_event", { type: "assistant_message", threadId, text: `mock claude reply ${turnId}` });
             broadcast("agent_event", { type: "usage.updated", threadId, usage: { ...usageNext } });
             broadcast("agent_done", { threadId, code: 0, agent: "claude" });
-        }, 50);
+        }, turnDelayMs);
+        turnTimers.set(turnId, { timer, threadId, record });
         return;
+    }
+
+    // 中断：只取消指定线程上还在飞的 turn（另一个窗的 turn 继续跑完）。
+    const interruptMatch = path.match(/^\/agent\/(codex|claude)\/interrupt$/);
+    if (interruptMatch && req.method === "POST") {
+        const body = JSON.parse((await readBody(req).catch(() => "{}")) || "{}");
+        const threadId = typeof body.threadId === "string" ? body.threadId : "";
+        let stopped = 0;
+        for (const [turnId, entry] of turnTimers) {
+            if (threadId && entry.threadId !== threadId) continue;
+            clearTimeout(entry.timer);
+            turnTimers.delete(turnId);
+            inflight -= 1;
+            entry.record.finishedAt = Date.now();
+            entry.record.status = "interrupted";
+            stopped += 1;
+            // 收尾事件照真桥端发：否则被停的窗会永远停在「停止中」。
+            if (entry.record.driver === "claude") broadcast("agent_done", { threadId: entry.threadId, code: 0, agent: "claude" });
+            else broadcast("codex_state", { busy: false, threadId: entry.threadId, turnId });
+        }
+        return json(res, { ok: true, stopped });
     }
 
     await readBody(req).catch(() => "");

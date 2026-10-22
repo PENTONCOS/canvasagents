@@ -593,14 +593,18 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             if (!data || data.agent !== "claude") return;
             enqueueEvent(() => {
                 const threadId = data.threadId || "";
-                const current = useAgentStore.getState();
-                // 收尾：清掉流式标记，否则输入框会一直以为还有一轮在跑。
-                setAgentState({
+                const storeState = useAgentStore.getState();
+                // 收尾只能落在「这个线程所属的那一窗」：写到激活窗会把正在跑的另一窗结束掉
+                // （双窗并行时输入框误解除禁用，B3 的「停一个不影响另一个」同样靠这条）。
+                const targetWindowId = (threadId ? agentWindowIdForThread(storeState, threadId) : null) ?? storeState.activeWindowId;
+                const target = storeState.windows.find((window) => window.id === targetWindowId);
+                if (!target) return;
+                withWindowPatchTarget(targetWindowId, () => setAgentState({
                     waiting: false,
                     sending: false,
                     activity: rt("completed"),
-                    messages: current.messages.map((message) => (threadId && message.id === `claude-stream-${threadId}` ? { ...message, streamId: undefined } : message)),
-                });
+                    messages: target.messages.map((message) => (threadId && message.id === `claude-stream-${threadId}` ? { ...message, streamId: undefined } : message)),
+                }));
             });
         });
         source.addEventListener("agent_bootstrap", (event) => {
@@ -1592,9 +1596,12 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 setAgentState({ messages });
                 return true;
             }
-            if (event.type === "item.completed" && event.item?.type === "agent_message" && event.item.id) {
+            if (event.type === "item.completed" && event.item?.type === "agent_message") {
                 const text = stringText(event.item.text);
-                const scoped = scopeEventChatItem(event, { id: event.item.id, role: "assistant", title: "Codex", text }, event.item.id);
+                if (!text) return false;
+                // 与激活窗同一个兜底：item.id 缺失时用 createId() 建消息，不能因缺 id 把整条回复丢掉。
+                const itemId = event.item.id || createId();
+                const scoped = scopeEventChatItem(event, { id: itemId, role: "assistant", title: "Codex", text }, itemId);
                 const index = initial.messages.findIndex((message) => message.id === scoped.id);
                 const messages = index >= 0
                     ? initial.messages.map((message, itemIndex) => itemIndex === index ? { ...message, text: text || message.text, streamId: undefined } : message)

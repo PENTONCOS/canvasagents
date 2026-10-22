@@ -1604,6 +1604,7 @@ export default {
             rename: "Rename this session window",
             renameTitle: "Name this session window",
             renamePlaceholder: "e.g. Blue-tone edit",
+            status: { running: "Running", queued: "Queued", idle: "Idle", error: "Failed" },
         },
         repo: {
             badgeLabel: "Latest code",

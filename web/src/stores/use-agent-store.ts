@@ -88,6 +88,7 @@ export const AGENT_WINDOW_FIELDS = [
     "activity",
     "sending",
     "waiting",
+    "queued",
     "cliMode",
     "cliSession",
 ] as const;
@@ -128,6 +129,7 @@ type AgentStore = {
     canvasReferences: CanvasResourceReference[];
     sending: boolean;
     waiting: boolean;
+    queued: boolean;
     messages: AgentChatItem[];
     tokenUsage: AgentTokenUsage | null;
     eventLogs: AgentEventLog[];
@@ -376,8 +378,26 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         const resolved = windows.find((window) => window.id === nextActiveId) ?? windows[0];
         return { windows, activeWindowId: resolved.id, ...projectAgentWindow(resolved) };
     }),
-    requestFeedSend: ({ text, windowId }) => set({ feedSendRequest: { text, windowId, at: Date.now() } }),
-    clearFeedSend: () => set({ feedSendRequest: null }),
+    requestFeedSend: ({ text, windowId }) => set((state) => {
+        // queued 与 status 必须同时更新：只改 queued 的话，读 window.status 的地方（队列/断言）
+        // 会把「排队中」的窗当成空闲。
+        const markQueued = (list: AgentWindow[], id: string, queued: boolean) => list.map((window) => (
+            window.id === id ? { ...window, queued, status: deriveWindowStatus({ ...window, queued }) } : window
+        ));
+        const queued = markQueued(state.windows, windowId, true);
+        // 上一条排队换个目标窗时，旧窗不能再挂着 queued 标记。
+        const previousWindowId = state.feedSendRequest?.windowId || "";
+        const windows = previousWindowId && previousWindowId !== windowId ? markQueued(queued, previousWindowId, false) : queued;
+        return { windows, feedSendRequest: { text, windowId, at: Date.now() } };
+    }),
+    clearFeedSend: () => set((state) => {
+        const windowId = state.feedSendRequest?.windowId || "";
+        if (!windowId) return { feedSendRequest: null };
+        const windows = state.windows.map((window) => (
+            window.id === windowId ? { ...window, queued: false, status: deriveWindowStatus({ ...window, queued: false }) } : window
+        ));
+        return { windows, feedSendRequest: null };
+    }),
     selectWindow: (id) => set((state) => {
         if (!state.windows.some((window) => window.id === id)) return {};
         const windows = clearUnread(state.windows, id);

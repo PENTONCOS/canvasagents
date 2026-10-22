@@ -5,6 +5,7 @@ import { Ban, CheckCircle2, Clock, LoaderCircle, RefreshCw, ShieldQuestion } fro
 import { useTranslation } from "react-i18next";
 
 import { agentApiPath } from "@/lib/agent/agent-driver";
+import { windowLabelForThread } from "@/lib/agent/agent-windows";
 import { fetchAgentJson } from "@/services/api/canvas-agent";
 import { useAgentStore } from "@/stores/use-agent-store";
 
@@ -17,11 +18,13 @@ type QueueItem = {
     title: string;
     status: QueueStatus;
     active: boolean;
+    /** 桥端按线程上报：这条线程此刻真的在跑（后台窗也算）。 */
+    running?: boolean;
     waitingFor?: string;
     updatedAt?: number;
 };
 
-type QueueResponse = { ok?: boolean; data?: QueueItem[] };
+type QueueResponse = { ok?: boolean; data?: QueueItem[]; busyThreadIds?: string[] };
 type ThreadsResponse = { ok?: boolean; data?: Array<Record<string, unknown>> };
 
 const STATUS_ORDER: QueueStatus[] = ["approval", "running", "waiting-input", "idle", "failed"];
@@ -40,8 +43,10 @@ export function AgentQueueView() {
     const conversation = useAgentStore((state) => state.conversation);
 
     const [items, setItems] = useState<QueueItem[]>([]);
+    const [busyThreadIds, setBusyThreadIds] = useState<string[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    const windows = useAgentStore((state) => state.windows);
 
     // Live state of the currently running turn; non-active threads are historical.
     const liveStatus: QueueStatus = useMemo(() => {
@@ -61,6 +66,7 @@ export function AgentQueueView() {
         try {
             const data = await fetchAgentJson<QueueResponse>(endpoint, token, "/agent/queue");
             setItems(Array.isArray(data.data) ? data.data : []);
+            setBusyThreadIds(Array.isArray(data.busyThreadIds) ? data.busyThreadIds : []);
         } catch (primary) {
             // Older agents without /queue: fall back to the threads list.
             try {
@@ -72,6 +78,7 @@ export function AgentQueueView() {
                     status: "idle" as QueueStatus,
                     active: false,
                 })));
+                setBusyThreadIds([]);
             } catch (fallback) {
                 const reason = fallback instanceof Error ? fallback.message : String(fallback);
                 setError(primary instanceof Error ? `${primary.message} · ${reason}` : reason);
@@ -90,12 +97,19 @@ export function AgentQueueView() {
     }, [open, load]);
 
     // Server truth when available; otherwise derive from the local thread list.
+    // 多窗并行时不能只拿激活窗的本地状态盖住别的线程：服务端已按线程报 running，
+    // 只在「老桥端不报 running」时才用激活窗本地状态兜底。
     const derived: QueueItem[] = useMemo(() => {
-        const source = items.length
+        const source: QueueItem[] = items.length
             ? items
-            : threads.map((thread) => ({ id: thread.id, title: thread.name || thread.preview || thread.id, status: "idle" as QueueStatus, active: false }));
-        return source.map((item) => (item.id && item.id === activeThreadId ? { ...item, status: liveStatus, active: true } : item));
-    }, [items, threads, activeThreadId, liveStatus]);
+            : threads.map((thread) => ({ id: thread.id, title: thread.name || thread.preview || thread.id, status: "idle" as QueueStatus, active: false, running: false }));
+        return source.map((item) => {
+            const running = item.running === true || Boolean(item.id && busyThreadIds.includes(item.id));
+            const active = Boolean(item.id && item.id === activeThreadId);
+            const upgraded = active && !running && ["running", "approval", "failed"].includes(liveStatus);
+            return { ...item, status: upgraded ? liveStatus : item.status, running, active };
+        });
+    }, [items, threads, activeThreadId, liveStatus, busyThreadIds]);
 
     const groups = useMemo(
         () => STATUS_ORDER.map((status) => ({ status, list: derived.filter((item) => item.status === status) })).filter((group) => group.list.length > 0),
@@ -145,16 +159,24 @@ export function AgentQueueView() {
                                 <span className="rounded-full bg-stone-100 px-1.5 text-[11px] tabular-nums dark:bg-stone-800">{group.list.length}</span>
                             </div>
                             <div className="flex flex-col gap-1">
-                                {group.list.map((item) => (
+                                {group.list.map((item) => {
+                                    // 窗口维度：这一条属于哪个会话窗（序号:名称），是否正在跑。
+                                    const windowLabel = windowLabelForThread(windows, item.id);
+                                    return (
                                     <div
                                         key={item.id}
+                                        data-queue-thread={item.id}
+                                        data-queue-running={item.running ? "true" : "false"}
                                         className="flex items-center justify-between gap-3 rounded-lg border border-stone-200 px-3 py-2 text-sm dark:border-stone-800"
                                     >
                                         <span className={`min-w-0 flex-1 truncate ${item.active ? "font-medium" : ""}`}>{item.title || item.id}</span>
+                                        {windowLabel ? <span data-queue-window={windowLabel} className="shrink-0 rounded bg-stone-100 px-1.5 text-[11px] text-stone-500 dark:bg-stone-800">{windowLabel}</span> : null}
+                                        {item.running ? <span data-queue-running-label className="shrink-0 text-[11px] text-blue-600">{t("agent.window.status.running")}</span> : null}
                                         {item.active ? <span className="shrink-0 rounded bg-stone-100 px-1.5 text-[11px] text-stone-500 dark:bg-stone-800">{t("agent.queue.current")}</span> : null}
                                         {item.waitingFor ? <span className="max-w-32 shrink-0 truncate text-[11px] text-amber-600">{item.waitingFor}</span> : null}
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     ))}

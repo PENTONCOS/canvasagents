@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { AlertCircle, Loader2, Pencil, SquarePlus, X } from "lucide-react";
+import { AlertCircle, Clock, Loader2, Pencil, SquarePlus, X } from "lucide-react";
 import { Button, Input, Modal, Popconfirm, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { AgentPanelTabs } from "./agent-panel-tabs";
-import { AGENT_WINDOW_LIMIT, toWindowTabHint, toWindowTabLabel, type AgentWindowStatus } from "@/lib/agent/agent-windows";
+import { AGENT_WINDOW_LIMIT, deriveWindowStatus, toWindowTabHint, toWindowTabLabel, type AgentWindowStatus } from "@/lib/agent/agent-windows";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -17,6 +17,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 function statusIcon(status: AgentWindowStatus) {
     if (status === "running") return <Loader2 className="size-3.5 animate-spin" />;
+    if (status === "queued") return <Clock className="size-3.5" />;
     if (status === "error") return <AlertCircle className="size-3.5 text-red-500" />;
     return null;
 }
@@ -86,13 +87,24 @@ export function AgentWindowTabs() {
             label={t("agent.window.section")}
             value={activeWindowId}
             theme={theme}
-            items={windows.map((window, index) => ({
-                value: window.id,
-                label: toWindowTabLabel(window, index),
-                icon: statusIcon(window.status),
-                dot: Boolean(window.unread),
-                hint: window.unread ? `${toWindowTabHint(window, index)} · ${t("agent.window.unread", { count: window.unread })}` : toWindowTabHint(window, index),
-            }))}
+            items={windows.map((window, index) => {
+                // 状态以切片实时推导（status 字段只是快照，queued 标记不一定走到投影）。
+                const status = deriveWindowStatus(window);
+                const statusText = t(`agent.window.status.${status}`);
+                // 只靠颜色/转圈分不出「在跑」与「排队」，悬停提示也必须能读出状态。
+                const parts = [toWindowTabHint(window, index), statusText];
+                if (window.unread) parts.push(t("agent.window.unread", { count: window.unread }));
+                return {
+                    value: window.id,
+                    label: toWindowTabLabel(window, index),
+                    icon: statusIcon(status),
+                    dot: Boolean(window.unread),
+                    hint: parts.join(" · "),
+                    status,
+                    // 空闲不往标签里加字：既有用例按 `会话 N` 精确匹配 tab 文案。
+                    statusLabel: status === "idle" ? undefined : statusText,
+                };
+            })}
             onChange={(id) => selectWindow(id)}
             right={
                 <>

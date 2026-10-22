@@ -14,6 +14,14 @@ export type AgentPanelTabItem<T extends string> = {
     dot?: boolean;
     /** 覆盖默认 tooltip（例如会话窗要带快捷键和未读数）。 */
     hint?: string;
+    /** 会话窗状态（running / queued / idle / error），渲染成 data-status 供样式与端到端断言使用。 */
+    status?: string;
+    /**
+     * 状态文字（运行中 / 排队中 / 空闲）。
+     * 只靠转圈和颜色分不出「在跑」与「排队」，尤其色弱和窄面板下，所以要有文字。
+     * 空闲态刻意不传：既有用例按 tab 文案 `会话 N` 做精确断言，空闲不该往标签里塞字。
+     */
+    statusLabel?: string;
 };
 
 type AgentPanelTabsProps<T extends string> = {
@@ -62,6 +70,7 @@ export function AgentPanelTabs<T extends string>({ value, items, theme, leading,
                                     role="tab"
                                     aria-label={tooltip}
                                     aria-selected={active}
+                                    data-status={item.status}
                                     className={
                                         isWindows
                                             ? `inline-flex h-7 min-w-8 shrink-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs transition hover:brightness-[0.98] ${active ? "font-medium shadow-sm" : ""}`
@@ -76,6 +85,7 @@ export function AgentPanelTabs<T extends string>({ value, items, theme, leading,
                                 >
                                     {item.icon ? <span className="agent-panel-tab-icon">{item.icon}</span> : null}
                                     <span className={item.icon && !isWindows ? "hidden @min-[400px]:inline" : undefined}>{item.label}</span>
+                                    {isWindows && item.statusLabel ? <span data-window-status-label={item.status} className="shrink-0 text-[10px] leading-none opacity-70">{item.statusLabel}</span> : null}
                                     {item.dot ? <span className="size-1.5 shrink-0 rounded-full bg-red-500" /> : null}
                                     {!isWindows && item.count ? <span className="text-[10px] font-normal leading-none tabular-nums opacity-60">{item.count > 99 ? "99+" : item.count}</span> : null}
                                 </button>

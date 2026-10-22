@@ -10,7 +10,7 @@ export const AGENT_WINDOW_EVENT_LOG_LIMIT = 160;
 /** 每个窗口保留的未读去重键数量上限（防止长会话无限增长）。 */
 export const AGENT_WINDOW_UNREAD_KEY_LIMIT = 200;
 
-export type AgentWindowStatus = "idle" | "running" | "error";
+export type AgentWindowStatus = "idle" | "running" | "queued" | "error";
 
 /**
  * 一个会话窗的完整切片。凡是「一条会话一份」的状态都放这里，
@@ -21,6 +21,8 @@ export type AgentWindow = {
     title: string;
     status: AgentWindowStatus;
     unread: number;
+    /** 该窗有一次发送在排队（例如投喂预览发送、目标窗还没到可发状态）：tab 上标 queued。 */
+    queued: boolean;
     /** 已经计过未读的 turn/消息键，保证一次回复只 +1（流式 delta 不计数）。 */
     unreadKeys: string[];
     messages: AgentChatItem[];
@@ -56,6 +58,7 @@ export function createAgentWindow(patch: Partial<AgentWindow> & { id: string; ti
     return {
         status: "idle",
         unread: 0,
+        queued: false,
         unreadKeys: [],
         messages: [],
         eventLogs: [],
@@ -167,10 +170,12 @@ export function withAppendedEventLog(window: AgentWindow, item: AgentEventLog, l
     return { ...window, eventLogs: [...window.eventLogs, item].slice(-limit) };
 }
 
-/** 由发送/等待状态推导窗口状态，驱动 tab 上的转圈 / 红点。 */
-export function deriveWindowStatus(window: Pick<AgentWindow, "status" | "sending" | "waiting">): AgentWindowStatus {
+/** 由发送/等待/排队状态推导窗口状态，驱动 tab 上的转圈 / 排队 / 红点。 */
+export function deriveWindowStatus(window: Pick<AgentWindow, "status" | "sending" | "waiting"> & { queued?: boolean }, queued?: boolean): AgentWindowStatus {
     if (window.status === "error") return "error";
-    return window.sending || window.waiting ? "running" : "idle";
+    if (window.sending || window.waiting) return "running";
+    if (queued ?? window.queued ?? false) return "queued";
+    return "idle";
 }
 
 /**
@@ -190,6 +195,20 @@ export function toWindowTabLabel(window: Pick<AgentWindow, "title">, index?: num
 /** tab 的悬停提示：`⌘1 · 会话 1`，说明这个窗对应哪个切换快捷键。 */
 export function toWindowTabHint(window: Pick<AgentWindow, "title">, index: number): string {
     return `⌘${index + 1} · ${window.title}`;
+}
+
+/**
+ * 按线程反查「序号:名称」（队列视图用）：线程属于哪个会话窗，就显示那个窗的 tab 文案。
+ * 找不到归属（历史线程 / 别的客户端的线程）返回空串，调用方据此不显示窗徽标，而不是瞎猜一个。
+ */
+export function windowLabelForThread(
+    windows: Array<Pick<AgentWindow, "title" | "activeThreadId" | "conversation">>,
+    threadId: string,
+): string {
+    if (!threadId) return "";
+    const index = windows.findIndex((window) => window.conversation.threadId === threadId || window.activeThreadId === threadId);
+    if (index < 0) return "";
+    return toWindowTabLabel(windows[index], index);
 }
 
 /**

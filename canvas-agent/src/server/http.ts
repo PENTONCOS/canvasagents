@@ -474,7 +474,8 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
         res.json({ ok: true, workspace, conversation: session.conversationStateSnapshot, ...result });
     }));
     // M5: aggregate per-thread task status for the global queue view. The running
-    // Codex thread carries the live state (running / approval); everything else is idle.
+    // 每个线程各自报「在跑 / 等输入 / 空闲」：多窗并行时不能只看站点激活线程，
+    // 否则后台窗正在跑的那一轮在队列里会显示成空闲（B3：队列要看出谁在跑）。
     app.get("/agent/queue", route(async (_req, res) => {
         const workspace = ensureSiteWorkspace(config);
         const result = await listCodexThreads(emit, { cwd: workspace.workspacePath });
@@ -482,24 +483,27 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
         const conversation = session.conversationStateSnapshot;
         const pendingApprovals = session.codexPendingApprovals;
         const activeThreadId = workspace.activeThreadId || codex.threadId || conversation.threadId || "";
+        const busyThreadIds = session.busyThreadIds;
+        const runningThreadIds = [...busyThreadIds, ...claudeRunningThreadIds()];
         type QueueStatus = "waiting-input" | "approval" | "running" | "idle" | "failed";
         const data = (result.data || []).map((thread) => {
             const active = Boolean(activeThreadId) && thread.id === activeThreadId;
+            const running = runningThreadIds.includes(thread.id);
             let status: QueueStatus = "idle";
             let waitingFor = "";
-            if (active && pendingApprovals.length) {
+            if (pendingApprovals.some((item) => !item.threadId || item.threadId === thread.id) && (running || active)) {
                 status = "approval";
-                waitingFor = String(pendingApprovals[0]?.method || pendingApprovals[0]?.requestId || "approval");
-            } else if (active && codex.busy) {
+                waitingFor = String(pendingApprovals.find((item) => !item.threadId || item.threadId === thread.id)?.method || "approval");
+            } else if (running) {
                 status = "running";
             } else if (active && conversation.status === "failed") {
                 status = "failed";
             } else if (active && conversation.status === "preparing") {
                 status = "waiting-input";
             }
-            return { id: thread.id, title: thread.name || thread.preview || thread.id, source: thread.source, status, active, waitingFor, updatedAt: thread.updatedAt || 0, createdAt: thread.createdAt || 0 };
+            return { id: thread.id, title: thread.name || thread.preview || thread.id, source: thread.source, status, active, running, waitingFor, updatedAt: thread.updatedAt || 0, createdAt: thread.createdAt || 0 };
         });
-        res.json({ ok: true, workspace, conversation, codex, pendingApprovals: pendingApprovals.length, data, updatedAt: Date.now() });
+        res.json({ ok: true, workspace, conversation, codex, busyThreadIds: runningThreadIds, pendingApprovals: pendingApprovals.length, data, updatedAt: Date.now() });
     }));
     app.post("/agent/codex/threads/new", codexMutation(async (req, res) => {
         const clientId = String(req.body?.clientId || "");

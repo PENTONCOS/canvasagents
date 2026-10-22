@@ -1528,6 +1528,7 @@ export default {
             rename: "重命名当前会话窗",
             renameTitle: "给这个会话窗起个名字",
             renamePlaceholder: "例如：蓝色调改图",
+            status: { running: "运行中", queued: "排队中", idle: "空闲", error: "失败" },
         },
         repo: {
             badgeLabel: "同步最新代码",

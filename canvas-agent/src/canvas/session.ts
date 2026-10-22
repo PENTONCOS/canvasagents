@@ -96,6 +96,11 @@ export class CanvasSession {
         return this.busyThreads.has(threadId);
     }
 
+    /** 所有正在跑 turn 的线程 id（多窗并行时队列据此标出「谁在跑」）。 */
+    get busyThreadIds() {
+        return [...this.busyThreads.keys()];
+    }
+
     get codexThreadId() {
         return this.codexState.threadId;
     }
@@ -217,10 +222,20 @@ export class CanvasSession {
         return this.clients.has(clientId) ? this.canvasStates.get(clientId) || null : null;
     }
 
-    /** 原子取得 Codex 写操作权限，避免多个网页并发切换或修改会话。传入 threadId 时只阻塞该线程。 */
+    /**
+     * 原子取得 Codex 写操作权限，避免多个网页并发切换或修改会话。传入 threadId 时只阻塞该线程。
+     *
+     * 未指定线程（新建/切换会话这类站点级写操作）只被「当前会话线程」上正在跑的 turn 阻塞：
+     * 别的窗在自己的线程上跑 turn 时，仍要允许开新窗/切线程，否则多窗并行会互相堵死
+     * （B3：两个窗同时运行互不阻塞）。
+     */
     beginCodexMutation(threadId?: string) {
         if (this.codexMutationBusy) return false;
-        if (threadId ? this.busyThreads.has(threadId) : this.busyThreads.size > 0) return false;
+        const target = threadId || this.conversationState.threadId;
+        // 有明确线程只看该线程：别的窗在自己的线程上跑 turn，不该堵住这个窗的开窗/切线程。
+        // 连当前会话线程都还没有（新建中）时无从判断落点，退回到「有 turn 在跑就全挡」的保守语义。
+        const blocked = target ? this.busyThreads.has(target) : this.busyThreads.size > 0;
+        if (blocked) return false;
         this.codexMutationBusy = true;
         return true;
     }
