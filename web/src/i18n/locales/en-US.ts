@@ -781,6 +781,7 @@ export default {
             rename: "Rename",
             removeTitle: "Remove node",
             feedBugs: "Send to Agent",
+            feedCurrent: "Current window",
             feedBugsTitle: "Send the selected canvas content and its marked-up screenshots to the Agent in one go",
             feedBugsHeader: "Here are {{count}} bugs to fix:",
             feedBugsViolates: "violates {{acs}}",

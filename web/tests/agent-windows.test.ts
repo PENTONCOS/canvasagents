@@ -144,9 +144,16 @@ describe("event log", () => {
 });
 
 describe("展示辅助", () => {
-    test("tab 文案从 1 开始", () => {
+    test("tab 文案从 1 开始，改过名的窗补编号前缀", () => {
         expect(toWindowTabLabel(win("a", { title: "精灵模式" }))).toBe("精灵模式");
-        expect(toWindowTabLabel(win("b", { title: "landingpage 改版" }))).toBe("landingpage 改版");
+        expect(toWindowTabLabel(win("a", { title: "精灵模式" }), 0)).toBe("1:精灵模式");
+        expect(toWindowTabLabel(win("b", { title: "需求执行" }), 1)).toBe("2:需求执行");
+    });
+
+    test("默认标题已经带对了编号，不重复加前缀", () => {
+        expect(toWindowTabLabel(win("a", { title: "会话 1" }), 0)).toBe("会话 1");
+        expect(toWindowTabLabel(win("b", { title: "会话 2" }), 1)).toBe("会话 2");
+        expect(toWindowTabLabel(win("c", { title: "会话 3" }), 0)).toBe("1:会话 3");
     });
 
     test("tab 提示带快捷键序号", () => {

@@ -13,6 +13,7 @@ import { ensureImagePreview, uploadImage } from "@/services/image-storage";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
+import { toWindowTabLabel } from "@/lib/agent/agent-windows";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useCommandStore } from "@/stores/use-command-store";
@@ -3431,7 +3432,7 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
     // 这正是参考产品让「画布充当上下文中介」的做法。
     // 证据截图仍沿「问题单 → 圈注 → 截图节点」取；若这些截图绑在同一个 Agent 窗上，
     // 就切到那个窗，沿用开发阶段的上下文。
-    const feedSelectionToAgent = useCallback((selection: CanvasNodeData[]) => {
+    const feedSelectionToAgent = useCallback((selection: CanvasNodeData[], targetWindowId?: string) => {
         const feedNodes = feedableNodes(selection);
         if (feedNodes.length === 0) return;
         const delivery = useDeliveryStore.getState();
@@ -3440,8 +3441,12 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
         const references = buildCanvasResourceReferences(evidenceNodes);
         const agent = useAgentStore.getState();
         const followId = evidenceNodes.map((node) => node.metadata?.followWindowId).find(Boolean);
-        if (followId && agent.windows.some((window) => window.id === followId)) agent.selectWindow(followId);
-        agent.setAgentState({
+        // 目标窗优先级：用户显式选的窗 > 证据截图绑定的窗 > 当前窗。
+        const target = [targetWindowId, followId].find((id) => Boolean(id) && agent.windows.some((window) => window.id === id)) ?? agent.activeWindowId;
+        // prompt 不是窗口级字段，必须先切窗再写，否则草稿会落在原来那个窗里。
+        if (target !== agent.activeWindowId) agent.selectWindow(target);
+        const latest = useAgentStore.getState();
+        latest.setAgentState({
             prompt: buildFeedPrompt(feedNodes, {
                 bugs: delivery.bugs,
                 annotations: delivery.annotations,
@@ -3450,9 +3455,9 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
                 designs: delivery.designs,
                 environments: delivery.environments,
             }),
-            canvasReferences: [...agent.canvasReferences.filter((item) => !references.some((reference) => reference.nodeId === item.nodeId)), ...references],
+            canvasReferences: [...latest.canvasReferences.filter((item) => !references.some((reference) => reference.nodeId === item.nodeId)), ...references],
         });
-        agent.openPanel();
+        latest.openPanel();
     }, [nodesRef]);
 
     const handleNodeViewImage = useCallback((node: CanvasNodeData, imageId?: string) => {
@@ -3815,7 +3820,8 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
                         onGroup={groupSelection}
                         onUngroup={ungroupSelection}
                         canFeed={feedableNodes(selectedNodes).length > 0}
-                        onFeed={() => feedSelectionToAgent(selectedNodes)}
+                        onFeed={(windowId) => feedSelectionToAgent(selectedNodes, windowId)}
+                        feedTargets={agentWindows.map((window, index) => ({ id: window.id, label: toWindowTabLabel(window, index) }))}
                     />
                 ) : null}
 

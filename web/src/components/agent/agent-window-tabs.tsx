@@ -68,7 +68,8 @@ export function AgentWindowTabs() {
 
     const closeActive = () => removeWindow(active.id);
     const openRename = () => {
-        setRenameDraft(active.title?.trim() || toWindowTabLabel(active));
+        // 改名只改标题本身，不要把「1:」这种序号前缀带进输入框。
+        setRenameDraft(active.title?.trim() || toWindowTabLabel(active, windows.indexOf(active)));
         setRenaming(true);
     };
     const commitRename = () => {
@@ -87,7 +88,7 @@ export function AgentWindowTabs() {
             theme={theme}
             items={windows.map((window, index) => ({
                 value: window.id,
-                label: toWindowTabLabel(window),
+                label: toWindowTabLabel(window, index),
                 icon: statusIcon(window.status),
                 dot: Boolean(window.unread),
                 hint: window.unread ? `${toWindowTabHint(window, index)} · ${t("agent.window.unread", { count: window.unread })}` : toWindowTabHint(window, index),

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Bug, Group, Ungroup } from "lucide-react";
-import { Tooltip } from "antd";
+import { Dropdown, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -20,6 +20,7 @@ export function CanvasSelectionToolbar({
     onUngroup,
     canFeed = false,
     onFeed,
+    feedTargets = [],
 }: {
     nodes: CanvasNodeData[];
     viewport: ViewportTransform;
@@ -30,7 +31,10 @@ export function CanvasSelectionToolbar({
     onUngroup: () => void;
     /** P0-1: 选中里有可投喂内容时，可把整批内容连同圈注截图一次投喂给 Agent。 */
     canFeed?: boolean;
-    onFeed?: () => void;
+    /** 投喂目标窗；不传表示投喂当前激活窗。 */
+    onFeed?: (windowId?: string) => void;
+    /** 可投喂的会话窗（`编号:标题`），由调用方按当前窗口列表给出。 */
+    feedTargets?: { id: string; label: string }[];
 }) {
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
@@ -69,7 +73,20 @@ export function CanvasSelectionToolbar({
                     onMouseDown={(event) => event.stopPropagation()}
                     onPointerDown={(event) => event.stopPropagation()}
                 >
-                    {showFeed ? <SelectionAction title={t("canvas.nodeToolbar.feedBugsTitle")} label={t("canvas.nodeToolbar.feedBugs")} icon={<Bug className="size-4" />} onClick={() => onFeed?.()} /> : null}
+                    {showFeed ? (
+                        <Dropdown
+                            trigger={["click"]}
+                            placement="top"
+                            menu={{
+                                items: (feedTargets.length ? feedTargets : [{ id: "", label: t("canvas.nodeToolbar.feedCurrent") }]).map((target) => ({ key: target.id, label: target.label })),
+                                onClick: ({ key }) => onFeed?.(key || undefined),
+                            }}
+                        >
+                            <div>
+                                <SelectionAction title={t("canvas.nodeToolbar.feedBugsTitle")} label={t("canvas.nodeToolbar.feedBugs")} icon={<Bug className="size-4" />} />
+                            </div>
+                        </Dropdown>
+                    ) : null}
                     {canGroup ? <SelectionAction title={t("canvas.nodeToolbar.groupTitle")} label={t("canvas.nodeToolbar.group")} icon={<Group className="size-4" />} onClick={onGroup} /> : null}
                     {canUngroup ? <SelectionAction title={t("canvas.nodeToolbar.ungroupTitle")} label={t("canvas.nodeToolbar.ungroup")} icon={<Ungroup className="size-4" />} onClick={onUngroup} /> : null}
                 </div>
@@ -78,7 +95,7 @@ export function CanvasSelectionToolbar({
     );
 }
 
-function SelectionAction({ title, label, icon, onClick }: { title: string; label: string; icon: ReactNode; onClick: () => void }) {
+function SelectionAction({ title, label, icon, onClick }: { title: string; label: string; icon: ReactNode; onClick?: () => void }) {
     return (
         <Tooltip title={title} placement="top" mouseEnterDelay={0.2} color="#ffffff" styles={{ root: { color: "#242529", boxShadow: "0 8px 24px rgba(15,23,42,.16)", fontSize: 13, fontWeight: 500 } }}>
             <button type="button" className="group relative flex h-12 items-center whitespace-nowrap px-1.5" onClick={onClick} aria-label={title}>

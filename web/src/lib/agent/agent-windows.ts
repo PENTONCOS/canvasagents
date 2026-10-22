@@ -174,12 +174,17 @@ export function deriveWindowStatus(window: Pick<AgentWindow, "status" | "sending
 }
 
 /**
- * tab 文案：只用窗口标题。
- * 默认标题本身就是「会话 1 / 会话 2」，再前缀一个序号会出现「1: 会话 1」这种重复噪音。
- * 序号仍然有用，放在 tooltip 的快捷键提示里（见 toWindowTabHint）。
+ * tab 文案：`编号:标题`。
+ *
+ * 编号是给「喂给哪个窗」用的——多个窗跑不同活时，光看标题记不住 ⌘N 对应谁。
+ * 默认标题本身已经是「会话 1 / 会话 2」，再前缀一次会变成「1:会话 1」，
+ * 所以标题末尾的编号正好等于当前位置时原样显示；改过名的窗才补前缀。
  */
-export function toWindowTabLabel(window: Pick<AgentWindow, "title">): string {
-    return window.title;
+export function toWindowTabLabel(window: Pick<AgentWindow, "title">, index?: number): string {
+    const title = window.title.trim();
+    if (index === undefined) return title;
+    const numbered = new RegExp(`(?:^|\\D)${index + 1}$`).test(title);
+    return numbered ? title : `${index + 1}:${title}`;
 }
 
 /** tab 的悬停提示：`⌘1 · 会话 1`，说明这个窗对应哪个切换快捷键。 */

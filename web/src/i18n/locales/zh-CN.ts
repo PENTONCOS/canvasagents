@@ -743,6 +743,7 @@ export default {
             rename: "重命名",
             removeTitle: "移除节点",
             feedBugs: "投喂 Agent",
+            feedCurrent: "当前会话窗",
             feedBugsTitle: "把选中的内容连同圈注截图一次交给 Agent",
             feedBugsHeader: "以下是 {{count}} 个待修复问题单：",
             feedBugsViolates: "违反 {{acs}}",
