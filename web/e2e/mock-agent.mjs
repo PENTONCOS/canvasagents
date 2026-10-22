@@ -22,6 +22,12 @@ let threads = [
 // M5 验收①③：记录真的收到过哪些 turn（断言「两个 driver 都能干活」），
 // 以及下一次 turn 要回吐多少 token（断言「额度耗尽的提示与拦截」）。
 let turns = [];
+// H2：队列里能直接处置的权限请求。approvals 是「服务端真的收到过哪些审批决定」，
+// pendingApprovals 是还没处置的那几条（队列的「权限确认」态与 requestId 都来自它）。
+let approvals = [];
+let pendingApprovals = [];
+// 用例想造「失败 / 等待输入」这种历史条目时用它（真桥端这些状态来自会话，桩直接给）。
+let statusOverrides = {};
 let usageNext = { input_tokens: 1200, cached_input_tokens: 0, output_tokens: 800 };
 // B3 多窗并行：不同线程的 turn 必须能同时在飞。默认 50ms 走完（既有用例不用等），
 // 需要证明「时间区间真的重叠」的用例用 /__turn-config 把它调长。
@@ -96,7 +102,26 @@ const server = createServer(async (req, res) => {
     // 测试辅助：断言服务端到底收到了什么。
     // turns 带 startedAt / finishedAt：用例靠这两个时间戳断言两个 turn 真的交错跑过，
     // 而不是「先后各跑一遍、只是看起来快」。
-    if (path === "/__state") return json(res, { deleted, threads: threads.map((item) => item.id), claudeThreads: claudeThreads.map((item) => item.id), turns, inflight, maxInflight, turnDelayMs });
+    if (path === "/__state") return json(res, { deleted, threads: threads.map((item) => item.id), claudeThreads: claudeThreads.map((item) => item.id), turns, approvals, pendingApprovals, statusOverrides, inflight, maxInflight, turnDelayMs });
+    // 造一条待审批项：队列的「批准 / 拒绝」必须真的打到桥端才算过，所以这里得能种进去。
+    if (path === "/__approval-seed" && req.method === "POST") {
+        const body = JSON.parse((await readBody(req).catch(() => "{}")) || "{}");
+        const requestId = String(body.requestId || `req-${pendingApprovals.length + 1}`);
+        pendingApprovals = pendingApprovals.filter((item) => item.requestId !== requestId);
+        pendingApprovals.push({ requestId, threadId: String(body.threadId || ""), method: String(body.method || "shell"), reason: String(body.reason || "需要确认才能执行命令") });
+        return json(res, { ok: true, pendingApprovals });
+    }
+    // 造一条「失败 / 等待输入」条目（继续按钮只在这两种状态下出现）。
+    if (path === "/__queue-status" && req.method === "POST") {
+        const body = JSON.parse((await readBody(req).catch(() => "{}")) || "{}");
+        const threadId = String(body.threadId || "");
+        const status = String(body.status || "");
+        if (threadId) {
+            if (status) statusOverrides[threadId] = status;
+            else delete statusOverrides[threadId];
+        }
+        return json(res, { ok: true, statusOverrides });
+    }
     // 用例要把「一轮跑多久」调长时打这里（用于证明并行：第二个 turn 在第一个结束前就开始了）。
     if (path === "/__turn-config" && req.method === "POST") {
         const body = JSON.parse((await readBody(req).catch(() => "{}")) || "{}");
@@ -120,6 +145,9 @@ const server = createServer(async (req, res) => {
         turnDelayMs = 50;
         deleted = [];
         turns = [];
+        approvals = [];
+        pendingApprovals = [];
+        statusOverrides = {};
         usageNext = { input_tokens: 1200, cached_input_tokens: 0, output_tokens: 800 };
         verifyCalls = 0;
         verifyFailures = 1;
@@ -201,7 +229,50 @@ const server = createServer(async (req, res) => {
 
     if (path === "/agent/codex/models") return json(res, { models: [] });
     if (path === "/agent/codex/skills") return json(res, { skills: [] });
-    if (path === "/agent/queue") return json(res, { items: [] });
+    // 与真桥端同形状：data[] 每条带状态，pendingApprovalRequests 带 requestId + 归属线程，
+    // 队列靠它决定这一条能不能一键批准（缺了 requestId 就只能干瞪眼）。
+    if (path === "/agent/queue") {
+        const runningIds = [...new Set([...turnTimers.values()].map((entry) => entry.threadId))];
+        const data = threads.map((thread) => {
+            const pending = pendingApprovals.filter((item) => !item.threadId || item.threadId === thread.id);
+            const active = thread.id === activeThreadId;
+            const running = runningIds.includes(thread.id);
+            let status = statusOverrides[thread.id] || "idle";
+            let waitingFor = "";
+            if (pending.length && (running || active)) {
+                status = "approval";
+                waitingFor = pending[0].method || "approval";
+            } else if (running) {
+                status = "running";
+            }
+            return { id: thread.id, title: thread.name || thread.preview || thread.id, source: "codex", status, active, running, waitingFor, updatedAt: thread.updatedAt || 0, createdAt: thread.createdAt || 0 };
+        });
+        return json(res, {
+            ok: true,
+            workspace: { activeThreadId: currentThread(), cwd: "/tmp/e2e-workspace" },
+            conversation: conversation(),
+            codex: { busy: runningIds.length > 0, threadId: currentThread(), turnId: "" },
+            busyThreadIds: runningIds,
+            pendingApprovals: pendingApprovals.length,
+            pendingApprovalRequests: pendingApprovals.map((item) => ({ requestId: item.requestId, threadId: item.threadId, method: item.method, reason: item.reason })),
+            data,
+            updatedAt: Date.now(),
+        });
+    }
+    // H2：队列里批准 / 拒绝 → 必须落到服务端。决策记进 approvals，并从待办里摘掉。
+    if (path === "/agent/codex/approval" && req.method === "POST") {
+        const body = JSON.parse((await readBody(req).catch(() => "{}")) || "{}");
+        const requestId = String(body.requestId || "");
+        const decision = String(body.decision || "");
+        const pending = pendingApprovals.find((item) => item.requestId === requestId);
+        if (!pending || !["accept", "acceptForSession", "decline", "cancel"].includes(decision)) {
+            return json(res, { ok: false, error: "审批请求已失效" }, 409);
+        }
+        approvals.push({ requestId, decision, threadId: pending.threadId || "", at: Date.now() });
+        pendingApprovals = pendingApprovals.filter((item) => item.requestId !== requestId);
+        broadcast("codex_approval_resolved", { requestId, threadId: pending.threadId || "", decision });
+        return json(res, { ok: true });
+    }
     if (path === "/agent/wall") return json(res, { items: [] });
     if (path === "/agent/codex/history/ack") return json(res, { ok: true });
     if (path === "/health") return json(res, { ok: true, protocolVersion: 6 });
@@ -300,6 +371,19 @@ const server = createServer(async (req, res) => {
     const claudeThreadMatch = path.match(/^\/agent\/claude\/threads\/([^/]+)$/);
     if (claudeThreadMatch && req.method === "GET") {
         return json(res, { thread: { id: decodeURIComponent(claudeThreadMatch[1]), turns: [] }, conversation: claudeConversation() });
+    }
+    // H2：队列的「继续」先把线程接进会话窗（resume），再走 /turn 起新一轮。
+    const resumeMatch = path.match(/^\/agent\/codex\/threads\/([^/]+)\/resume$/);
+    if (resumeMatch && req.method === "POST") {
+        await readBody(req).catch(() => "");
+        const threadId = decodeURIComponent(resumeMatch[1]);
+        const thread = threads.find((item) => item.id === threadId);
+        activeThreadId = threadId;
+        conversationId = `conv-${threadId}`;
+        revision += 1;
+        const snapshot = conversation();
+        broadcast("conversation_changed", snapshot);
+        return json(res, { ok: true, workspace: { activeThreadId: threadId, cwd: "/tmp/e2e-workspace" }, conversation: snapshot, thread: { id: threadId, title: thread?.name || threadId, turns: [] }, messages: [{ role: "user", text: "继续上一步未完成的部分" }] });
     }
     if (path === "/agent/claude/models") return json(res, { data: [{ id: "claude-sonnet-4-5", displayName: "Claude Sonnet 4.5", isDefault: true }] });
     if (path === "/agent/claude/skills") return json(res, { ok: true, data: [], note: "claude driver 暂不支持技能市场" });

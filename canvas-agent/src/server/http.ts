@@ -503,7 +503,17 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
             }
             return { id: thread.id, title: thread.name || thread.preview || thread.id, source: thread.source, status, active, running, waitingFor, updatedAt: thread.updatedAt || 0, createdAt: thread.createdAt || 0 };
         });
-        res.json({ ok: true, workspace, conversation, codex, busyThreadIds: runningThreadIds, pendingApprovals: pendingApprovals.length, data, updatedAt: Date.now() });
+        // H2：队列里要能直接处置权限请求，光给条数不够 —— 每条都得带 requestId（审批凭据）
+        // 与 threadId（归属哪个会话窗），否则前端只能把用户再送回面板去点一遍。
+        const pendingApprovalRequests = pendingApprovals
+            .map((item) => ({
+                requestId: String(item.requestId || ""),
+                threadId: String(item.threadId || ""),
+                method: String(item.method || ""),
+                reason: String(item.reason || ""),
+            }))
+            .filter((item) => item.requestId);
+        res.json({ ok: true, workspace, conversation, codex, busyThreadIds: runningThreadIds, pendingApprovals: pendingApprovals.length, pendingApprovalRequests, data, updatedAt: Date.now() });
     }));
     app.post("/agent/codex/threads/new", codexMutation(async (req, res) => {
         const clientId = String(req.body?.clientId || "");

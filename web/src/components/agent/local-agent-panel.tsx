@@ -5,8 +5,8 @@ import dayjs from "dayjs";
 import { Bot, History, Images, MessageSquare, MessageSquarePlus, PanelRightClose, PlugZap, Sparkles, Terminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { APP_ID } from "@/constant/brand";
 import i18n from "@/i18n";
+import { acquireAgentClientId } from "@/lib/agent/agent-client-id";
 import { readAgentUrlBootstrap } from "@/lib/agent/agent-url-bootstrap";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { upscaleDataUrl } from "@/lib/canvas/canvas-image-data";
@@ -102,7 +102,6 @@ type AgentHelloEvent = { ok?: boolean; protocolVersion?: number; clientId?: stri
 type AgentWorkspaceEvent = { activeThreadId?: string; threadId?: string; sourceClientId?: string; emptyThread?: boolean; draftThread?: boolean; conversation?: AgentConversationState };
 type AgentChatEvent = { threadId?: string; turnId?: string; sourceClientId?: string; replayed?: boolean; message?: AgentChatItem };
 type AgentBootstrapEvent = { type?: "codex.preparing" | "codex.prepare_failed" | "mcp.startup" | "mcp.complete"; phase?: "preheat" | "runtime"; threadId?: string; name?: string; status?: "starting" | "ready" | "failed" | "cancelled"; error?: string | null; failureReason?: string | null };
-type AgentClientGlobal = typeof globalThis & { __canvasAgentsClientIdPromise?: Promise<string> };
 
 function authoritativeHistoryTurnKeys(threadId: string, settledTurnIds: string[]) {
     return new Set(settledTurnIds.map((turnId) => `${threadId}\0${turnId}`));
@@ -1930,53 +1929,6 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
 
     if (headless) return null;
     return embedded ? content : null;
-}
-
-function acquireAgentClientId() {
-    const scope = globalThis as AgentClientGlobal;
-    scope.__canvasAgentsClientIdPromise ||= (async () => {
-        const storedClientId = readAgentClientId();
-        let clientId = storedClientId || randomId();
-        if (!navigator.locks) {
-            if (!storedClientId) saveAgentClientId(clientId);
-            return clientId;
-        }
-        while (true) {
-            const acquired = await new Promise<boolean>((resolve, reject) => {
-                void navigator.locks.request(`${APP_ID}-agent:${clientId}`, { ifAvailable: true }, async (lock) => {
-                    if (!lock) return resolve(false);
-                    resolve(true);
-                    await new Promise<void>(() => undefined);
-                }).catch(reject);
-            });
-            if (acquired) {
-                saveAgentClientId(clientId);
-                return clientId;
-            }
-            clientId = randomId();
-        }
-    })().catch(() => {
-        const clientId = randomId();
-        saveAgentClientId(clientId);
-        return clientId;
-    });
-    return scope.__canvasAgentsClientIdPromise;
-}
-
-function readAgentClientId() {
-    try {
-        return sessionStorage.getItem("canvas-agent-client-id") || "";
-    } catch {
-        return "";
-    }
-}
-
-function saveAgentClientId(clientId: string) {
-    try {
-        sessionStorage.setItem("canvas-agent-client-id", clientId);
-    } catch {
-        // The in-memory identity still keeps request ownership consistent within the current page session.
-    }
 }
 
 function eventScope(event: AgentEventPayload) {
