@@ -23,6 +23,18 @@ let threads = [
 // 以及下一次 turn 要回吐多少 token（断言「额度耗尽的提示与拦截」）。
 let turns = [];
 let usageNext = { input_tokens: 1200, cached_input_tokens: 0, output_tokens: 800 };
+// 会话身份与 revision 必须像真桥端一样「每次 reset 就是一次新会话」：
+// canvas-agent 的 /threads/reset 走 session.beginConversation()（新的 conversationId）
+// 再 prepareDraftThread()（新的 threadId），revision 单调递增。
+// 早期桩图省事，reset 后照旧返回 thread-a / conv-e2e / revision 1，于是两个会话窗共用
+// 一个身份：前端按 threadId 归属（use-agent-store.agentWindowIdForConversation）会把
+// 新窗的状态写进第一个窗，再被 revision 保护挡掉——新窗永远停在 idle。
+let activeThreadId = threads[0].id;
+let conversationId = "conv-e2e";
+let revision = 1;
+let threadSeq = 0;
+let claudeActiveThreadId = claudeThreads[0].id;
+let claudeThreadSeq = 0;
 const sseClients = new Set();
 
 function broadcast(event, payload) {
@@ -57,9 +69,11 @@ function readBody(req) {
     });
 }
 
-const conversation = () => ({ revision: 1, conversationId: "conv-e2e", threadId: currentThread(), status: "ready", mcpStatuses: {} });
-const currentThread = () => threads[0]?.id || "";
-const claudeConversation = () => ({ revision: 1, conversationId: "conv-claude-e2e", threadId: claudeThreads[0]?.id || "", status: "ready", mcpStatuses: {} });
+// 桩不模拟 MCP 生命周期，所以会话直接是 ready（与 hello 一致，不是为了让测试变绿）；
+// 但身份与 revision 必须和真桥端一样真实递增。
+const conversation = () => ({ revision, conversationId, threadId: currentThread(), status: "ready", mcpStatuses: {} });
+const currentThread = () => activeThreadId;
+const claudeConversation = () => ({ revision: 1, conversationId: `conv-${claudeActiveThreadId}`, threadId: claudeActiveThreadId, status: "ready", mcpStatuses: {} });
 
 const server = createServer(async (req, res) => {
     const url = new URL(req.url || "/", `http://127.0.0.1:${PORT}`);
@@ -95,6 +109,12 @@ const server = createServer(async (req, res) => {
         claudeThreads = [
             { id: "claude-thread-1", preview: "用 Claude 写验收测试", name: "Claude 验收", createdAt: 1789200000, updatedAt: 1789300000 },
         ];
+        activeThreadId = threads[0].id;
+        conversationId = "conv-e2e";
+        revision = 1;
+        threadSeq = 0;
+        claudeActiveThreadId = claudeThreads[0].id;
+        claudeThreadSeq = 0;
         return json(res, { ok: true });
     }
 
@@ -138,7 +158,18 @@ const server = createServer(async (req, res) => {
 
     if (path === "/agent/codex/threads/reset") {
         await readBody(req);
-        return json(res, { conversation: conversation() });
+        // 与真桥端同语义：reset = 开一个新对话（新 conversationId + 新 threadId，revision+1）。
+        const now = Math.floor(Date.now() / 1000);
+        threadSeq += 1;
+        const thread = { id: `thread-${Date.now().toString(36)}${threadSeq}`, preview: "", name: `新对话 ${threadSeq}`, createdAt: now, updatedAt: now };
+        threads = [thread, ...threads];
+        activeThreadId = thread.id;
+        conversationId = `conv-${thread.id}`;
+        revision += 1;
+        const snapshot = conversation();
+        // 真桥端每次会话状态变化都广播 conversation_changed（session.updateConversation）。
+        broadcast("conversation_changed", snapshot);
+        return json(res, { conversation: snapshot });
     }
 
     const threadMatch = path.match(/^\/agent\/codex\/threads\/([^/]+)$/);
@@ -234,7 +265,15 @@ const server = createServer(async (req, res) => {
     }
     if (path === "/agent/claude/threads/reset") {
         await readBody(req);
-        return json(res, { conversation: claudeConversation() });
+        // claude 的 reset 在真桥端同样是 claudeThreadStore.create()：必须给新线程，不能复用旧 id。
+        const now = Math.floor(Date.now() / 1000);
+        claudeThreadSeq += 1;
+        const thread = { id: `claude-thread-${Date.now().toString(36)}${claudeThreadSeq}`, preview: "", name: `Claude 新对话 ${claudeThreadSeq}`, createdAt: now, updatedAt: now };
+        claudeThreads = [thread, ...claudeThreads];
+        claudeActiveThreadId = thread.id;
+        const snapshot = claudeConversation();
+        broadcast("conversation_changed", snapshot);
+        return json(res, { conversation: snapshot, thread: { id: thread.id, title: thread.name, turns: [] }, messages: [] });
     }
     const claudeThreadMatch = path.match(/^\/agent\/claude\/threads\/([^/]+)$/);
     if (claudeThreadMatch && req.method === "GET") {

@@ -216,6 +216,8 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     const [driverId, setDriverId] = useState<AgentDriverId>(getAgentDriver());
     const [drivers, setDrivers] = useState<Array<{ id: string; label: string; available: boolean; version?: string; error?: string }>>([]);
     const loadThreadsSequenceRef = useRef(0);
+    /** 每个窗口还有几个历史加载在飞：被新一轮顶掉的请求也要收掉自己窗的 loadingThreads。 */
+    const loadingThreadsPendingRef = useRef(new Map<string, number>());
     const loadThreadsRef = useRef<((skipHistory?: boolean) => Promise<void>) | null>(null);
     const threadMessagesRef = useRef(new Map<string, AgentChatItem[]>());
     const authoritativeHistoryTurnsRef = useRef(new Set<string>());
@@ -368,6 +370,8 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         if (!connectedRef.current && !useAgentStore.getState().connected) return;
         let sequence = ++loadThreadsSequenceRef.current;
         const requestedWindowId = useAgentStore.getState().activeWindowId;
+        const pendingLoads = loadingThreadsPendingRef.current;
+        pendingLoads.set(requestedWindowId, (pendingLoads.get(requestedWindowId) ?? 0) + 1);
         withWindowPatchTarget(requestedWindowId, () => setAgentState({ loadingThreads: true }));
         try {
             const data = await fetchAgentJson<AgentThreadsResponse>(endpoint, token, agentApiPath("/threads"));
@@ -400,9 +404,13 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         } catch (error) {
             addEventLog(rt("historyReadFailed"), error);
         } finally {
-            if (sequence === loadThreadsSequenceRef.current && !threadOperationRef.current) {
-                withWindowPatchTarget(requestedWindowId, () => setAgentState({ loadingThreads: false }));
-            }
+            // 收尾只看「这一窗还有没有历史加载在飞」：applyWorkspaceChange（线程变更）和
+            // 发送都会推进全局 sequence，被顶掉的请求若跟着 sequence 一起跳过收尾，
+            // 该窗的 loadingThreads 就永远停在 true，输入框永久禁用（双窗切换必现）。
+            const remaining = (pendingLoads.get(requestedWindowId) ?? 1) - 1;
+            if (remaining > 0) pendingLoads.set(requestedWindowId, remaining);
+            else pendingLoads.delete(requestedWindowId);
+            if (remaining <= 0) withWindowPatchTarget(requestedWindowId, () => setAgentState({ loadingThreads: false }));
         }
     }, [applyConversationState, applyWorkspaceChange, endpoint, loadThreadSnapshot, setAgentState, token]);
     loadThreadsRef.current = loadThreads;
@@ -1166,6 +1174,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         authoritativeHistoryTurnsRef.current.clear();
         liveTurnKeysRef.current.clear();
         threadOperationRef.current = 0;
+        loadingThreadsPendingRef.current.clear();
         setAgentState({
             messages: [],
             tokenUsage: null,

@@ -278,4 +278,51 @@ test("全链路：需求 → 旅程 → 设计选定 → 验收失败定位 → 
 
     // 9) 发出去之后草稿清空（同一份内容不会滞留在输入框里被重复发送）。
     await expect(editor).not.toContainText("【Markdown 文档】", { timeout: 15_000 });
+
+    // 10) 新开第二个会话窗：它必须自己建线程（threads/reset）并进入 ready。
+    // 回归点：桩端早期的 reset 会复用第一个窗的 threadId/conversationId，新窗的状态
+    // 被归属判定写回第一个窗、再被 revision 保护挡掉，新窗永远停在「MCP 初始化中」。
+    // 这里走右下角「打开助手」这条真实入口（面板收起时才露出来），它和 tab 上的
+    // 「新建会话窗」共用同一个 addWindow + 补建线程的链路。
+    await page.getByRole("button", { name: "收起 Agent 面板" }).first().click();
+    const entry = page.getByRole("button", { name: /打开助手|打开 Agent/ }).first();
+    await expect(entry).toBeVisible({ timeout: 15_000 });
+    const readyStartedAt = Date.now();
+    await entry.click();
+    await expect(windowTabs).toHaveCount(2, { timeout: 15_000 });
+    const secondTab = windowTabs.last();
+    const secondLabel = (await secondTab.innerText()).trim();
+    expect(secondLabel).toMatch(/^会话\s*\d+$/);
+    expect(secondLabel).not.toBe(targetLabel);
+    await expect(secondTab).toHaveAttribute("aria-selected", "true", { timeout: 15_000 });
+    const agentAside = page.locator("aside").filter({ has: page.locator(WINDOW_TABS) }).first();
+    const secondEditor = agentAside.locator('[role="textbox"]').first();
+    await expect(secondEditor).toHaveAttribute("contenteditable", "true", { timeout: 20_000 });
+    const readyMs = Date.now() - readyStartedAt;
+    console.log(`第二个会话窗就绪耗时 ${readyMs}ms`);
+    expect(readyMs).toBeLessThan(20_000);
+
+    // 11) 投喂到新窗：内容落在新窗自己的草稿栏里。
+    const feedButtonToSecond = await selectAllAndRevealFeed(page);
+    await feedButtonToSecond.click();
+    const secondItem = page.locator(".ant-dropdown").getByText(secondLabel, { exact: true }).first();
+    await expect(secondItem).toBeVisible({ timeout: 10_000 });
+    await secondItem.click();
+    await expect(secondTab).toHaveAttribute("aria-selected", "true", { timeout: 15_000 });
+    await expect(secondEditor).toContainText("【Markdown 文档】", { timeout: 15_000 });
+    await expect(secondEditor).toContainText("【线框草图】");
+
+    // 12) 新窗发送：服务端收到的是第二个线程，且第一个窗的草稿栏没被污染。
+    await secondEditor.click();
+    await secondEditor.press("Enter");
+    await expect.poll(async () => (await agentState(page)).turns.length, { timeout: 20_000 }).toBe(2);
+    const stateAfterSecondWindow = await agentState(page);
+    expect(stateAfterSecondWindow.turns[1].threadId).toBeTruthy();
+    expect(stateAfterSecondWindow.turns[1].threadId).not.toBe(stateAfterSecondWindow.turns[0].threadId);
+    expect(stateAfterSecondWindow.turns[1].text).toContain("【Markdown 文档】");
+
+    const firstEditor = agentAside.locator('[role="textbox"]').first();
+    await expect(firstEditor).toHaveAttribute("contenteditable", "true", { timeout: 20_000 });
+    await expect(firstEditor).not.toContainText("【Markdown 文档】");
+    expect((await firstEditor.innerText()).trim()).toBe("");
 });
