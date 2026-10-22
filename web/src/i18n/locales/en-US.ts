@@ -1500,6 +1500,12 @@ export default {
         protocols: {},
     },
     agent: {
+        contextBar: {
+            title: "Context",
+            kind: { requirement: "Requirement", journey: "Journey", acceptance: "Acceptance", design: "Design", bug: "Bug", environment: "Environment", image: "Image", text: "Text", media: "Media", other: "Other" },
+            acPassing: "{{passing}}/{{total}} passing",
+            designSelected: "{{count}} selected",
+        },
         queue: { title: "Task queue", refresh: "Refresh", loading: "Loading…", empty: "No tasks", current: "Current", statuses: { waitingInput: "Waiting for input", approval: "Approval needed", running: "Running", idle: "Idle", failed: "Failed" } },
         status: { failed: "Connection failed", connected: "Connected", connecting: "Connecting", disconnected: "Disconnected" },
         window: {

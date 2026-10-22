@@ -32,6 +32,7 @@ import { isSiteTool, runSiteTool } from "@/lib/agent/agent-site-tools";
 import { acknowledgeCodexHistory, activateAgentClient, AgentApiError, discoverAgentConfig, fetchAgentJson, interruptCodexTurn, postCodexApproval, postState, postToolResult, requestAgentCaptureSilently } from "@/services/api/canvas-agent";
 import { withAppendedEventLog } from "@/lib/agent/agent-windows";
 import { AgentChatTimeline, AgentTaskProgress, AgentUsageBar } from "./agent-chat";
+import { AgentContextBar } from "./agent-context-bar";
 import { AgentChatComposer } from "./agent-chat-composer";
 import { AgentConnectView } from "./agent-connect-view";
 import {
@@ -1833,6 +1834,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 />
             ) : (
                 <>
+                    <AgentContextBar theme={theme} />
                     <AgentChatTimeline theme={theme} pendingTool={pendingTool} pendingApprovals={pendingApprovals} sending={sending} waiting={waiting} onRejectTool={rejectPendingTool} onApproveTool={approvePendingTool} onApprovalDecision={decideApproval} />
                     <AgentTaskProgress theme={theme} busy={sending || waiting} />
                     {tokenUsage ? <AgentUsageBar usage={tokenUsage} theme={theme} /> : null}

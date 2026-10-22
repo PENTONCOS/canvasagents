@@ -1426,6 +1426,12 @@ export default {
         protocols: {},
     },
     agent: {
+        contextBar: {
+            title: "上下文",
+            kind: { requirement: "需求", journey: "旅程", acceptance: "验收", design: "设计", bug: "问题", environment: "环境", image: "图片", text: "文本", media: "媒体", other: "其他" },
+            acPassing: "{{passing}}/{{total}} 通过",
+            designSelected: "已选定 {{count}}",
+        },
         queue: { title: "任务队列", refresh: "刷新", loading: "读取中…", empty: "当前没有任务", current: "当前", statuses: { waitingInput: "等待输入", approval: "权限确认", running: "干活中", idle: "空闲", failed: "失败" } },
         status: { failed: "连接失败", connected: "已连接", connecting: "连接中", disconnected: "未连接" },
         window: {

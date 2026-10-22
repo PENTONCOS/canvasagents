@@ -30,7 +30,7 @@ export type FeedLookup = {
 export type FeedKind = "requirement" | "journey" | "acceptance" | "design" | "bug" | "environment" | "image" | "text" | "media" | "other";
 
 /** 分组顺序固定：先交付语义，再素材。 */
-const KIND_ORDER: FeedKind[] = ["requirement", "journey", "acceptance", "design", "bug", "environment", "image", "text", "media", "other"];
+export const KIND_ORDER: FeedKind[] = ["requirement", "journey", "acceptance", "design", "bug", "environment", "image", "text", "media", "other"];
 
 const SECTION_KEY: Record<FeedKind, string> = {
     requirement: "canvas.nodeToolbar.feedSectionRequirement",
