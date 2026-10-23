@@ -11,6 +11,11 @@ let deleted = [];
 let verifyCalls = 0;
 let verifyFailures = 1;
 let verifyResults = null;
+// G3：环境节点的健康探测目标。前端从浏览器直接打 http://127.0.0.1:17399/probe-target，
+// 状态码由 /__health-config 控制——「复检拿到最新结果」必须看到 DOM 上的真实码，
+// 而不是只证明按钮点得动。
+let probeStatus = 200;
+let probeDelayMs = 0;
 // M5：第二个 driver 的历史与 codex 完全分开，用来验证「切 driver 真的换了会话源」。
 let claudeThreads = [
     { id: "claude-thread-1", preview: "用 Claude 写验收测试", name: "Claude 验收", createdAt: 1789200000, updatedAt: 1789300000 },
@@ -152,6 +157,8 @@ const server = createServer(async (req, res) => {
         verifyCalls = 0;
         verifyFailures = 1;
         verifyResults = null;
+        probeStatus = 200;
+        probeDelayMs = 0;
         threads = [
             { id: "thread-a", preview: "@图片1 把这张图变为蓝色调的，同明度…", name: "蓝色调改图", createdAt: 1789000000, updatedAt: 1789100000 },
             { id: "thread-b", preview: "@图片1 把这张图变为蓝色调的，同明度…", name: "第二次尝试", createdAt: 1788000000, updatedAt: 1788100000 },
@@ -276,6 +283,25 @@ const server = createServer(async (req, res) => {
     if (path === "/agent/wall") return json(res, { items: [] });
     if (path === "/agent/codex/history/ack") return json(res, { ok: true });
     if (path === "/health") return json(res, { ok: true, protocolVersion: 6 });
+
+    // G3：环境健康探测的假目标。返回什么状态码由用例决定，CORS 头必须带上，
+    // 否则浏览器读不到状态码，前端只能退回 no-cors，状态码断言就失去意义。
+    if (path === "/__health-config" && req.method === "POST") {
+        const body = JSON.parse((await readBody(req).catch(() => "{}")) || "{}");
+        if (typeof body.status === "number" && body.status >= 100 && body.status <= 599) probeStatus = body.status;
+        if (typeof body.delayMs === "number" && body.delayMs >= 0) probeDelayMs = body.delayMs;
+        return json(res, { ok: true, probeStatus, probeDelayMs });
+    }
+    if (path === "/probe-target") {
+        const send = () => {
+            cors(res);
+            res.writeHead(probeStatus, { "content-type": "application/json", "content-length": Buffer.byteLength(JSON.stringify({ ok: probeStatus < 400 })) });
+            res.end(JSON.stringify({ ok: probeStatus < 400 }));
+        };
+        if (probeDelayMs > 0) setTimeout(send, probeDelayMs);
+        else send();
+        return;
+    }
 
     // M4 部署链路：命令恒成功，健康检查恒通过。E2E 验证的是前端「部署→留痕→回滚」，
     // 真命令执行与真探测由桥端单测覆盖，不在浏览器测试里跑 shell。

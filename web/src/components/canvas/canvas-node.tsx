@@ -10,6 +10,7 @@ import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
 import { AC_STATUS_COLOR, acStatusLabelKey } from "@/lib/delivery/ac-status";
 import { RUN_STATUS_COLOR, runStatusLabelKey } from "@/lib/delivery/run-status";
+import { EnvironmentHealthBadge } from "./nodes/environment-health";
 import { buildDesignSelectionOps } from "@/lib/delivery/design-selection";
 import { CanvasAnnotationLayer } from "./canvas-annotation-layer";
 import { useDeliveryStore } from "@/stores/use-delivery-store";
@@ -642,6 +643,7 @@ function DeliveryNodeContent({ node, theme, pluginContext }: NodeContentRenderer
                     ))}
                 </div>
             )}
+            {node.type === CanvasNodeType.Environment ? <EnvironmentHealthBadge metadata={meta} /> : null}
             {body ? (
                 <p className="line-clamp-4 whitespace-pre-wrap text-xs leading-snug">{body}</p>
             ) : (

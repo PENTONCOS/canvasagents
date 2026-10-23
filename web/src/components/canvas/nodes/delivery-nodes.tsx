@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Bug, ClipboardList, FlaskConical, Play, Route, Server, SquareCheck, SquareDashed } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { NODE_SPECS } from "@/constant/canvas";
 import { applyDeployment, planRollback } from "@/lib/delivery/deploy-plan";
+import { envHealthMetadataPatch, readEnvHealth, resolveEnvProbeTarget } from "@/lib/delivery/health-probe";
+import { normalizePort } from "@/lib/canvas/service-node-utils";
+import { EnvironmentHealthRow, useEnvHealthProbe } from "@/components/canvas/nodes/environment-health";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useDeliveryStore } from "@/stores/use-delivery-store";
 import { CanvasNodeType } from "@/types/canvas";
@@ -84,14 +87,35 @@ function EnvironmentPanel({ ctx, onClose }: { ctx: CanvasNodeContext; onClose: (
     const [cwd, setCwd] = useState("");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
+    const [healthPort, setHealthPort] = useState(meta.envHealthPort == null ? "" : String(meta.envHealthPort));
+    const [healthPath, setHealthPath] = useState(meta.envHealthPath || "");
     const history = env?.history || [];
+    // G3: 探测目标与结果都走纯函数；面板只负责在挂载期间按节奏调用和回写。
+    const target = resolveEnvProbeTarget(meta);
+    const { health, probing, recheck } = useEnvHealthProbe(target, readEnvHealth(meta));
+
+    // 探测结果回写 metadata（节点徽标与刷新后的一致性都靠它）；值没变就不写，避免无谓持久化。
+    useEffect(() => {
+        if (!health) return;
+        const stored = readEnvHealth(ctx.node.metadata);
+        if (stored && stored.status === health.status && stored.httpStatus === health.httpStatus && stored.checkedAt === health.checkedAt && stored.error === health.error) return;
+        ctx.updateMetadata(envHealthMetadataPatch(health));
+    }, [health, ctx]);
 
     const persist = (patch: Partial<typeof env> & Record<string, unknown>) => {
         const store = useDeliveryStore.getState();
         const id = envId || nextEntityId(Object.keys(store.environments), "ENV");
         const base = store.environments[id] || { id, name: name.trim() || "staging", url: url.trim(), status: "unknown" as const, nodeId: ctx.node.id };
         store.upsertEnvironment({ ...base, ...patch, id, nodeId: ctx.node.id } as never);
-        ctx.updateMetadata({ envId: id, envName: name.trim() || "staging", url: patch.url ?? url.trim(), envVersion: patch.version ?? version });
+        const port = normalizePort(healthPort);
+        ctx.updateMetadata({
+            envId: id,
+            envName: name.trim() || "staging",
+            url: patch.url ?? url.trim(),
+            envVersion: patch.version ?? version,
+            envHealthPort: port ?? undefined,
+            envHealthPath: healthPath.trim() || undefined,
+        });
         return id;
     };
 
@@ -115,6 +139,8 @@ function EnvironmentPanel({ ctx, onClose }: { ctx: CanvasNodeContext; onClose: (
             const status = data?.status === "healthy" ? "healthy" : "unhealthy";
             const applied = applyDeployment(env || {}, { version: version.trim() || "unversioned", url: url.trim(), status });
             persist({ ...applied, name: name.trim() || "staging" });
+            // G3: 部署完成后立刻复检一次——部署那一刻的 status 只代表当时，节点要显示「现在」。
+            recheck();
             if (!data?.ok) setError(`${t("canvas.node.delivery.envDeployFailed")}${data?.health?.status ? ` (HTTP ${data.health.status})` : ""}`);
         } catch (caught) {
             setError(caught instanceof Error ? caught.message : String(caught));
@@ -167,8 +193,38 @@ function EnvironmentPanel({ ctx, onClose }: { ctx: CanvasNodeContext; onClose: (
                     {t("canvas.node.delivery.envCwd")}
                     <input className="h-8 rounded-lg border border-black/10 px-2 text-xs text-[#242529] outline-none focus:border-[#3b82f6]" placeholder="/path/to/repo" value={cwd} onChange={(event) => setCwd(event.target.value)} data-env-cwd />
                 </label>
+                <div className="grid grid-cols-2 gap-2">
+                    <label className="flex flex-col gap-1 text-[11px] text-[#6b7280]">
+                        {t("canvas.node.delivery.envHealth.healthPort")}
+                        <input
+                            className="h-8 rounded-lg border border-black/10 px-2 text-xs text-[#242529] outline-none focus:border-[#3b82f6]"
+                            inputMode="numeric"
+                            placeholder="5173"
+                            value={healthPort}
+                            onChange={(event) => setHealthPort(event.target.value)}
+                            onBlur={() => {
+                                const port = normalizePort(healthPort);
+                                setHealthPort(port == null ? "" : String(port));
+                                ctx.updateMetadata({ envHealthPort: port ?? undefined });
+                            }}
+                            data-env-health-port
+                        />
+                    </label>
+                    <label className="flex flex-col gap-1 text-[11px] text-[#6b7280]">
+                        {t("canvas.node.delivery.envHealth.healthPath")}
+                        <input
+                            className="h-8 rounded-lg border border-black/10 px-2 text-xs text-[#242529] outline-none focus:border-[#3b82f6]"
+                            placeholder={t("canvas.node.delivery.envHealth.healthPathPlaceholder")}
+                            value={healthPath}
+                            onChange={(event) => setHealthPath(event.target.value)}
+                            onBlur={() => ctx.updateMetadata({ envHealthPath: healthPath.trim() || undefined })}
+                            data-env-health-path
+                        />
+                    </label>
+                </div>
             </div>
             {error ? <p className="mt-2 text-[11px] text-[#ef4444]" data-env-error>{error}</p> : null}
+            <EnvironmentHealthRow target={target} health={health} probing={probing} onRecheck={recheck} />
             <div className="mt-3 flex items-center gap-2 text-[10px] text-[#6b7280]">
                 <span className="inline-flex items-center gap-1">
                     <span className="h-2 w-2 rounded-full" style={{ background: env?.status === "healthy" ? "#22c55e" : env?.status === "unhealthy" ? "#ef4444" : "#94a3b8" }} />

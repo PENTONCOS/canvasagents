@@ -225,6 +225,11 @@ export type CanvasNodeMetadata = {
     envId?: string; // environment business id ("ENV-01")
     envName?: string; // environment name (staging/production/…)
     envVersion?: string; // deployed version shown on the node ("v0.1.0")
+    // G3: last health probe shown on the environment node. Optional everywhere so canvases
+    // written before this feature still load (readEnvHealth returns null, not an error).
+    envHealthPort?: number; // loopback port probed on 127.0.0.1; falls back to the URL's port
+    envHealthPath?: string; // health path; defaults to "/"
+    envHealth?: { status?: "probing" | "healthy" | "unhealthy"; httpStatus?: number; checkedAt?: string; error?: string };
     runId?: string; // run business id ("RUN-01"); node status is read from the store
     url?: string; // environment URL
     runKind?: "test" | "deploy";
