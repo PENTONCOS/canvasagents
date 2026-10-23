@@ -16,6 +16,11 @@ export type CanvasResourceReference = {
     previewUrl?: string;
     text?: string;
     active: boolean;
+    /**
+     * C4: 合成图没有对应的画布节点，图源直接挂在这里。
+     * 有 dataUrl 时优先用它，不再按 nodeId 去节点上取图（否则会把原图当成合成图发出去）。
+     */
+    dataUrl?: string;
 };
 
 export function buildNodeMentionReferences(node: CanvasNodeData, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
@@ -29,6 +34,20 @@ export function buildCanvasResourceReferences(nodes: CanvasNodeData[]) {
 export async function resolveCanvasReferenceImages(references: CanvasResourceReference[], nodes: CanvasNodeData[]) {
     const nodesById = new Map(nodes.map((node) => [node.id, node]));
     return Promise.all(references.filter((reference) => reference.kind === "image").map(async (reference) => {
+        if (reference.dataUrl) {
+            // 合成图自带图源：尺寸从图本身读，不信「原图 metadata」，否则附件元数据会跟实际像素对不上。
+            const meta = await readImageMeta(reference.dataUrl);
+            return {
+                id: `canvas:${reference.nodeId}`,
+                name: reference.title,
+                type: meta.mimeType,
+                size: getDataUrlByteSize(reference.dataUrl),
+                width: meta.width,
+                height: meta.height,
+                url: reference.dataUrl,
+                dataUrl: reference.dataUrl,
+            };
+        }
         const node = nodesById.get(reference.nodeId);
         if (!node) throw new Error(i18n.t("agent.composer.mentions.resourceMissing", { title: reference.title }));
         const metadata = node.metadata;

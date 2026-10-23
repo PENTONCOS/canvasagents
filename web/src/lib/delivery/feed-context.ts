@@ -204,8 +204,17 @@ function lineForNode(node: CanvasNodeData, kind: FeedKind, lookup: FeedLookup): 
     }
 }
 
+/**
+ * C4: 多张截图合成一张后，图片分组不再逐条列出，只留一行摘要。
+ * 摘要必须带「几张、几列几行、实际像素」——Agent 靠这三个数判断该看哪块区域，
+ * 只给它一张大图而不说布局，它没法定位。
+ */
+export type FeedPromptOptions = {
+    imageGroup?: { count: number; summary: string };
+};
+
 /** 结构化投喂提示词：按类型分组，同组内逐条列出；空选择返回空串（调用方据此不发）。 */
-export function buildFeedPrompt(nodes: CanvasNodeData[], lookup: FeedLookup): string {
+export function buildFeedPrompt(nodes: CanvasNodeData[], lookup: FeedLookup, options: FeedPromptOptions = {}): string {
     const groups = new Map<FeedKind, CanvasNodeData[]>();
     for (const node of nodes) {
         const kind = feedKindOf(node);
@@ -223,6 +232,10 @@ export function buildFeedPrompt(nodes: CanvasNodeData[], lookup: FeedLookup): st
         if (!bucket || bucket.length === 0) continue;
         lines.push("");
         lines.push(i18n.t(SECTION_KEY[kind]));
+        if (kind === "image" && options.imageGroup) {
+            lines.push(`- ${options.imageGroup.summary}`);
+            continue;
+        }
         for (const node of bucket) lines.push(lineForNode(node, kind, lookup));
     }
     lines.push("");

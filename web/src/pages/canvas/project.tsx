@@ -32,7 +32,10 @@ import { layoutDesignVariants, layoutJourneySteps } from "@/lib/canvas/journey-l
 import { useDeliveryStore } from "@/stores/use-delivery-store";
 import { planBugsFromAnnotations } from "@/lib/delivery/annotation-bugs";
 import { collectEvidenceNodeIds, feedableNodes } from "@/lib/delivery/feed-context";
-import { confirmFeedPreview, createFeedPreview, type FeedPreview, type FeedPreviewOutcome } from "@/lib/delivery/feed-preview";
+import { confirmFeedPreview, createFeedPreview, type FeedComposedImage, type FeedPreview, type FeedPreviewOutcome } from "@/lib/delivery/feed-preview";
+import { composedImageTitle, composeImageSummary, feedImageNodes, shouldComposeFeedImages } from "@/lib/delivery/feed-compose";
+import { composeScreenshots, ComposeError } from "@/lib/canvas/compose-image";
+import { imageToDataUrl } from "@/services/image-storage";
 import { buildAcTestCasePrompt } from "@/lib/delivery/ac-testcase";
 import { FeedPreviewModal } from "@/components/canvas/feed-preview-modal";
 import { nextEntityId, nextStepId, nextVariantId, type DeliveryAnnotation, type DesignVariant, type JourneyStep } from "@/types/delivery";
@@ -3441,13 +3444,54 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
 }, []);
 
 
+    /**
+     * C4: 选中的图片 ≥2 张就合成一张。合成图挂在第一张源图的 nodeId 上，
+     * 因为发送链路会按 nodeId 校验「引用还在画布上」——合成图不是节点，
+     * 借第一张源图的身份是最小改动，且语义上它就是那批截图的代表。
+     * 失败返回 null（调用方退回逐张发），不抛给上层假装成功。
+     */
+    const composeSelectedImages = useCallback(async (feedNodes: CanvasNodeData[]): Promise<FeedComposedImage | null> => {
+        if (!shouldComposeFeedImages(feedNodes)) return null;
+        const imageNodes = feedImageNodes(feedNodes);
+        const sources = await Promise.all(imageNodes.map(async (node) => ({
+            // 没有内容地址的节点用存储键读，两种来源在浏览器里都落到 data URL。
+            src: await imageToDataUrl({ storageKey: node.metadata?.storageKey, url: node.metadata?.content }),
+            title: node.title,
+            node,
+        })));
+        const usable = sources.filter((source) => source.src.startsWith("data:image/"));
+        if (usable.length < 2) {
+            message.warning(t("canvas.nodeToolbar.feedImageComposeFailed", { titles: sources.filter((source) => !source.src.startsWith("data:image/")).map((source) => source.title).join("、") || "-" }));
+            return null;
+        }
+        try {
+            const result = await composeScreenshots(usable.map((source) => ({ src: source.src, title: source.title })));
+            return {
+                dataUrl: result.dataUrl,
+                width: result.width,
+                height: result.height,
+                scale: result.scale,
+                count: usable.length,
+                cols: result.plan.cols,
+                rows: result.plan.rows,
+                nodeId: usable[0].node.id,
+                summary: composeImageSummary({ count: usable.length, plan: result.plan, scale: result.scale }),
+                title: composedImageTitle(usable.length),
+            };
+        } catch (error) {
+            const failures = error instanceof ComposeError ? error.failures.map((failure) => failure.title || `#${failure.index + 1}`) : [];
+            message.warning(t("canvas.nodeToolbar.feedImageComposeFailed", { titles: failures.join("、") || (error instanceof Error ? error.message : "-") }));
+            return null;
+        }
+    }, [message, t]);
+
     // P0-1/C3: 框选任意画布内容一次投喂。投喂不限于问题单——换 agent 交接时，
     // 把需求、旅程、验收标准、设计稿重新框选一遍就能续上上下文，
     // 这正是参考产品让「画布充当上下文中介」的做法。
     // 证据截图仍沿「问题单 → 圈注 → 截图节点」取；若这些截图绑在同一个 Agent 窗上，
     // 就切到那个窗，沿用开发阶段的上下文。
     // C3：这里只负责把「要发什么」算出来弹预览，真正写进草稿与发送在 resolveFeedPreview。
-    const openFeedPreview = useCallback((selection: CanvasNodeData[], targetWindowId?: string) => {
+    const openFeedPreview = useCallback(async (selection: CanvasNodeData[], targetWindowId?: string) => {
         const feedNodes = feedableNodes(selection);
         if (feedNodes.length === 0) return;
         const delivery = useDeliveryStore.getState();
@@ -3474,8 +3518,30 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
             targetLabel: index >= 0 ? toWindowTabLabel(agent.windows[index], index) : target,
         });
         if (!preview) return;
-        setFeedPreview({ preview, references });
-    }, [nodesRef]);
+        // C4: 选中的图片 ≥2 张时先合成一张高清图。合成失败不能让投喂中断——
+        // 退回「逐张发」并明确告知哪几张没读出来，用户自己决定换图还是照发。
+        const composed = await composeSelectedImages(feedNodes);
+        const composedReference: CanvasResourceReference | null = composed
+            ? { id: composed.nodeId, nodeId: composed.nodeId, kind: "image", label: composed.title, title: composed.title, previewUrl: composed.dataUrl, dataUrl: composed.dataUrl, active: true }
+            : null;
+        setFeedPreview({
+            preview: createFeedPreview({
+                nodes: feedNodes,
+                lookup: {
+                    bugs: delivery.bugs,
+                    annotations: delivery.annotations,
+                    acceptance: delivery.acceptance,
+                    journeys: delivery.journeys,
+                    designs: delivery.designs,
+                    environments: delivery.environments,
+                },
+                targetWindowId: target,
+                targetLabel: index >= 0 ? toWindowTabLabel(agent.windows[index], index) : target,
+                composedImage: composed ?? undefined,
+            }) as FeedPreview,
+            references: composedReference ? [...references.filter((item) => item.kind !== "image"), composedReference] : references,
+        });
+    }, [composeSelectedImages, nodesRef]);
 
     /**
      * 预览层的两个出口：取消什么都不做（草稿不被污染），

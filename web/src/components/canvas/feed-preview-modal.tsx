@@ -32,6 +32,25 @@ export function FeedPreviewModal({ preview, open, onResolve }: { preview: FeedPr
                     <span className="opacity-50">{t("canvas.nodeToolbar.feedPreviewCount", { count: preview?.count ?? 0 })}</span>
                 </div>
                 <p className="text-xs opacity-55">{t("canvas.nodeToolbar.feedPreviewHint")}</p>
+                {/* C4：合成图直接给用户看一眼——只写「已合成」不算证据，得能对得上版式。 */}
+                {preview?.composedImage ? (
+                    <figure className="space-y-1" data-feed-composed-block>
+                        <img
+                            data-feed-composed
+                            alt={preview.composedImage.title}
+                            className="max-h-[220px] w-auto rounded-lg border border-black/10"
+                            src={preview.composedImage.dataUrl}
+                            width={preview.composedImage.width}
+                            height={preview.composedImage.height}
+                        />
+                        <figcaption className="text-xs opacity-55">
+                            {t("canvas.nodeToolbar.feedImageComposedPreview", {
+                                width: Math.round(preview.composedImage.width * preview.composedImage.scale),
+                                height: Math.round(preview.composedImage.height * preview.composedImage.scale),
+                            })}
+                        </figcaption>
+                    </figure>
+                ) : null}
                 <textarea
                     data-feed-preview-text
                     aria-label={t("canvas.nodeToolbar.feedPreviewTitle")}
