@@ -17,7 +17,7 @@
     "scripts": {
         "dev": "tsx src/index.ts",
         "debug": "tsx src/index.ts --debug",
-        "test": "tsx --test src/config.test.ts src/canvas/operations.test.ts src/canvas/edges.test.ts src/canvas/session.test.ts src/canvas/tools.test.ts src/repo/fs-ops.test.ts src/repo/repo-status.test.ts src/agent/codex-client.test.ts src/agent/codex-history.test.ts src/agent/message-metadata.test.ts src/agent/turn-context.test.ts src/agent/claude.test.ts src/server/driver-inventory.test.ts src/skills/store.test.ts src/utils/agent-runtime.test.ts src/server/image-parse.test.ts src/server/capture.test.ts src/server/agent-driver-route.test.ts src/delivery/test-report.test.ts src/delivery/verify-report.test.ts src/delivery/deployer.test.ts",
+        "test": "tsx --test src/config.test.ts src/canvas/operations.test.ts src/canvas/edges.test.ts src/canvas/session.test.ts src/canvas/tools.test.ts src/repo/fs-ops.test.ts src/repo/repo-status.test.ts src/repo/worktree.test.ts src/agent/codex-client.test.ts src/agent/codex-history.test.ts src/agent/message-metadata.test.ts src/agent/turn-context.test.ts src/agent/claude.test.ts src/server/driver-inventory.test.ts src/skills/store.test.ts src/utils/agent-runtime.test.ts src/server/image-parse.test.ts src/server/capture.test.ts src/server/agent-driver-route.test.ts src/delivery/test-report.test.ts src/delivery/verify-report.test.ts src/delivery/deployer.test.ts",
         "build": "tsc -p tsconfig.json",
         "start": "node dist/index.js",
         "prepack": "npm run build"

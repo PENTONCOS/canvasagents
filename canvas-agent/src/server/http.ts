@@ -14,6 +14,7 @@ import type { AgentAttachment, AgentPermissionMode } from "../agent/types.js";
 import { AGENT_PROTOCOL_VERSION, CanvasSession } from "../canvas/session.js";
 import { DEFAULT_PORT, ensureSiteWorkspace, findRepo, loadConfig, readRepoGitInfo, removeRepo, saveConfig, updateSiteWorkspace, upsertRepo, type CanvasAgentConfig } from "../config.js";
 import { buildRepoTree, readRepoDiff, readRepoFile, readRepoStatus, RepoPathError } from "../repo/fs-ops.js";
+import { createRepoWorktree, findRepoWorktree, isRepoWorktreePath, listRepoWorktrees, removeRepoWorktree } from "../repo/worktree.js";
 import { logger } from "../utils/logger.js";
 import { checkVersions } from "../version-check.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
@@ -125,6 +126,9 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
             const resolved = path.resolve(cwd);
             const byPath = (config.repos || []).find((repo) => repo.path === resolved);
             if (byPath) return byPath.path;
+            // E4：任务 worktree 也是合法工作目录，但它必须真属于某个已注册仓库——
+            // 校验只读 worktree 根部那个 `.git` 文件，不为此跑 git，建线程仍是同步路径。
+            if (isRepoWorktreePath((config.repos || []).map((repo) => repo.path), resolved)) return resolved;
         }
         return ensureSiteWorkspace(config).workspacePath;
     };
@@ -349,6 +353,35 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
         if (!repo) return void res.status(404).json({ ok: false, error: "未注册的仓库" });
         const status = await readRepoStatus(repo.path);
         res.json({ ok: true, repoId: repo.id, name: repo.name, path: repo.path, ...status });
+    }));
+    app.get("/repo/worktrees", route(async (req, res) => {
+        const repo = repoForRequest(config, req.query.repoId);
+        if (!repo) return void res.status(404).json({ ok: false, error: "未注册的仓库" });
+        if (!readRepoGitInfo(repo.path).isGit) return void res.status(400).json({ ok: false, error: "当前仓库不是 git 仓库，无法使用独立 worktree" });
+        const taskId = String(req.query.taskId ?? "").trim();
+        // 带 taskId 时只回答「这个任务在哪」，不带时列出全部，面板两种用法都要。
+        if (taskId) {
+            const worktree = await findRepoWorktree(repo.path, taskId);
+            return void res.json({ ok: true, repoId: repo.id, taskId, worktree });
+        }
+        const worktrees = await listRepoWorktrees(repo.path);
+        res.json({ ok: true, repoId: repo.id, worktrees });
+    }));
+    app.post("/repo/worktrees", route(async (req, res) => {
+        const repo = repoForRequest(config, req.body?.repoId);
+        if (!repo) return void res.status(404).json({ ok: false, error: "未注册的仓库" });
+        const taskId = String(req.body?.taskId ?? "").trim();
+        if (!taskId) return void res.status(400).json({ ok: false, error: "缺少任务 id" });
+        const result = await createRepoWorktree({ repoPath: repo.path, taskId, baseRef: String(req.body?.baseRef ?? "").trim() || undefined });
+        res.json({ ok: true, repoId: repo.id, taskId, ...result });
+    }));
+    app.delete("/repo/worktrees", route(async (req, res) => {
+        const repo = repoForRequest(config, req.body?.repoId ?? req.query.repoId);
+        if (!repo) return void res.status(404).json({ ok: false, error: "未注册的仓库" });
+        const worktreePath = String(req.body?.path ?? req.query.path ?? "").trim();
+        if (!worktreePath) return void res.status(400).json({ ok: false, error: "缺少 worktree 路径" });
+        const result = await removeRepoWorktree({ repoPath: repo.path, worktreePath, force: req.body?.force === true });
+        res.json({ ok: true, repoId: repo.id, ...result });
     }));
     app.get("/agent/attachments/:attachmentId", route(async (req, res) => {
         const attachment = session.getTurnAttachment(String(req.query.clientId || ""), routeParam(req.params.attachmentId));
