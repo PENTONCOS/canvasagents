@@ -168,7 +168,12 @@ function lineForNode(node: CanvasNodeData, kind: FeedKind, lookup: FeedLookup): 
             const state = design?.selected
                 ? i18n.t("canvas.nodeToolbar.feedDesignSelected")
                 : i18n.t("canvas.nodeToolbar.feedDesignUnselected");
-            return `- ${label}（${state}）`;
+            // WO-01: 只有选中的那版才带设计内容 —— 投喂给编码 Agent 的就是要实现的稿。
+            // 未选中的版本只报标签与状态，避免把三版都塞进上下文。
+            const html = design?.selected && typeof design.html === "string" ? design.html.trim() : "";
+            if (!html) return `- ${label}（${state}）`;
+            const capped = html.length > 4000 ? `${html.slice(0, 4000)}\n<!-- 设计稿 HTML 已截断 -->` : html;
+            return `- ${label}（${state}）\n\`\`\`html\n${capped}\n\`\`\``;
         }
         case "environment": {
             const env = metadata?.envId ? lookup.environments[metadata.envId] : undefined;

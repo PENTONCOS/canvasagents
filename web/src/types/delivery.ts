@@ -58,6 +58,11 @@ export type DesignVariant = {
     style?: string; // free-form palette/layout note
     selected: boolean; // at most one selected per journey
     nodeId?: string; // canvas view node (design)
+    // WO-01: 设计稿要真的能看。旧数据没有这三个字段，读取处一律按可选处理。
+    html?: string; // 完整 HTML 文档（内联样式、无外部资源），节点内 iframe 直接渲染
+    imageUrl?: string; // 高保真稿截图地址；没有 html 时优先展示它
+    notes?: string; // 这一版的设计说明（排版/配色/取舍）
+    updatedAt?: string; // ISO 时间戳，标记设计稿最后一次生成/修改
 };
 
 /** 旅程下的步骤 id：J-01 -> J-01-S1 / S2 …（按已有编号顺延）。 */

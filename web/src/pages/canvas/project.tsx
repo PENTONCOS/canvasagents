@@ -40,6 +40,7 @@ import { imageToDataUrl } from "@/services/image-storage";
 import { buildAcTestCasePrompt } from "@/lib/delivery/ac-testcase";
 import { FeedPreviewModal } from "@/components/canvas/feed-preview-modal";
 import { nextEntityId, nextStepId, nextVariantId, type DeliveryAnnotation, type DesignVariant, type JourneyStep } from "@/types/delivery";
+import { generateDesignVariants, type DesignBrief } from "@/lib/delivery/design-generator";
 import { ActiveConnectionPath, ConnectionPath } from "@/components/canvas/canvas-connections";
 import { CanvasConfigComposer } from "@/components/canvas/canvas-config-composer";
 import { CanvasConfigNodePanel } from "@/components/canvas/canvas-config-node-panel";
@@ -245,6 +246,13 @@ function measureFocusFrame(container: HTMLDivElement | null, nodeId: string) {
     const below = nodeRect && panelRect ? panelRect.bottom - nodeRect.bottom : 0;
     const above = nodeRect && toolbarRect ? nodeRect.top - toolbarRect.top : 0;
     return { above, below, bottomInset: dockRect && below > 0 ? Math.max(0, container.getBoundingClientRect().bottom - dockRect.top) : 0 };
+}
+
+/** WO-01: 设计稿生成的输入 —— 优先取需求便签正文，其次用画布标题。 */
+function designBriefFromNodes(nodes: CanvasNodeData[], fallbackTitle: string): DesignBrief {
+    const requirement = nodes.find((node) => node.type === CanvasNodeType.Requirement && (node.metadata?.statement || node.metadata?.content));
+    const statement = typeof requirement?.metadata?.statement === "string" ? requirement.metadata.statement : typeof requirement?.metadata?.content === "string" ? requirement.metadata.content : "";
+    return { title: requirement?.title || fallbackTitle, statement };
 }
 
 function InfiniteCanvasPage() {
@@ -1150,17 +1158,26 @@ function InfiniteCanvasPage() {
                     extraNodes.push(variant);
                 });
                 // 三版设计对应三个 DesignVariant 实体；同一旅程（这里没有旅程，用 variantOf 分组）只有一版选中。
+                // WO-01: 建节点时就写入真实 HTML，三版并排能直接看到东西，而不是三张空卡片。
+                const brief = designBriefFromNodes(nodesRef.current, currentProject?.title || "");
+                const generated = generateDesignVariants(brief);
                 const designIds: string[] = Object.keys(delivery.designs);
                 [newNode, ...extraNodes.filter((node) => node.type === CanvasNodeType.Design)].forEach((node) => {
                     const id = nextVariantId(designIds);
                     designIds.push(id);
+                    const label = id.slice(-1);
+                    const picked = generated.find((item) => item.label === label) || generated[0];
                     // 从菜单直接创建设计稿时还没有旅程归属，journeyId 留空；后续由 Agent 或面板挂到旅程上。
                     const variant: DesignVariant = {
                         id,
                         journeyId: "",
-                        label: id.slice(-1),
+                        label,
                         selected: node.metadata?.selected === true,
                         nodeId: node.id,
+                        html: picked.html,
+                        style: picked.style,
+                        notes: picked.notes,
+                        updatedAt: new Date().toISOString(),
                     };
                     delivery.upsertDesign(variant);
                 });

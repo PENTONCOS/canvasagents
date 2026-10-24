@@ -12,6 +12,7 @@ import { AC_STATUS_COLOR, acStatusLabelKey } from "@/lib/delivery/ac-status";
 import { RUN_STATUS_COLOR, runStatusLabelKey } from "@/lib/delivery/run-status";
 import { EnvironmentHealthBadge } from "./nodes/environment-health";
 import { buildDesignSelectionOps } from "@/lib/delivery/design-selection";
+import { designPreviewDoc, designPreviewKind } from "@/lib/delivery/design-render";
 import { CanvasAnnotationLayer } from "./canvas-annotation-layer";
 import { useDeliveryStore } from "@/stores/use-delivery-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -613,6 +614,11 @@ function DeliveryNodeContent({ node, theme, pluginContext }: NodeContentRenderer
     // M4: 运行节点显示的是最近一次运行的真实状态，不是节点上的静态文案。
     const runStatus = useDeliveryStore((state) => (meta?.runId ? state.runs[meta.runId]?.status : undefined));
     const body = meta?.statement || meta?.content || "";
+    // WO-01: 设计稿节点要真的能看到设计。有 html 就 iframe 真渲染，有图就出图，都没有才回落空状态。
+    const designKind = node.type === CanvasNodeType.Design ? designPreviewKind(design) : "empty";
+    const showDesignPreview = node.type === CanvasNodeType.Design && designKind !== "empty";
+    const designDoc = showDesignPreview ? designPreviewDoc(design) : "";
+    const previewScale = node.width > 0 ? node.width / 390 : 1;
     const badges: { text: string; color?: string; status?: string }[] = [];
     if (meta?.acId) badges.push({ text: meta.acId });
     if (meta?.bugId) badges.push({ text: meta.bugId });
@@ -628,7 +634,25 @@ function DeliveryNodeContent({ node, theme, pluginContext }: NodeContentRenderer
         badges.push({ text: t(runStatusLabelKey(runStatus)), color: RUN_STATUS_COLOR[runStatus] });
     }
     return (
-        <div className="flex h-full flex-col gap-1 overflow-hidden p-2" style={{ color: theme.node.text }}>
+        <div className="relative flex h-full flex-col gap-1 overflow-hidden p-2" style={{ color: theme.node.text }}>
+            {showDesignPreview ? (
+                <div className="absolute inset-0 overflow-hidden" data-design-preview={designKind}>
+                    {designKind === "html" ? (
+                        <iframe
+                            title={`${node.title} ${design?.label || ""}`}
+                            srcDoc={designDoc}
+                            sandbox="allow-same-origin"
+                            scrolling="no"
+                            tabIndex={-1}
+                            className="pointer-events-none border-0"
+                            style={{ width: 390, height: 844, transform: `scale(${previewScale})`, transformOrigin: "top left" }}
+                        />
+                    ) : (
+                        <img src={design?.imageUrl || ""} alt="" className="h-full w-full object-cover" draggable={false} />
+                    )}
+                </div>
+            ) : null}
+            <div className="relative z-10 flex flex-wrap gap-1">
             {badges.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                     {badges.map((badge) => (
@@ -643,8 +667,9 @@ function DeliveryNodeContent({ node, theme, pluginContext }: NodeContentRenderer
                     ))}
                 </div>
             )}
+            </div>
             {node.type === CanvasNodeType.Environment ? <EnvironmentHealthBadge metadata={meta} /> : null}
-            {body ? (
+            {!showDesignPreview && body ? (
                 <p className="line-clamp-4 whitespace-pre-wrap text-xs leading-snug">{body}</p>
             ) : (
                 <p className="text-xs" style={{ color: theme.node.muted }}>
@@ -654,7 +679,7 @@ function DeliveryNodeContent({ node, theme, pluginContext }: NodeContentRenderer
             {canSelectDesign ? (
                 <button
                     type="button"
-                    className="mt-auto flex h-6 w-fit items-center rounded-md border px-2 text-[10px] font-medium"
+                    className="relative z-10 mt-auto flex h-6 w-fit items-center rounded-md border px-2 text-[10px] font-medium"
                     style={{ borderColor: theme.node.stroke, color: theme.node.text }}
                     onMouseDown={(event) => event.stopPropagation()}
                     onClick={handleSelectDesign}

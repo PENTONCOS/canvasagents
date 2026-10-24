@@ -22,7 +22,7 @@ export const NODE_DEFAULT_SIZE = {
     [CanvasNodeType.Requirement]: { width: 340, height: 120, get title() { return i18n.t("canvas.nodeTypes.requirement"); } },
     [CanvasNodeType.Journey]: { width: 620, height: 300, get title() { return i18n.t("canvas.nodeTypes.journey"); } },
     [CanvasNodeType.JourneyStep]: { width: 240, height: 360, get title() { return i18n.t("canvas.nodeTypes.journeyStep"); } },
-    [CanvasNodeType.Design]: { width: 340, height: 240, get title() { return i18n.t("canvas.nodeTypes.design"); } },
+    [CanvasNodeType.Design]: { width: 360, height: 520, get title() { return i18n.t("canvas.nodeTypes.design"); } },
     [CanvasNodeType.Acceptance]: { width: 320, height: 160, get title() { return i18n.t("canvas.nodeTypes.acceptance"); } },
     [CanvasNodeType.TestCase]: { width: 300, height: 140, get title() { return i18n.t("canvas.nodeTypes.testCase"); } },
     [CanvasNodeType.Bug]: { width: 320, height: 180, get title() { return i18n.t("canvas.nodeTypes.bug"); } },
@@ -69,7 +69,7 @@ export const NODE_SPECS = {
         metadata: { status: "idle", content: "" },
     },
     [CanvasNodeType.Design]: {
-        width: 340, height: 240, get title() { return NODE_DEFAULT_SIZE[CanvasNodeType.Design].title; },
+        width: 360, height: 520, get title() { return NODE_DEFAULT_SIZE[CanvasNodeType.Design].title; },
         metadata: { status: "idle", content: "", selected: false },
     },
     [CanvasNodeType.Acceptance]: {
