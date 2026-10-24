@@ -1655,6 +1655,7 @@ export default {
             clean: "Working tree clean",
             dirty: "Uncommitted changes",
             locateHint: "Click to locate the repo node",
+        },
         worktree: {
             badgeLabel: "Task workspace",
             mainWorkspace: "Main workspace",
@@ -1672,6 +1673,14 @@ export default {
             invalidPath: "The bridge returned no valid worktree path",
             failed: "Task worktree operation failed",
         },
+        branch: {
+            ahead: "{{count}} commit(s) ahead of {{target}}",
+            inSync: "In sync with {{target}}",
+            merge: "Merge into {{target}} ({{count}} commit(s))",
+            mergeIdle: "Nothing to merge yet",
+            mergeDone: "Merged into {{target}}: {{commit}}",
+            mergeConflict: "Conflicts, nothing was changed: {{files}}",
+            mergeFailed: "Merge failed",
         },
         entry: {
             open: "Open assistant",

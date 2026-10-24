@@ -11,7 +11,7 @@ import { REPO_NODE_TYPE } from "@/components/canvas/nodes/repo-node";
 import { readRepoMetadata, repoDisplayName } from "@/lib/canvas/repo-node-utils";
 import { readWorktreeResult, worktreeLabel } from "@/lib/agent/agent-worktree";
 import { useAgentStore } from "@/stores/use-agent-store";
-import { createAgentWorktree, removeAgentWorktree } from "@/services/api/canvas-agent";
+import { AgentApiError, createAgentWorktree, fetchAgentBranches, fetchAgentWorktrees, mergeAgentBranch, removeAgentWorktree } from "@/services/api/canvas-agent";
 
 type BoundRepo = { repoId: string; name: string };
 
@@ -57,6 +57,36 @@ export function AgentWorktreeMenu({
     const windowTitle = useAgentStore((state) => state.windows.find((item) => item.id === state.activeWindowId)?.title || "");
     const windowId = useAgentStore((state) => state.activeWindowId);
     const worktreePath = useAgentStore((state) => state.worktreePath);
+    // G4: 当前窗口在 worktree 里时，顺手拿它的分支与「领先上一级几个提交」。
+    // 分支名不由前端拼（路径/命名规则都在桥端），这里只在 worktree 列表里按路径查回来。
+    const [branch, setBranch] = useState<{ name: string; target: string; ahead: number } | null>(null);
+
+    useEffect(() => {
+        if (!repo || !worktreePath) {
+            setBranch(null);
+            return;
+        }
+        let cancelled = false;
+        void (async () => {
+            try {
+                const worktrees = await fetchAgentWorktrees(endpoint, token, { repoId: repo.repoId });
+                const mine = (worktrees.worktrees || []).find((item) => item.path === worktreePath);
+                const name = String(mine?.branch || "").trim();
+                if (!name || cancelled) return void setBranch(null);
+                const list = await fetchAgentBranches(endpoint, token, { repoId: repo.repoId });
+                const record = (list.branches || []).find((item) => item.name === name);
+                if (cancelled) return;
+                const target = String(record?.mergeTarget || "").trim();
+                // 没有上一级（例如 production）就不显示合并入口，不猜一个目标出来。
+                setBranch(target ? { name, target, ahead: Number(record?.ahead ?? 0) } : null);
+            } catch {
+                if (!cancelled) setBranch(null);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [endpoint, token, repo, worktreePath]);
 
     if (!repo) return null;
 
@@ -93,13 +123,42 @@ export function AgentWorktreeMenu({
         }
     };
 
+    const merge = async () => {
+        if (!repo || !branch) return;
+        setBusy(true);
+        try {
+            const result = await mergeAgentBranch(endpoint, token, { repoId: repo.repoId, from: branch.name, to: branch.target });
+            message.success(t("agent.branch.mergeDone", { target: branch.target, commit: String(result.commit || "").slice(0, 8) }));
+            setBranch({ ...branch, ahead: 0 });
+        } catch (error) {
+            // 冲突是正常结果：桥端一个提交都没写，把冲突文件原样摆出来，让人自己解决。
+            const conflicts = error instanceof AgentApiError ? (error.response as { conflicts?: string[] }).conflicts : undefined;
+            if (conflicts && conflicts.length) message.error(t("agent.branch.mergeConflict", { files: conflicts.join("、") }));
+            else message.error(error instanceof Error ? error.message : t("agent.branch.mergeFailed"));
+        } finally {
+            setBusy(false);
+        }
+    };
+
     const items = [
         {
             key: "status",
             disabled: true,
             label: <span className="block max-w-[18rem] whitespace-normal text-xs leading-5 text-black/60 dark:text-white/60">{worktreePath ? t("agent.worktree.current", { path: worktreePath }) : t("agent.worktree.mainHint")}</span>,
         },
+        ...(branch
+            ? [{
+                key: "branch",
+                disabled: true,
+                label: <span className="block max-w-[18rem] whitespace-normal text-xs leading-5 text-black/60 dark:text-white/60">{branch.ahead > 0 ? t("agent.branch.ahead", { target: branch.target, count: branch.ahead }) : t("agent.branch.inSync", { target: branch.target })}</span>,
+            }]
+            : []),
         { type: "divider" as const },
+        {
+            key: "merge",
+            label: branch && branch.ahead > 0 ? t("agent.branch.merge", { target: branch.target, count: branch.ahead }) : t("agent.branch.mergeIdle"),
+            disabled: busy || !branch || branch.ahead === 0,
+        },
         {
             key: "enable",
             label: worktreePath ? t("agent.worktree.refresh") : t("agent.worktree.enable", { task: taskId }),
@@ -125,6 +184,7 @@ export function AgentWorktreeMenu({
                 items,
                 onClick: ({ key }) => {
                     if (key === "enable") void create();
+                    else if (key === "merge") void merge();
                     else if (key === "main") onSwitch("");
                     else if (key === "remove") void remove();
                 },

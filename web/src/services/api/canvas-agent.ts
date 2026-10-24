@@ -253,6 +253,21 @@ export function removeAgentWorktree(endpoint: string, token: string, body: { rep
     return fetchAgentJson<{ ok?: boolean }>(endpoint, token, "/repo/worktrees", { method: "DELETE", headers: repoAuthHeaders(token, true), body: JSON.stringify(body) });
 }
 
+// G4: 分支并行。列表只读；合并只做「上一级」，晋升路径由桥端的 mergeTarget 给出，前端不自己算。
+export type AgentBranchApiRecord = { name?: string; stage?: string; head?: string; subject?: string; mergeTarget?: string | null; ahead?: number | null; behind?: number | null };
+export type AgentBranchListResponse = { ok?: boolean; repoId?: string; current?: string; branches?: AgentBranchApiRecord[] };
+export type AgentBranchMergeResponse = { ok?: boolean; repoId?: string; commit?: string; from?: string; to?: string };
+
+export function fetchAgentBranches(endpoint: string, token: string, params: { repoId: string }) {
+    const query = new URLSearchParams();
+    query.set("repoId", params.repoId);
+    return fetchAgentJson<AgentBranchListResponse>(endpoint, token, `/repo/branches?${query.toString()}`, { headers: repoAuthHeaders(token) });
+}
+
+export function mergeAgentBranch(endpoint: string, token: string, body: { repoId: string; from: string; to: string }) {
+    return fetchAgentJson<AgentBranchMergeResponse>(endpoint, token, "/repo/branches/merge", { method: "POST", headers: repoAuthHeaders(token, true), body: JSON.stringify(body) });
+}
+
 // M7: image structure layer. The parser runs behind the agent bridge (the raw service has no
 // CORS headers), so both calls authenticate with the same x-canvas-agent-token header as /repo/*.
 export type AgentImageParseLang = "zh-Hans" | "en-US";

@@ -16,6 +16,7 @@ import { DEFAULT_PORT, ensureSiteWorkspace, findRepo, loadConfig, readRepoGitInf
 import { buildRepoTree, readRepoDiff, readRepoFile, readRepoStatus, RepoPathError } from "../repo/fs-ops.js";
 import { createRepoWorktree, findRepoWorktree, listRepoWorktrees, removeRepoWorktree } from "../repo/worktree.js";
 import { resolveThreadCwd } from "../repo/thread-cwd.js";
+import { BranchError, listRepoBranches, mergeRepoBranch } from "../repo/branches.js";
 import { logger } from "../utils/logger.js";
 import { checkVersions } from "../version-check.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
@@ -370,6 +371,22 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
         const worktreePath = String(req.body?.path ?? req.query.path ?? "").trim();
         if (!worktreePath) return void res.status(400).json({ ok: false, error: "缺少 worktree 路径" });
         const result = await removeRepoWorktree({ repoPath: repo.path, worktreePath, force: req.body?.force === true });
+        res.json({ ok: true, repoId: repo.id, ...result });
+    }));
+    app.get("/repo/branches", route(async (req, res) => {
+        const repo = repoForRequest(config, req.query.repoId);
+        if (!repo) return void res.status(404).json({ ok: false, error: "未注册的仓库" });
+        if (!readRepoGitInfo(repo.path).isGit) return void res.status(400).json({ ok: false, error: "当前仓库不是 git 仓库，无法读取分支" });
+        const result = await listRepoBranches(repo.path);
+        res.json({ ok: true, repoId: repo.id, ...result });
+    }));
+    // 只做「上一级」合并：跳级在 branches.ts 里就被拒绝，这里不重复判断。
+    app.post("/repo/branches/merge", route(async (req, res) => {
+        const repo = repoForRequest(config, req.body?.repoId);
+        if (!repo) return void res.status(404).json({ ok: false, error: "未注册的仓库" });
+        const from = String(req.body?.from ?? "").trim();
+        const to = String(req.body?.to ?? "").trim();
+        const result = await mergeRepoBranch({ repoPath: repo.path, from, to, message: String(req.body?.message ?? "") });
         res.json({ ok: true, repoId: repo.id, ...result });
     }));
     app.get("/agent/attachments/:attachmentId", route(async (req, res) => {
@@ -787,6 +804,7 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
         logger.error("HTTP request failed", { method: req.method, path: req.path, error });
         if (error instanceof SkillStoreError || error instanceof CodexSkillLookupError) return void res.status(error.statusCode).json({ ok: false, error: error.message });
         if (error instanceof RepoPathError) return void res.status(error.statusCode).json({ ok: false, error: error.message });
+        if (error instanceof BranchError) return void res.status(error.statusCode).json({ ok: false, error: error.message, conflicts: error.conflicts });
         res.status(500).json({ ok: false, error: error.message });
     });
 

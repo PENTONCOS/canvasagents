@@ -1579,6 +1579,7 @@ export default {
             clean: "工作区干净",
             dirty: "有未提交改动",
             locateHint: "点击定位到仓库节点",
+        },
         worktree: {
             badgeLabel: "任务工作区",
             mainWorkspace: "主工作区",
@@ -1596,6 +1597,14 @@ export default {
             invalidPath: "桥端没有返回有效的 worktree 路径",
             failed: "任务 worktree 操作失败",
         },
+        branch: {
+            ahead: "领先 {{target}} {{count}} 个提交",
+            inSync: "已与 {{target}} 同步",
+            merge: "合入 {{target}}（{{count}} 个提交）",
+            mergeIdle: "暂无可合入的提交",
+            mergeDone: "已合入 {{target}}：{{commit}}",
+            mergeConflict: "有冲突，未做任何改动：{{files}}",
+            mergeFailed: "合并失败",
         },
         entry: {
             open: "打开助手",
