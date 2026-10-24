@@ -1,6 +1,6 @@
-import { Check, Download, Pencil, Trash2, X } from "lucide-react";
+import { Check, Download, FolderInput, Pencil, Trash2, X } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Button, Input } from "antd";
+import { Button, Dropdown, Input } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { useCanvasStore, type CanvasProject } from "@/stores/canvas/use-canvas-store";
@@ -8,7 +8,16 @@ import { useCanvasUiStore } from "@/stores/canvas/use-canvas-ui-store";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
 import { hasAgentUrlBootstrap } from "@/lib/agent/agent-url-bootstrap";
 
-export function CanvasProjectCard({ project }: { project: CanvasProject }) {
+export function CanvasProjectCard({
+    project,
+    groupOptions,
+    onMove,
+}: {
+    project: CanvasProject;
+    /** 可迁入的项目列表；不传则不显示「移到项目」。 */
+    groupOptions?: { id: string; title: string }[];
+    onMove?: (groupId: string) => void;
+}) {
     const { i18n, t } = useTranslation();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
@@ -71,6 +80,19 @@ export function CanvasProjectCard({ project }: { project: CanvasProject }) {
                         </>
                     ) : (
                         <>
+                            {groupOptions && groupOptions.length > 1 && onMove ? (
+                                <Dropdown
+                                    trigger={["click"]}
+                                    menu={{
+                                        items: groupOptions
+                                            .filter((option) => option.id !== project.groupId)
+                                            .map((option) => ({ key: option.id, label: option.title })),
+                                        onClick: ({ key }) => onMove(key),
+                                    }}
+                                >
+                                    <Button type="text" size="small" shape="circle" icon={<FolderInput className="size-4" />} aria-label={t("canvas.group.moveTo")} />
+                                </Dropdown>
+                            ) : null}
                             <Button type="text" size="small" shape="circle" icon={<Download className="size-4" />} onClick={() => void exportCanvasProjects([project], project.title || t("canvas.title"))} aria-label={t("canvas.project.export")} />
                             <Button type="text" size="small" shape="circle" icon={<Pencil className="size-4" />} onClick={() => startEditing(project.id, project.title)} aria-label={t("canvas.project.rename")} />
                             <Button type="text" size="small" shape="circle" icon={<Trash2 className="size-4" />} onClick={() => setDeleteIds([project.id])} aria-label={t("canvas.project.delete")} />

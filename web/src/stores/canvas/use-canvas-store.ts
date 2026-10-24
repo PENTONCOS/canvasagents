@@ -6,11 +6,16 @@ import { APP_ID } from "@/constant/brand";
 import i18n from "@/i18n";
 import { localForageStorage } from "@/lib/localforage-storage";
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
+import { planProjectGroups, type CanvasProjectGroup } from "@/lib/canvas/canvas-projects";
 import type { CanvasAssistantSession, CanvasConnection, CanvasJournalEntry, CanvasNodeData, ViewportTransform } from "@/types/canvas";
+
+export type { CanvasProjectGroup };
 
 export type CanvasProject = {
     id: string;
     title: string;
+    // 所属项目（I1 项目层）。可选：旧数据没有这一层，迁移时补默认项目。
+    groupId?: string;
     createdAt: string;
     updatedAt: string;
     nodes: CanvasNodeData[];
@@ -33,33 +38,42 @@ export type CanvasDeletedProject = {
 type CanvasStore = {
     hydrated: boolean;
     projects: CanvasProject[];
+    groups: CanvasProjectGroup[];
     deletedProjects: CanvasDeletedProject[];
-    createProject: (title?: string) => string;
+    createProject: (title?: string, groupId?: string) => string;
     importProject: (project: Partial<CanvasProject>) => string;
     openProject: (id: string) => CanvasProject | null;
     renameProject: (id: string, title: string) => void;
     deleteProjects: (ids: string[]) => void;
-    replaceProjects: (projects: CanvasProject[], deletedProjects?: CanvasDeletedProject[]) => void;
-    updateProject: (id: string, patch: Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "viewport" | "journal">>) => void;
+    replaceProjects: (projects: CanvasProject[], deletedProjects?: CanvasDeletedProject[], groups?: CanvasProjectGroup[]) => void;
+    updateProject: (id: string, patch: Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "viewport" | "journal" | "groupId">>) => void;
+    createGroup: (title?: string) => string;
+    renameGroup: (id: string, title: string) => void;
+    /** 只有空项目能删；项目里还有画布时返回 false，绝不连带删画布。 */
+    deleteGroup: (id: string) => boolean;
+    moveProjectToGroup: (projectId: string, groupId: string) => void;
+    /** 迁移旧数据：补默认项目、修正指向不存在项目的 groupId。幂等。 */
+    normalizeGroups: () => void;
 };
 
 const initialViewport: ViewportTransform = { x: 0, y: 0, k: 1 };
 const CANVAS_STORE_KEY = `${APP_ID}:canvas_store`;
-type PersistedCanvasState = Pick<CanvasStore, "projects" | "deletedProjects">;
+type PersistedCanvasState = Pick<CanvasStore, "projects" | "deletedProjects" | "groups">;
+const NEW_GROUP_TITLE = () => i18n.t("canvas.group.defaultTitle");
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let queuedPersistState: PersistedCanvasState | null = null;
 
-const canvasStorage: PersistStorage<CanvasStore> = {
+const canvasStorage: PersistStorage<PersistedCanvasState> = {
     getItem: async (name) => {
         const value = await localForageStorage.getItem(name);
         if (!value) return null;
-        const parsed = JSON.parse(value) as StorageValue<CanvasStore>;
-        queuedPersistState = parsed.state as PersistedCanvasState;
+        const parsed = JSON.parse(value) as StorageValue<PersistedCanvasState>;
+        queuedPersistState = parsed.state;
         return parsed;
     },
     setItem: (name, value) => {
-        const nextState = value.state as PersistedCanvasState;
-        if (queuedPersistState && queuedPersistState.projects === nextState.projects && queuedPersistState.deletedProjects === nextState.deletedProjects) return;
+        const nextState = value.state;
+        if (queuedPersistState && queuedPersistState.projects === nextState.projects && queuedPersistState.deletedProjects === nextState.deletedProjects && queuedPersistState.groups === nextState.groups) return;
         queuedPersistState = nextState;
         if (saveTimer) clearTimeout(saveTimer);
         saveTimer = setTimeout(() => {
@@ -70,18 +84,30 @@ const canvasStorage: PersistStorage<CanvasStore> = {
     removeItem: (name) => localForageStorage.removeItem(name),
 };
 
+/** 取第一个项目归入；一个都没有时建一个默认项目（旧数据首次落库走这条）。 */
+function ensureGroup(groups: CanvasProjectGroup[], now: string): { groups: CanvasProjectGroup[]; groupId: string } {
+    const existing = groups[0]?.id;
+    if (existing) return { groups, groupId: existing };
+    const id = nanoid();
+    return { groups: [{ id, title: NEW_GROUP_TITLE(), createdAt: now, updatedAt: now }], groupId: id };
+}
+
 export const useCanvasStore = create<CanvasStore>()(
     persist(
         (set, get) => ({
             hydrated: false,
             projects: [],
+            groups: [],
             deletedProjects: [],
-            createProject: (title = i18n.t("canvas.project.untitled")) => {
+            createProject: (title = i18n.t("canvas.project.untitled"), groupId) => {
                 const now = new Date().toISOString();
                 const id = nanoid();
+                const state = get();
+                const ensured = groupId && state.groups.some((group) => group.id === groupId) ? { groups: state.groups, groupId } : ensureGroup(state.groups, now);
                 const project: CanvasProject = {
                     id,
                     title,
+                    groupId: ensured.groupId,
                     createdAt: now,
                     updatedAt: now,
                     nodes: [],
@@ -92,14 +118,17 @@ export const useCanvasStore = create<CanvasStore>()(
                     showImageInfo: false,
                     viewport: initialViewport,
                 };
-                set((state) => ({ projects: [project, ...state.projects] }));
+                set({ projects: [project, ...state.projects], groups: ensured.groups });
                 return id;
             },
             importProject: (source) => {
                 const now = new Date().toISOString();
+                const state = get();
+                const ensured = ensureGroup(state.groups, now);
                 const project: CanvasProject = {
                     id: nanoid(),
                     title: source.title || i18n.t("canvas.project.imported"),
+                    groupId: ensured.groupId,
                     createdAt: source.createdAt || now,
                     updatedAt: now,
                     nodes: source.nodes || [],
@@ -110,7 +139,7 @@ export const useCanvasStore = create<CanvasStore>()(
                     showImageInfo: source.showImageInfo || false,
                     viewport: source.viewport || initialViewport,
                 };
-                set((state) => ({ projects: [project, ...state.projects] }));
+                set({ projects: [project, ...state.projects], groups: ensured.groups });
                 return project.id;
             },
             openProject: (id) => {
@@ -128,21 +157,63 @@ export const useCanvasStore = create<CanvasStore>()(
                     const deletedProjects = [...state.deletedProjects.filter((item) => !removing.has(item.id)), ...ids.map((id) => ({ id, deletedAt: now }))];
                     return { projects, deletedProjects };
                 }),
-            replaceProjects: (projects, deletedProjects = []) => set({ projects, deletedProjects }),
+            replaceProjects: (projects, deletedProjects = [], groups) =>
+                set((state) => ({ projects, deletedProjects, groups: groups ?? state.groups })),
             updateProject: (id, patch) =>
                 set((state) => ({
                     projects: state.projects.map((project) => (project.id === id ? { ...project, ...patch, updatedAt: new Date().toISOString() } : project)),
                 })),
+            createGroup: (title = i18n.t("canvas.group.defaultTitle")) => {
+                const now = new Date().toISOString();
+                const id = nanoid();
+                set((state) => ({ groups: [...state.groups, { id, title: title.trim() || i18n.t("canvas.group.defaultTitle"), createdAt: now, updatedAt: now }] }));
+                return id;
+            },
+            renameGroup: (id, title) =>
+                set((state) => ({
+                    groups: state.groups.map((group) => (group.id === id ? { ...group, title: title.trim() || group.title, updatedAt: new Date().toISOString() } : group)),
+                })),
+            deleteGroup: (id) => {
+                const state = get();
+                if (state.projects.some((project) => project.groupId === id)) return false;
+                set((current) => ({ groups: current.groups.filter((group) => group.id !== id) }));
+                return true;
+            },
+            moveProjectToGroup: (projectId, groupId) =>
+                set((state) => {
+                    if (!state.groups.some((group) => group.id === groupId)) return state;
+                    return { projects: state.projects.map((project) => (project.id === projectId ? { ...project, groupId, updatedAt: new Date().toISOString() } : project)) };
+                }),
+            normalizeGroups: () =>
+                set((state) => {
+                    const now = new Date().toISOString();
+                    const plan = planProjectGroups(state.projects, state.groups, { now, defaultTitle: i18n.t("canvas.group.defaultTitle"), newId: () => nanoid() });
+                    if (plan.canvases === state.projects && plan.groups === state.groups) return state;
+                    return { projects: plan.canvases, groups: plan.groups };
+                }),
         }),
         {
             name: CANVAS_STORE_KEY,
+            version: 1,
             storage: canvasStorage,
+            // v0 → v1：画布之上加一层项目。旧数据没有 groups / groupId，必须在这里补上，
+            // 否则列表页会一个项目都没有、画布全成孤儿。
+            migrate: (persisted, version) => {
+                const state = (persisted || {}) as Partial<PersistedCanvasState>;
+                if (version >= 1) return state as PersistedCanvasState;
+                const now = new Date().toISOString();
+                const plan = planProjectGroups(state.projects || [], state.groups || [], { now, defaultTitle: i18n.t("canvas.group.defaultTitle"), newId: () => nanoid() });
+                return { projects: plan.canvases, groups: plan.groups, deletedProjects: state.deletedProjects || [] } as PersistedCanvasState;
+            },
             partialize: (state) =>
                 ({
                     projects: state.projects,
+                    groups: state.groups,
                     deletedProjects: state.deletedProjects,
-                }) as StorageValue<CanvasStore>["state"],
+                }) as PersistedCanvasState,
             onRehydrateStorage: () => () => {
+                // migrate 只对旧版本生效，所以每次 hydrate 再收一次口，保证幂等。
+                useCanvasStore.getState().normalizeGroups();
                 useCanvasStore.setState({ hydrated: true });
             },
         },

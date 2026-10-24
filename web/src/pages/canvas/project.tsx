@@ -29,6 +29,7 @@ import { captureVideoFrame, type VideoFramePosition } from "@/lib/canvas/canvas-
 import { App, Button, Modal } from "antd";
 import { NODE_DEFAULT_SIZE, getNodeSpec } from "@/constant/canvas";
 import { layoutDesignVariants, layoutJourneySteps } from "@/lib/canvas/journey-layout";
+import { clampNodeCenter } from "@/lib/canvas/node-placement";
 import { useDeliveryStore } from "@/stores/use-delivery-store";
 import { planBugsFromAnnotations } from "@/lib/delivery/annotation-bugs";
 import { collectEvidenceNodeIds, feedableNodes } from "@/lib/delivery/feed-context";
@@ -60,6 +61,7 @@ import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "@/componen
 import { CanvasToolbar } from "@/components/canvas/canvas-toolbar";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { CanvasSidePanel } from "@/components/canvas/canvas-side-panel";
+import { CanvasProjectNav } from "@/components/canvas/canvas-project-nav";
 import { CanvasJournalPanel } from "@/components/canvas/canvas-journal-panel";
 import { CanvasTimelinePanel } from "@/components/canvas/canvas-timeline-panel";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
@@ -784,6 +786,20 @@ function InfiniteCanvasPage() {
         return screenToCanvas((rect?.left || 0) + (rect?.width || size.width) / 2, (rect?.top || 0) + (rect?.height || size.height) / 2);
     }, [screenToCanvas, size.height, size.width]);
 
+    // 节点是以点击点为中心摆的，双击靠近画布边缘时上半截（含工具条）会被裁掉，
+    // 于是「节点在、按钮点不到」。落点先拉回可见区域，尺寸与缩放都不改。
+    const clampToViewport = useCallback(
+        (type: CanvasNodeTypeId, center: Position) => {
+            const rect = containerRef.current?.getBoundingClientRect();
+            return clampNodeCenter(center, getNodeSpec(type), {
+                ...viewportRef.current,
+                width: rect?.width || size.width,
+                height: rect?.height || size.height,
+            });
+        },
+        [size.height, size.width],
+    );
+
     const setConnecting = useCallback((next: ConnectionHandle | null) => {
         connectingParamsRef.current = next;
         setConnectingParams(next);
@@ -1049,7 +1065,7 @@ function InfiniteCanvasPage() {
     });
     const createNode = useCallback(
         (type: CanvasNodeTypeId, position?: Position) => {
-            const targetPosition = position || getCanvasCenter();
+            const targetPosition = position ? clampToViewport(type, position) : getCanvasCenter();
             const configMetadata =
                 type === CanvasNodeType.Config
                     ? {
@@ -1167,7 +1183,7 @@ function InfiniteCanvasPage() {
                     : isBuiltinType(type) && type !== CanvasNodeType.Text && type !== CanvasNodeType.Audio && type !== CanvasNodeType.Group;
             if (wantsPanel) setDialogNodeId(newNode.id);
         },
-        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, getCanvasCenter, t],
+        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, clampToViewport, getCanvasCenter, t],
     );
 
     // M1 immersive redesign: ⌘K palette requests a node cross-page; consume it here.
@@ -3742,7 +3758,12 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
                 onAcStatementChange={updateAcStatement}
                 onGenerateTestCases={openAcTestCasePrompt}
             />
-            <section className="relative min-w-0 flex-1 overflow-hidden">
+            <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+                <CanvasProjectNav
+                    canvasId={projectId}
+                    canvasTitle={currentProject?.title || t("canvas.projectPage.untitledCanvas")}
+                    onOpenSessions={openAgentPanel}
+                />
                 <CanvasTopBar
                     title={currentProject?.title || t("canvas.projectPage.untitledCanvas")}
                     titleDraft={titleDraft}
