@@ -26,6 +26,7 @@ import { skillPromptPrefix } from "@/lib/agent/skill-bindings";
 import { useAgentStore, type AgentAttachment, type AgentBootstrapStatus, type AgentCanvasContext, type AgentCanvasReference, type AgentChatItem, type AgentConversationState, type AgentModel, type AgentPendingApproval, type AgentPendingToolCall, type AgentPermissionMode, type AgentReasoningEffort, type AgentThreadSummary, agentWindowById, agentWindowIdForConversation, agentWindowIdForThread, withWindowPatchTarget } from "@/stores/use-agent-store";
 import { backgroundUnreadKey } from "@/lib/agent/agent-windows";
 import { needsThreadPrepare, threadResetRetryDelay } from "@/lib/agent/agent-thread-retry";
+import { threadWorktreeCwd } from "@/lib/agent/agent-worktree";
 import { type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import { referenceConnectionOps } from "@/lib/canvas/canvas-reference-links";
 import { isSiteTool, runSiteTool } from "@/lib/agent/agent-site-tools";
@@ -77,6 +78,7 @@ import { agentApiPath, getAgentDriver, setAgentDriver as persistAgentDriver, sub
 import { AgentPanelTabs } from "./agent-panel-tabs";
 import { AgentWindowTabs } from "./agent-window-tabs";
 import { AgentRepoBadge } from "./agent-repo-badge";
+import { AgentWorktreeMenu } from "./agent-worktree-menu";
 import { AgentSkillsView } from "./agent-skills-view";
 import { AgentWallView } from "./agent-wall-view";
 import { EmbeddedTerminal } from "./embedded-terminal";
@@ -1239,6 +1241,15 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         setAgentState({ loadingThreads: false });
     };
 
+    /**
+     * E4：切换会话窗的工作目录。已有线程时立刻重建线程，否则「切了目录但还在旧线程里跑」会让人误以为生效了。
+     * 重建被守卫挡下（正在发送等）时不报错——路径已写进窗口，下一个新会话必然用新目录。
+     */
+    const switchWorktree = (path: string) => {
+        setAgentState({ worktreePath: path });
+        void startNewThread();
+    };
+
     const startNewThread = async () => {
         const current = useAgentStore.getState();
         if (!current.connected || current.sending || current.waiting || current.loadingThreads || ["preparing", "running"].includes(current.conversation.status)) return;
@@ -1247,7 +1258,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         setAgentState({ activeTab: "chat", activity: rt("creatingConversation") });
         const targetWindowId = useAgentStore.getState().activeWindowId;
         try {
-            const result = await fetchAgentJson<AgentWorkspaceResponse>(endpoint, token, agentApiPath("/threads/reset"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId: clientIdRef.current, permissionMode }) });
+            const result = await fetchAgentJson<AgentWorkspaceResponse>(endpoint, token, agentApiPath("/threads/reset"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId: clientIdRef.current, permissionMode, cwd: threadWorktreeCwd(useAgentStore.getState()) }) });
             if (threadOperationRef.current !== operation) return;
             if (result.conversation) applyConversationState(result.conversation, false, targetWindowId);
             setAgentState({ activeTab: "chat", activity: rt("newConversation") });
@@ -1269,7 +1280,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         const operation = beginThreadOperation();
         const targetWindowId = useAgentStore.getState().activeWindowId;
         try {
-            const result = await fetchAgentJson<AgentThreadResponse>(endpoint, token, agentApiPath(`/threads/${encodeURIComponent(threadId)}/resume`), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ permissionMode, clientId: clientIdRef.current }) });
+            const result = await fetchAgentJson<AgentThreadResponse>(endpoint, token, agentApiPath(`/threads/${encodeURIComponent(threadId)}/resume`), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ permissionMode, clientId: clientIdRef.current, cwd: threadWorktreeCwd(useAgentStore.getState()) }) });
             if (result.conversation) applyConversationState(result.conversation, false, targetWindowId);
             await loadThreads();
             if (useAgentStore.getState().activeThreadId === threadId) setAgentState({ activeTab: "chat", activity: rt("conversationResumed") });
@@ -1366,7 +1377,8 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         // loadingThreads 是窗口级字段：必须显式指向目标窗（hello 补准备时目标窗未必是激活窗）。
         const operation = withWindowPatchTarget(windowId, () => beginThreadOperation());
         withWindowPatchTarget(windowId, () => setAgentState({ activity: attempt > 0 ? rt("retryingConversation", { attempt }) : rt("creatingConversation") }));
-        void fetchAgentJson<AgentWorkspaceResponse>(endpoint, token, agentApiPath("/threads/reset"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId: clientIdRef.current, permissionMode }) })
+        const targetWindow = useAgentStore.getState().windows.find((item) => item.id === windowId);
+        void fetchAgentJson<AgentWorkspaceResponse>(endpoint, token, agentApiPath("/threads/reset"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ clientId: clientIdRef.current, permissionMode, cwd: threadWorktreeCwd(targetWindow) }) })
             .then((result) => {
                 // 被更新的操作抢了（切窗/用户手动新建）：这次结果作废，但不能把重试状态一起废掉。
                 if (threadOperationRef.current !== operation) return;
@@ -1787,6 +1799,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 right={
                     <>
                         <AgentRepoBadge />
+                        <AgentWorktreeMenu endpoint={endpoint} token={token} disabled={!connected} onSwitch={switchWorktree} />
                         {drivers.length > 1 ? (
                             <Segmented
                                 size="small"

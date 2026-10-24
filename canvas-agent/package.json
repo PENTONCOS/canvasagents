@@ -1,49 +1,49 @@
 {
-    "name": "canvasagents-agent",
-    "version": "0.6.2",
-    "license": "MIT",
-    "type": "module",
-    "main": "./dist/index.js",
-    "types": "./dist/index.d.ts",
-    "bin": {
-        "canvasagents-agent": "dist/index.js"
-    },
-    "files": [
-        "dist",
-        "bin",
-        "agent-instructions.md",
-        "README.md"
-    ],
-    "scripts": {
-        "dev": "tsx src/index.ts",
-        "debug": "tsx src/index.ts --debug",
-        "test": "tsx --test src/config.test.ts src/canvas/operations.test.ts src/canvas/edges.test.ts src/canvas/session.test.ts src/canvas/tools.test.ts src/repo/fs-ops.test.ts src/repo/repo-status.test.ts src/repo/worktree.test.ts src/agent/codex-client.test.ts src/agent/codex-history.test.ts src/agent/message-metadata.test.ts src/agent/turn-context.test.ts src/agent/claude.test.ts src/server/driver-inventory.test.ts src/skills/store.test.ts src/utils/agent-runtime.test.ts src/server/image-parse.test.ts src/server/capture.test.ts src/server/agent-driver-route.test.ts src/delivery/test-report.test.ts src/delivery/verify-report.test.ts src/delivery/deployer.test.ts",
-        "build": "tsc -p tsconfig.json",
-        "start": "node dist/index.js",
-        "prepack": "npm run build"
-    },
-    "dependencies": {
-        "@modelcontextprotocol/sdk": "^1.12.1",
-        "@openai/codex": "0.146.0",
-        "express": "^5.1.0",
-        "gray-matter": "^4.0.3",
-        "strip-ansi": "7.2.0",
-        "winston": "^3.19.0",
-        "ws": "^8.22.0",
-        "yaml": "^2.9.0",
-        "zod": "^3.25.0"
-    },
-    "devDependencies": {
-        "@types/express": "^5.0.0",
-        "@types/node": "^22.0.0",
-        "@types/ws": "^8.18.2",
-        "tsx": "^4.19.0",
-        "typescript": "^5.8.0"
-    },
-    "engines": {
-        "node": ">=18"
-    },
-    "publishConfig": {
-        "access": "public"
-    }
+  "name": "canvasagents-agent",
+  "version": "0.6.2",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "canvasagents-agent": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "agent-instructions.md",
+    "README.md"
+  ],
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "debug": "tsx src/index.ts --debug",
+    "test": "tsx --test src/config.test.ts src/canvas/operations.test.ts src/canvas/edges.test.ts src/canvas/session.test.ts src/canvas/tools.test.ts src/repo/fs-ops.test.ts src/repo/repo-status.test.ts src/repo/worktree.test.ts src/repo/thread-cwd.test.ts src/agent/codex-client.test.ts src/agent/codex-history.test.ts src/agent/message-metadata.test.ts src/agent/turn-context.test.ts src/agent/claude.test.ts src/server/driver-inventory.test.ts src/skills/store.test.ts src/utils/agent-runtime.test.ts src/server/image-parse.test.ts src/server/capture.test.ts src/server/agent-driver-route.test.ts src/delivery/test-report.test.ts src/delivery/verify-report.test.ts src/delivery/deployer.test.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@openai/codex": "0.146.0",
+    "express": "^5.1.0",
+    "gray-matter": "^4.0.3",
+    "strip-ansi": "7.2.0",
+    "winston": "^3.19.0",
+    "ws": "^8.22.0",
+    "yaml": "^2.9.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.2",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

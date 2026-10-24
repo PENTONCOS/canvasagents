@@ -14,7 +14,8 @@ import type { AgentAttachment, AgentPermissionMode } from "../agent/types.js";
 import { AGENT_PROTOCOL_VERSION, CanvasSession } from "../canvas/session.js";
 import { DEFAULT_PORT, ensureSiteWorkspace, findRepo, loadConfig, readRepoGitInfo, removeRepo, saveConfig, updateSiteWorkspace, upsertRepo, type CanvasAgentConfig } from "../config.js";
 import { buildRepoTree, readRepoDiff, readRepoFile, readRepoStatus, RepoPathError } from "../repo/fs-ops.js";
-import { createRepoWorktree, findRepoWorktree, isRepoWorktreePath, listRepoWorktrees, removeRepoWorktree } from "../repo/worktree.js";
+import { createRepoWorktree, findRepoWorktree, listRepoWorktrees, removeRepoWorktree } from "../repo/worktree.js";
+import { resolveThreadCwd } from "../repo/thread-cwd.js";
 import { logger } from "../utils/logger.js";
 import { checkVersions } from "../version-check.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
@@ -72,9 +73,10 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
     };
     let draftThreadStart: ReturnType<typeof startCodexThread> | null = null;
     let skillDraftRunning = false;
-    const prepareDraftThread = (clientId: string, permission: AgentPermissionMode, repoId = "") => {
+    const prepareDraftThread = (clientId: string, permission: AgentPermissionMode, repoId = "", worktreeCwd = "") => {
         if (draftThreadStart) return draftThreadStart;
-        const cwd = resolveCodexCwd({ repoId });
+        // E4：面板可以把「这个任务的独立 worktree」当工作目录传进来；未给则维持原语义（按 repoId 解析）。
+        const cwd = resolveCodexCwd({ repoId, cwd: worktreeCwd });
         let prepared!: ReturnType<typeof startCodexThread>;
         prepared = (async () => {
             emit("agent_bootstrap", { type: "codex.preparing", sourceClientId: clientId });
@@ -103,10 +105,10 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
         return prepared;
     };
     /** 恢复已有线程并等待完整 MCP 清单，供启动恢复和手动切换共用。 */
-    const prepareExistingThread = async (threadId: string, clientId = "", permission: AgentPermissionMode = "request", repoId = "") => {
+    const prepareExistingThread = async (threadId: string, clientId = "", permission: AgentPermissionMode = "request", repoId = "", worktreeCwd = "") => {
         session.beginConversation({ conversationId: threadId, threadId, sourceClientId: clientId || undefined });
         emit("agent_bootstrap", { type: "codex.preparing", threadId, sourceClientId: clientId || undefined });
-        const result = await resumeCodexThread(emit, threadId, resolveCodexCwd({ repoId }), permission, true);
+        const result = await resumeCodexThread(emit, threadId, resolveCodexCwd({ repoId, cwd: worktreeCwd }), permission, true);
         session.completeConversationPreparation(threadId);
         session.markThreadReady(threadId);
         return result;
@@ -116,22 +118,9 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
         session.failConversationPreparation(text);
         emit("agent_bootstrap", { type: "codex.prepare_failed", threadId, sourceClientId: clientId || undefined, error: text });
     };
-    /** 按请求里的 repoId/cwd 解析 Codex 线程工作目录，未注册时回退站点工作空间。 */
-    const resolveCodexCwd = (input: { repoId?: unknown; cwd?: unknown } = {}) => {
-        const repoId = String(input.repoId || "");
-        const byId = findRepo(config, repoId);
-        if (byId) return byId.path;
-        const cwd = String(input.cwd || "");
-        if (cwd) {
-            const resolved = path.resolve(cwd);
-            const byPath = (config.repos || []).find((repo) => repo.path === resolved);
-            if (byPath) return byPath.path;
-            // E4：任务 worktree 也是合法工作目录，但它必须真属于某个已注册仓库——
-            // 校验只读 worktree 根部那个 `.git` 文件，不为此跑 git，建线程仍是同步路径。
-            if (isRepoWorktreePath((config.repos || []).map((repo) => repo.path), resolved)) return resolved;
-        }
-        return ensureSiteWorkspace(config).workspacePath;
-    };
+    /** 按请求里的 repoId/cwd 解析 Codex 线程工作目录，未注册时回退站点工作空间（E4 见 repo/thread-cwd.ts）。 */
+    const resolveCodexCwd = (input: { repoId?: unknown; cwd?: unknown } = {}) =>
+        resolveThreadCwd(input, config.repos || [], () => ensureSiteWorkspace(config).workspacePath);
     const app = express();
     app.disable("x-powered-by");
     // /image/parse 需要把请求体逐字节透传给解析服务，先按 Buffer 原样收下，
@@ -552,14 +541,14 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
         const clientId = String(req.body?.clientId || "");
         session.beginConversation({ sourceClientId: clientId });
         setActiveThread("", { emptyThread: true, draftThread: true, sourceClientId: clientId }, true);
-        const thread = await prepareDraftThread(clientId, permissionMode(req.body?.permissionMode), String(req.body?.repoId || ""));
+        const thread = await prepareDraftThread(clientId, permissionMode(req.body?.permissionMode), String(req.body?.repoId || ""), String(req.body?.cwd || ""));
         res.json({ ok: true, workspace: ensureSiteWorkspace(config), conversation: session.conversationStateSnapshot, thread: summarizeCodexThread(thread), messages: [] });
     }));
     app.post("/agent/codex/threads/reset", codexMutation(async (req, res) => {
         const clientId = String(req.body?.clientId || "");
         session.beginConversation({ sourceClientId: clientId });
         setActiveThread("", { emptyThread: true, draftThread: true, sourceClientId: clientId }, true);
-        await prepareDraftThread(clientId, permissionMode(req.body?.permissionMode), String(req.body?.repoId || ""));
+        await prepareDraftThread(clientId, permissionMode(req.body?.permissionMode), String(req.body?.repoId || ""), String(req.body?.cwd || ""));
         res.json({ ok: true, workspace: ensureSiteWorkspace(config), conversation: session.conversationStateSnapshot });
     }));
     app.get("/agent/codex/threads/:threadId", route(async (req, res) => {
@@ -577,7 +566,7 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
         const threadId = routeParam(req.params.threadId);
         const clientId = String(req.body?.clientId || "");
         try {
-            const result = await prepareExistingThread(threadId, clientId, permissionMode(req.body?.permissionMode), String(req.body?.repoId || ""));
+            const result = await prepareExistingThread(threadId, clientId, permissionMode(req.body?.permissionMode), String(req.body?.repoId || ""), String(req.body?.cwd || ""));
             const nextWorkspace = setActiveThread(threadId, { sourceClientId: clientId }, true);
             res.json({ ok: true, workspace: nextWorkspace, conversation: session.conversationStateSnapshot, ...result });
         } catch (error) {

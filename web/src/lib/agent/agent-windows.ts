@@ -47,6 +47,11 @@ export type AgentWindow = {
     cliMode: boolean;
     /** CLI 形态复用的终端会话 id（持久化后可跨刷新/切模式续上同一 shell）。 */
     cliSession: string;
+    /**
+     * E4：该会话窗使用的任务 worktree 绝对路径。空串 = 走仓库主工作区（旧行为）。
+     * 只存路径不存仓库名：worktree 本身属于哪个仓库由桥端按 `.git` 指针校验，前端不重复判断。
+     */
+    worktreePath: string;
 };
 
 export function emptyAgentConversation(): AgentConversationState {
@@ -80,6 +85,7 @@ export function createAgentWindow(patch: Partial<AgentWindow> & { id: string; ti
         waiting: false,
         cliMode: false,
         cliSession: "",
+        worktreePath: "",
         ...patch,
     };
 }
@@ -227,13 +233,13 @@ export function nextWindowNumber(list: AgentWindow[]): number {
 }
 
 /** 可持久化的窗口骨架：刻意不含 messages / attachments / conversation，避免体积与隐私面扩大。 */
-export type PersistedAgentWindow = Pick<AgentWindow, "id" | "title" | "cliMode" | "cliSession">;
+export type PersistedAgentWindow = Pick<AgentWindow, "id" | "title" | "cliMode" | "cliSession" | "worktreePath">;
 
 /** 把当前窗口列表投影成可写盘的最小结构（刷新后能恢复「几个窗、各叫什么、什么形态」）。 */
 export function projectPersistedWindows(windows: AgentWindow[], activeWindowId: string): { activeWindowId: string; windows: PersistedAgentWindow[] } {
     return {
         activeWindowId,
-        windows: windows.map(({ id, title, cliMode, cliSession }) => ({ id, title, cliMode, cliSession })),
+        windows: windows.map(({ id, title, cliMode, cliSession, worktreePath }) => ({ id, title, cliMode, cliSession, worktreePath })),
     };
 }
 
@@ -266,6 +272,8 @@ export function parsePersistedWindows(raw: string | null | undefined): { windows
             title,
             cliMode: entry.cliMode === true,
             cliSession: typeof entry.cliSession === "string" ? entry.cliSession : "",
+            // 只恢复绝对路径：脏数据（相对路径/空）一律退回主工作区，绝不把 cwd 交给一个猜出来的位置。
+            worktreePath: typeof entry.worktreePath === "string" && entry.worktreePath.trim().startsWith("/") ? entry.worktreePath.trim() : "",
         }));
         if (windows.length >= AGENT_WINDOW_LIMIT) break;
     }

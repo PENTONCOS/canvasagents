@@ -234,6 +234,25 @@ export function fetchAgentRepoStatus(endpoint: string, token: string, params: { 
     return fetchAgentJson<AgentRepoStatusResponse>(endpoint, token, `/repo/status?${query.toString()}`, { headers: repoAuthHeaders(token) });
 }
 
+// E4: 任务独立 worktree。左右两侧同名但语义不同——列表只读，创建幂等，删除只认已登记项（桥端校验）。
+export type AgentWorktreeApiRecord = { taskId?: string; path?: string; branch?: string; created?: boolean };
+export type AgentWorktreeListResponse = { ok?: boolean; repoId?: string; worktrees?: AgentWorktreeApiRecord[] };
+export type AgentWorktreeCreateResponse = AgentWorktreeApiRecord & { ok?: boolean; repoId?: string };
+
+export function fetchAgentWorktrees(endpoint: string, token: string, params: { repoId: string }) {
+    const query = new URLSearchParams();
+    query.set("repoId", params.repoId);
+    return fetchAgentJson<AgentWorktreeListResponse>(endpoint, token, `/repo/worktrees?${query.toString()}`, { headers: repoAuthHeaders(token) });
+}
+
+export function createAgentWorktree(endpoint: string, token: string, body: { repoId: string; taskId: string; baseRef?: string }) {
+    return fetchAgentJson<AgentWorktreeCreateResponse>(endpoint, token, "/repo/worktrees", { method: "POST", headers: repoAuthHeaders(token, true), body: JSON.stringify(body) });
+}
+
+export function removeAgentWorktree(endpoint: string, token: string, body: { repoId: string; path: string }) {
+    return fetchAgentJson<{ ok?: boolean }>(endpoint, token, "/repo/worktrees", { method: "DELETE", headers: repoAuthHeaders(token, true), body: JSON.stringify(body) });
+}
+
 // M7: image structure layer. The parser runs behind the agent bridge (the raw service has no
 // CORS headers), so both calls authenticate with the same x-canvas-agent-token header as /repo/*.
 export type AgentImageParseLang = "zh-Hans" | "en-US";

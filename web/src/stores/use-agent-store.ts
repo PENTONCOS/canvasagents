@@ -91,6 +91,7 @@ export const AGENT_WINDOW_FIELDS = [
     "queued",
     "cliMode",
     "cliSession",
+    "worktreePath",
 ] as const;
 export type AgentWindowField = (typeof AGENT_WINDOW_FIELDS)[number];
 
@@ -155,6 +156,7 @@ type AgentStore = {
     feedSendRequest: AgentFeedSendRequest | null;
     cliMode: boolean;
     cliSession: string;
+    worktreePath: string;
     queueOpen: boolean;
     windows: AgentWindow[];
     activeWindowId: string;

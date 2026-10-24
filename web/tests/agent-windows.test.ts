@@ -192,8 +192,8 @@ describe("窗口布局持久化", () => {
         const projected = projectPersistedWindows(windows, "b");
         expect(projected.activeWindowId).toBe("b");
         expect(projected.windows).toEqual([
-            { id: "a", title: "会话 1", cliMode: true, cliSession: "tty-1" },
-            { id: "b", title: "landingpage 改版", cliMode: false, cliSession: "" },
+            { id: "a", title: "会话 1", cliMode: true, cliSession: "tty-1", worktreePath: "" },
+            { id: "b", title: "landingpage 改版", cliMode: false, cliSession: "", worktreePath: "" },
         ]);
         const raw = JSON.stringify(projected);
         expect(raw.includes("秘密")).toBe(false);
