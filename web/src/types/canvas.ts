@@ -177,6 +177,8 @@ export type CanvasNodeMetadata = {
     editor?: CanvasNodeEditorMetadata; // Phase 3: PS-mode editor engine binding + last save time
     // M1: 设计版本标签（其余交付字段见文件末尾的 M0 段，避免重复声明）。
     variantLabel?: string; // design 节点：A/B/C 版本标签
+    prototypeHtml?: string; // WO-02: 旅程步骤自带的小屏原型（完整 HTML，节点内 iframe 渲染）
+    journeyId?: string; // WO-02: 步骤节点归属的旅程实体 id
     variantOf?: string; // design 节点：同一组版本的锚点节点 id
     timeline?: CanvasNodeTimelineEntry[]; // M3: agent op history for this node, oldest first, capped at 50
     history?: CanvasNodeEditRecord[]; // Phase 3: in-place edit history (PS-mode saves), oldest first, capped at 50

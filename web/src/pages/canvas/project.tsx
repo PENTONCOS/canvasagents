@@ -41,6 +41,8 @@ import { buildAcTestCasePrompt } from "@/lib/delivery/ac-testcase";
 import { FeedPreviewModal } from "@/components/canvas/feed-preview-modal";
 import { nextEntityId, nextStepId, nextVariantId, type DeliveryAnnotation, type DesignVariant, type JourneyStep } from "@/types/delivery";
 import { generateDesignVariants, type DesignBrief } from "@/lib/delivery/design-generator";
+import { planJourneys, stepScreenHtml } from "@/lib/delivery/journey-planner";
+import { JOURNEY_STEP_GAP_Y } from "@/lib/canvas/journey-layout";
 import { ActiveConnectionPath, ConnectionPath } from "@/components/canvas/canvas-connections";
 import { CanvasConfigComposer } from "@/components/canvas/canvas-config-composer";
 import { CanvasConfigNodePanel } from "@/components/canvas/canvas-config-node-panel";
@@ -1111,38 +1113,54 @@ function InfiniteCanvasPage() {
                 newNode.metadata = { ...newNode.metadata, envId };
             }
             if (type === CanvasNodeType.Journey) {
+                // WO-02: 旅程不再由「固定三步」模板生成。需求便签先被梳理成 3 条旅程，
+                // 每条旅程的步骤来自需求正文里的动作短句；每步同时产出一个小屏原型。
                 const stepSpec = getNodeSpec(CanvasNodeType.JourneyStep);
-                const stepPositions = layoutJourneySteps({
-                    origin: newNode.position,
-                    journeySize: { width: newNode.width, height: newNode.height },
-                    stepSize: { width: stepSpec.width, height: stepSpec.height },
-                    count: 3,
-                });
-                const journeyId = nextEntityId(Object.keys(delivery.journeys), "J");
-                const createdSteps: { nodeId: string; title: string }[] = [];
-                stepPositions.forEach((position, index) => {
-                    const step = createCanvasNode(CanvasNodeType.JourneyStep, {
-                        x: position.x + stepSpec.width / 2,
-                        y: position.y + stepSpec.height / 2,
+                const journeySpec = getNodeSpec(CanvasNodeType.Journey);
+                const brief = designBriefFromNodes(nodesRef.current, currentProject?.title || "");
+                const planned = planJourneys(brief);
+                const strideY = journeySpec.height + JOURNEY_STEP_GAP_Y + stepSpec.height + 48;
+                const journeyIds: string[] = Object.keys(delivery.journeys);
+                planned.forEach((plan, planIndex) => {
+                    const anchor =
+                        planIndex === 0
+                            ? newNode
+                            : createCanvasNode(CanvasNodeType.Journey, {
+                                  x: newNode.position.x + newNode.width / 2,
+                                  y: newNode.position.y + newNode.height / 2 + strideY * planIndex,
+                              });
+                    anchor.title = plan.title;
+                    anchor.metadata = { ...anchor.metadata, statement: plan.title };
+                    if (planIndex > 0) extraNodes.push(anchor);
+                    const journeyId = nextEntityId(journeyIds, "J");
+                    journeyIds.push(journeyId);
+                    const stepPositions = layoutJourneySteps({
+                        origin: anchor.position,
+                        journeySize: { width: anchor.width, height: anchor.height },
+                        stepSize: { width: stepSpec.width, height: stepSpec.height },
+                        count: plan.steps.length,
                     });
-                    const title = t("canvas.node.delivery.stepTitle", { index: index + 1 });
-                    step.metadata = { ...step.metadata, statement: title };
-                    extraNodes.push(step);
-                    createdSteps.push({ nodeId: step.id, title });
-                    extraConnections.push({ id: nanoid(), fromNodeId: newNode.id, toNodeId: step.id, type: "specifies" });
-                });
-                const stepEntities: JourneyStep[] = [];
-                for (const [index, created] of createdSteps.entries()) {
-                    stepEntities.push({
-                        id: nextStepId(journeyId, stepEntities.map((step) => step.id)),
-                        journeyId,
-                        order: index + 1,
-                        title: created.title,
-                        nodeId: created.nodeId,
+                    const stepEntities: JourneyStep[] = [];
+                    stepPositions.forEach((position, stepIndex) => {
+                        const step = createCanvasNode(CanvasNodeType.JourneyStep, {
+                            x: position.x + stepSpec.width / 2,
+                            y: position.y + stepSpec.height / 2,
+                        });
+                        const title = plan.steps[stepIndex];
+                        step.metadata = { ...step.metadata, statement: title, journeyId, prototypeHtml: stepScreenHtml(title, plan.title) };
+                        extraNodes.push(step);
+                        extraConnections.push({ id: nanoid(), fromNodeId: anchor.id, toNodeId: step.id, type: "specifies" });
+                        stepEntities.push({
+                            id: nextStepId(journeyId, stepEntities.map((item) => item.id)),
+                            journeyId,
+                            order: stepIndex + 1,
+                            title,
+                            nodeId: step.id,
+                        });
                     });
-                }
-                for (const step of stepEntities) delivery.upsertStep(step);
-                delivery.upsertJourney({ id: journeyId, title: "", stepIds: stepEntities.map((step) => step.id), nodeId: newNode.id });
+                    for (const step of stepEntities) delivery.upsertStep(step);
+                    delivery.upsertJourney({ id: journeyId, title: plan.title, stepIds: stepEntities.map((item) => item.id), nodeId: anchor.id });
+                });
             }
             if (type === CanvasNodeType.Design) {
                 const centers = layoutDesignVariants(

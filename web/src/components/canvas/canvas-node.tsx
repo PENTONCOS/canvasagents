@@ -618,7 +618,13 @@ function DeliveryNodeContent({ node, theme, pluginContext }: NodeContentRenderer
     const designKind = node.type === CanvasNodeType.Design ? designPreviewKind(design) : "empty";
     const showDesignPreview = node.type === CanvasNodeType.Design && designKind !== "empty";
     const designDoc = showDesignPreview ? designPreviewDoc(design) : "";
-    const previewScale = node.width > 0 ? node.width / 390 : 1;
+    // WO-02: 旅程步骤自带小屏原型，和设计稿共用同一套 iframe 渲染路径。
+    const prototypeDoc = node.type === CanvasNodeType.JourneyStep && typeof meta?.prototypeHtml === "string" ? meta.prototypeHtml : "";
+    const showPrototype = prototypeDoc.length > 0;
+    const showVisualPreview = showDesignPreview || showPrototype;
+    const visualDoc = showDesignPreview ? designDoc : prototypeDoc;
+    const previewWidth = showDesignPreview ? 390 : 240;
+    const previewScale = node.width > 0 ? node.width / previewWidth : 1;
     const badges: { text: string; color?: string; status?: string }[] = [];
     if (meta?.acId) badges.push({ text: meta.acId });
     if (meta?.bugId) badges.push({ text: meta.bugId });
@@ -635,17 +641,17 @@ function DeliveryNodeContent({ node, theme, pluginContext }: NodeContentRenderer
     }
     return (
         <div className="relative flex h-full flex-col gap-1 overflow-hidden p-2" style={{ color: theme.node.text }}>
-            {showDesignPreview ? (
-                <div className="absolute inset-0 overflow-hidden" data-design-preview={designKind}>
-                    {designKind === "html" ? (
+            {showVisualPreview ? (
+                <div className="absolute inset-0 overflow-hidden" data-design-preview={showDesignPreview ? designKind : "prototype"}>
+                    {showDesignPreview || showPrototype ? (
                         <iframe
                             title={`${node.title} ${design?.label || ""}`}
-                            srcDoc={designDoc}
+                            srcDoc={visualDoc}
                             sandbox="allow-same-origin"
                             scrolling="no"
                             tabIndex={-1}
                             className="pointer-events-none border-0"
-                            style={{ width: 390, height: 844, transform: `scale(${previewScale})`, transformOrigin: "top left" }}
+                            style={{ width: previewWidth, height: showDesignPreview ? 844 : 360, transform: `scale(${previewScale})`, transformOrigin: "top left" }}
                         />
                     ) : (
                         <img src={design?.imageUrl || ""} alt="" className="h-full w-full object-cover" draggable={false} />
@@ -669,7 +675,7 @@ function DeliveryNodeContent({ node, theme, pluginContext }: NodeContentRenderer
             )}
             </div>
             {node.type === CanvasNodeType.Environment ? <EnvironmentHealthBadge metadata={meta} /> : null}
-            {!showDesignPreview && body ? (
+            {!showVisualPreview && body ? (
                 <p className="line-clamp-4 whitespace-pre-wrap text-xs leading-snug">{body}</p>
             ) : (
                 <p className="text-xs" style={{ color: theme.node.muted }}>
