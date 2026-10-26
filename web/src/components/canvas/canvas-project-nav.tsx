@@ -39,7 +39,7 @@ export function CanvasProjectNav({ canvasId, canvasTitle, onOpenSessions }: { ca
     return (
         <nav
             data-testid="canvas-project-nav"
-            className="flex items-center gap-1 border-b px-3 py-1 text-[11px]"
+            className="flex items-center gap-1 border-b px-3 py-1 text-[11px] max-md:hidden"
             style={{ borderColor: theme.toolbar.border, color: theme.node.text, background: theme.toolbar.panel }}
         >
             <FolderTree className="size-3.5 shrink-0 opacity-60" />
