@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { LocalAgentPanel } from "./local-agent-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { useCompactViewport } from "@/lib/use-compact-viewport";
 import { CANVAS_AGENT_PANEL_MOTION_MS, useAgentStore } from "@/stores/use-agent-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 
@@ -13,6 +14,8 @@ export function AgentPanel() {
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const width = useAgentStore((state) => state.width);
+    // WO-05: 窄屏下 Agent 面板同样改成覆盖层，避免把画布压成一条缝。
+    const compact = useCompactViewport();
     const [resizing, setResizing] = useState(false);
     const panelMounted = useAgentStore((state) => state.panelMounted);
     const panelOpen = useAgentStore((state) => state.panelOpen);
@@ -42,9 +45,9 @@ export function AgentPanel() {
 
     return (
         <motion.div
-            className="relative z-[70] flex h-full shrink-0"
+            className={compact ? "absolute inset-y-0 right-0 z-[90] flex h-full shrink-0" : "relative z-[70] flex h-full shrink-0"}
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: panelOpen ? width + 1 : 0, opacity: panelOpen ? 1 : 0 }}
+            animate={{ width: panelOpen ? (compact ? "100%" : width + 1) : 0, opacity: panelOpen ? 1 : 0 }}
             transition={{ duration: resizing ? 0 : PANEL_MOTION_SECONDS, ease: [0.22, 1, 0.36, 1] }}
             style={{ overflow: "clip", pointerEvents: panelOpen && !panelClosing ? undefined : "none" }}
         >
@@ -54,7 +57,7 @@ export function AgentPanel() {
                 initial={{ x: 48 }}
                 animate={{ x: panelClosing ? 28 : 0 }}
                 transition={{ duration: resizing ? 0 : PANEL_MOTION_SECONDS, ease: [0.22, 1, 0.36, 1] }}
-                style={{ width, background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}
+                style={{ width: compact ? "100%" : width, background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}
             >
                 <button type="button" className="absolute inset-y-0 left-0 z-40 w-4 -translate-x-1/2 cursor-col-resize" onPointerDown={startResize} aria-label={t("agent.panel.resize")} />
                 <LocalAgentPanel embedded />

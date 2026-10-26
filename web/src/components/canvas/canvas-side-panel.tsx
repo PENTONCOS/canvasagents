@@ -34,6 +34,7 @@ import { useDeliveryStore } from "@/stores/use-delivery-store";
 import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
 import { CANVAS_SIDE_PANEL_MAX_WIDTH, CANVAS_SIDE_PANEL_MIN_WIDTH, CANVAS_SIDE_PANEL_MOTION_MS, useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
+import { useCompactViewport } from "@/lib/use-compact-viewport";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import { toWindowTabLabel } from "@/lib/agent/agent-windows";
 import { nextEntityId, type AcceptanceCriterion, type DeliveryRunRound, type DeliveryTestCase, type Journey } from "@/types/delivery";
@@ -83,6 +84,8 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const [tab, setTab] = useState<PanelTab>("canvas");
     const width = useCanvasSidePanelStore((state) => state.width);
+    // WO-05: 窄屏下侧栏变成覆盖层（占满屏宽），不再挤压画布。
+    const compact = useCompactViewport();
     const panelOpen = useCanvasSidePanelStore((state) => state.panelOpen);
     const panelMounted = useCanvasSidePanelStore((state) => state.panelMounted);
     const panelClosing = useCanvasSidePanelStore((state) => state.panelClosing);
@@ -113,9 +116,9 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
 
     return (
         <motion.div
-            className="relative z-[60] flex h-full shrink-0"
+            className={compact ? "absolute inset-y-0 left-0 z-[80] flex h-full shrink-0" : "relative z-[60] flex h-full shrink-0"}
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: panelOpen ? width + 1 : 0, opacity: panelOpen ? 1 : 0 }}
+            animate={{ width: panelOpen ? (compact ? "100%" : width + 1) : 0, opacity: panelOpen ? 1 : 0 }}
             transition={{ duration: resizing ? 0 : PANEL_MOTION_SECONDS, ease: PANEL_EASE }}
             style={{ overflow: "clip", pointerEvents: panelClosing ? "none" : undefined }}
         >
@@ -124,7 +127,7 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
                 initial={{ x: -48 }}
                 animate={{ x: panelClosing ? -28 : 0 }}
                 transition={{ duration: resizing ? 0 : PANEL_MOTION_SECONDS, ease: PANEL_EASE }}
-                style={{ width, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
+                style={{ width: compact ? "100%" : width, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
                 data-canvas-no-zoom
             >
                 <div className="flex items-center gap-5 px-4 pt-3.5">
