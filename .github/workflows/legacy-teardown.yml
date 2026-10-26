@@ -1,0 +1,50 @@
+name: Legacy Surge Teardown
+
+# 一次性下线旧域名 canvas-agents.surge.sh（历史上由 deploy-surge.yml 发布）。
+# 触发：push 到 main（本次提交后执行一次）+ 手动 dispatch。
+# 保护：域名已经不存在时直接跳过，后续 push 不会重复报错。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  teardown:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe legacy domain
+        id: probe
+        run: |
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://canvas-agents.surge.sh || echo 000)
+          echo "legacy domain HTTP $CODE"
+          if [ "$CODE" = "200" ]; then
+            echo "alive=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "alive=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.probe.outputs.alive == 'true'
+        with:
+          node-version: 22
+
+      - name: Teardown legacy domain
+        if: steps.probe.outputs.alive == 'true'
+        env:
+          SURGE_TOKEN: ${{ secrets.SURGE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SURGE_TOKEN:-}" ]; then
+            echo "::error::SURGE_TOKEN secret is missing"
+            exit 1
+          fi
+          printf 'y\n' | npx --yes surge teardown canvas-agents.surge.sh --token "$SURGE_TOKEN"
+
+      - name: Verify
+        if: steps.probe.outputs.alive == 'true'
+        run: |
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://canvas-agents.surge.sh || echo 000)
+          echo "after teardown: HTTP $CODE"

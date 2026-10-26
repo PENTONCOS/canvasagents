@@ -1,6 +1,6 @@
 # 自动部署（CanvasAgents）
 
-push 到 `main` 即自动构建并发布到 **https://canvas-agents.surge.sh**。
+push 到 `main` 即自动构建并发布到 **https://canvasagents.surge.sh**。
 
 ## 两条腿（互补）
 
@@ -12,7 +12,8 @@ push 到 `main` 即自动构建并发布到 **https://canvas-agents.surge.sh**�
 - 部署脚本仅当 HEAD 在 `main` 且工作区干净时动作，并带并发锁（`~/rea-lab/.autodeploy.lock`）。
 
 ### 2. GitHub Actions（跨机器）
-- `.github/workflows/deploy-surge.yml`：`push` 到 `main` 触发，`workflow_dispatch` 可手动重发。
+- `.github/workflows/legacy-teardown.yml`：仅用于下线历史域名 `canvas-agents.surge.sh`；域名已不存在时自动跳过。
+- 站点发布由本机 launchd 的 `canvasagents-autodeploy.sh` 完成（CI 不再发布）。
 - 需要仓库 secret `SURGE_TOKEN`（Surge 账号 token）；未设置时该步骤自动跳过（不报错）。
 
 ```bash
@@ -23,7 +24,7 @@ homebrew: npx surge token        # 查看当前 Surge token
 
 ```bash
 cd web && pnpm install && pnpm build
-npx --yes surge dist canvas-agents.surge.sh
+npx --yes surge dist canvasagents.surge.sh
 ```
 
 ## 日志
