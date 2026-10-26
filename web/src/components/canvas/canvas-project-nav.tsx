@@ -7,6 +7,7 @@ import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { useCompactViewport } from "@/lib/use-compact-viewport";
 import { toWindowTabLabel } from "@/lib/agent/agent-windows";
 
 /**
@@ -18,6 +19,9 @@ import { toWindowTabLabel } from "@/lib/agent/agent-windows";
 export function CanvasProjectNav({ canvasId, canvasTitle, onOpenSessions }: { canvasId: string; canvasTitle: string; onOpenSessions: () => void }) {
     const { t } = useTranslation();
     const navigate = useNavigate();
+    // WO-05: 窄屏不展示面包屑（CSS 变体在本项目没启用，用运行时判断更可靠，也避免顶栏文字互相压住）。
+    const compact = useCompactViewport();
+    if (compact) return null;
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const groups = useCanvasStore((state) => state.groups);
     const projects = useCanvasStore((state) => state.projects);
@@ -39,7 +43,7 @@ export function CanvasProjectNav({ canvasId, canvasTitle, onOpenSessions }: { ca
     return (
         <nav
             data-testid="canvas-project-nav"
-            className="flex items-center gap-1 border-b px-3 py-1 text-[11px] max-md:hidden"
+            className="flex items-center gap-1 border-b px-3 py-1 text-[11px]"
             style={{ borderColor: theme.toolbar.border, color: theme.node.text, background: theme.toolbar.panel }}
         >
             <FolderTree className="size-3.5 shrink-0 opacity-60" />
