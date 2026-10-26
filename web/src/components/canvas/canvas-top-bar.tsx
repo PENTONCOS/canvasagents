@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bot, Download, Home, Images, Menu, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Trash2, Undo2, Upload } from "lucide-react";
+import { Bot, Download, Home, Images, Menu, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Sparkles, Trash2, Undo2, Upload } from "lucide-react";
 import { Button, Dropdown, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -25,6 +25,7 @@ export function CanvasTopBar({
     onDeleteProject,
     onExportProject,
     onImportImage,
+    onLoadDemo,
     onOpenPlugins,
     onUndo,
     onRedo,
@@ -47,6 +48,7 @@ export function CanvasTopBar({
     onDeleteProject: () => void;
     onExportProject: () => void;
     onImportImage: () => void;
+    onLoadDemo: () => void;
     onOpenPlugins: () => void;
     onUndo: () => void;
     onRedo: () => void;
@@ -94,6 +96,7 @@ export function CanvasTopBar({
                                 { key: "projects", icon: <Images className="size-4" />, label: t("canvas.projects"), onClick: onProjects },
                                 { type: "divider" },
                                 { key: "new", icon: <Plus className="size-4" />, label: t("canvas.create"), onClick: onCreateProject },
+                                { key: "demo", icon: <Sparkles className="size-4" />, label: t("canvas.loadDemo", { defaultValue: "载入示例项目" }), onClick: onLoadDemo },
                                 { key: "delete", danger: true, icon: <Trash2 className="size-4" />, label: t("canvas.deleteCurrent"), onClick: onDeleteProject },
                                 { type: "divider" },
                                 { key: "import", icon: <Upload className="size-4" />, label: t("canvas.importAsset"), onClick: onImportImage },

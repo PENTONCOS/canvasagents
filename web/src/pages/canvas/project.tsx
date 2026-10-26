@@ -39,6 +39,7 @@ import { composeScreenshots, ComposeError } from "@/lib/canvas/compose-image";
 import { imageToDataUrl } from "@/services/image-storage";
 import { buildAcTestCasePrompt } from "@/lib/delivery/ac-testcase";
 import { mergeParsedCases, parseTestCaseReply, planCasesForAc } from "@/lib/delivery/testcase-plan";
+import { buildDemoScenario } from "@/lib/delivery/demo-scenario";
 import { FeedPreviewModal } from "@/components/canvas/feed-preview-modal";
 import { nextEntityId, nextStepId, nextVariantId, type DeliveryAnnotation, type DesignVariant, type JourneyStep } from "@/types/delivery";
 import { generateDesignVariants, type DesignBrief } from "@/lib/delivery/design-generator";
@@ -3695,6 +3696,27 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
         return useAgentStore.subscribe(scan);
     }, []);
 
+    /**
+     * WO-04: 一键铺开七幕示例（需求→旅程→设计→AC/用例→运行→问题→环境）。
+     * 实体与节点同时写入，所以侧栏计数、节点徽标、连线语义都是真的；连上 Agent 后照常被覆盖。
+     */
+    const loadDemoCanvas = useCallback(() => {
+        const demo = buildDemoScenario();
+        const delivery = useDeliveryStore.getState();
+        for (const journey of demo.entities.journeys) delivery.upsertJourney(journey);
+        for (const step of demo.entities.steps) delivery.upsertStep(step);
+        for (const design of demo.entities.designs) delivery.upsertDesign(design);
+        for (const ac of demo.entities.acceptance) delivery.upsertAc(ac);
+        for (const testCase of demo.entities.testCases) delivery.upsertTestCase(testCase);
+        for (const bug of demo.entities.bugs) delivery.upsertBug(bug);
+        for (const environment of demo.entities.environments) delivery.upsertEnvironment(environment);
+        for (const run of demo.entities.runs) delivery.upsertRun(run);
+        setNodes((prev) => [...prev, ...demo.nodes]);
+        setConnections((prev) => [...prev, ...demo.connections]);
+        setSelectedNodeIds(new Set([demo.nodes[0].id]));
+        message.success(`已载入示例项目：${demo.nodes.length} 个节点`);
+    }, [message, setConnections, setNodes]);
+
     const handleNodeViewImage = useCallback((node: CanvasNodeData, imageId?: string) => {
         setPreviewNodeId(node.id);
         setPreviewImageId(imageId || null);
@@ -3854,6 +3876,7 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
                     onCreateProject={createAndOpenProject}
                     onDeleteProject={deleteCurrentProject}
                     onExportProject={exportCurrentProject}
+                    onLoadDemo={loadDemoCanvas}
                     onImportImage={() => handleUploadRequest()}
                     onOpenPlugins={() => setPluginManagerOpen(true)}
                     onUndo={undoCanvas}
