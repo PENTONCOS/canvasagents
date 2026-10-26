@@ -4,6 +4,8 @@ import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 
 import { CLAUDE_MODELS, claudeRunningThreadIds, interruptClaudeTurn, runClaudeTurn } from "../agent/claude.js";
+import { OPENCODE_MODELS, interruptOpencodeTurn, opencodeRunningThreadIds, runOpencodeTurn } from "../agent/opencode.js";
+import { opencodeThreadStore } from "../agent/opencode-threads.js";
 import { claudeThreadStore } from "../agent/claude-threads.js";
 import { driverInventory } from "../agent/driver-inventory.js";
 import { archiveCodexThread, CodexSkillLookupError, configureCodexSkill, generateCodexSkillDraft, interruptCodexTurn, isRecoverableThreadError, listCodexModels, listCodexSkills, listCodexThreads, readCodexThread, resolveCodexApproval, resolveCodexSkill, resumeCodexThread, runCodexTurn, startCodexThread, summarizeCodexThread } from "../agent/codex.js";
@@ -523,7 +525,7 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
         const pendingApprovals = session.codexPendingApprovals;
         const activeThreadId = workspace.activeThreadId || codex.threadId || conversation.threadId || "";
         const busyThreadIds = session.busyThreadIds;
-        const runningThreadIds = [...busyThreadIds, ...claudeRunningThreadIds()];
+        const runningThreadIds = [...busyThreadIds, ...claudeRunningThreadIds(), ...opencodeRunningThreadIds()];
         type QueueStatus = "waiting-input" | "approval" | "running" | "idle" | "failed";
         const data = (result.data || []).map((thread) => {
             const active = Boolean(activeThreadId) && thread.id === activeThreadId;
@@ -799,6 +801,61 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
     app.post("/agent/claude/approval", (_req, res) => res.status(409).json({ ok: false, error: "claude driver 使用 permission-mode，不支持逐条审批" }));
     // 技能面板在 Claude driver 下暂无技能来源；返回空列表 + 说明，不报错也不造假数据。
     app.get("/agent/claude/skills", (_req, res) => res.json({ ok: true, data: [], note: "claude driver 暂不支持技能市场" }));
+    // WO-06: OpenCode 作为第三家 driver。端点形状与 Claude 对齐（前端只切路径前缀），
+    // 但线程存储与 session 续聊独立，互不污染。
+    app.get("/agent/opencode/workspace", (_req, res) => {
+        res.json({ ok: true, workspace: opencodeWorkspace() });
+    });
+    app.get("/agent/opencode/models", (_req, res) => {
+        // 模型清单以本机 `opencode models` 为准；这里不编一份可能过期的列表。
+        res.json({ ok: true, data: OPENCODE_MODELS.map((model) => ({ id: model.id, model: model.id, displayName: model.displayName, defaultReasoningEffort: "medium", supportedReasoningEfforts: [{ reasoningEffort: "medium" }], isDefault: Boolean(model.isDefault) })), note: "opencode 通过 provider/model 指定模型" });
+    });
+    app.get("/agent/opencode/threads", (_req, res) => {
+        res.json({ ok: true, workspace: opencodeWorkspace(), conversation: claudeConversation(""), data: opencodeThreadStore.list().map(codexThreadSummary), running: opencodeRunningThreadIds() });
+    });
+    app.post("/agent/opencode/threads/new", (req, res) => {
+        const thread = opencodeThreadStore.create({ name: typeof req.body?.name === "string" ? req.body.name : undefined, cwd: typeof req.body?.cwd === "string" ? req.body.cwd : ensureSiteWorkspace(config).workspacePath });
+        res.json({ ok: true, workspace: opencodeWorkspace(thread.id), conversation: claudeConversation(thread.id), thread: codexThreadSummary(thread), messages: [] });
+    });
+    app.post("/agent/opencode/threads/reset", (req, res) => {
+        const thread = opencodeThreadStore.create({ cwd: typeof req.body?.cwd === "string" ? req.body.cwd : ensureSiteWorkspace(config).workspacePath });
+        res.json({ ok: true, workspace: opencodeWorkspace(thread.id), conversation: claudeConversation(thread.id), thread: codexThreadSummary(thread), messages: [] });
+    });
+    app.get("/agent/opencode/threads/:threadId", (req, res) => {
+        const thread = opencodeThreadStore.get(String(req.params.threadId));
+        if (!thread) return void res.status(404).json({ ok: false, error: "thread not found" });
+        res.json({ ok: true, workspace: opencodeWorkspace(thread.id), conversation: claudeConversation(thread.id), thread: codexThreadSummary(thread), messages: claudeMessages(thread), settledTurnIds: [], historyReady: true });
+    });
+    app.post("/agent/opencode/threads/:threadId/resume", (req, res) => {
+        const thread = opencodeThreadStore.touch(String(req.params.threadId), { cwd: typeof req.body?.cwd === "string" ? req.body.cwd : undefined });
+        if (!thread) return void res.status(404).json({ ok: false, error: "thread not found" });
+        res.json({ ok: true, workspace: opencodeWorkspace(thread.id), conversation: claudeConversation(thread.id), thread: codexThreadSummary(thread), messages: claudeMessages(thread), settledTurnIds: [], historyReady: true });
+    });
+    app.post("/agent/opencode/threads/:threadId/delete", (req, res) => {
+        const threadId = String(req.params.threadId);
+        if (opencodeRunningThreadIds().includes(threadId)) interruptOpencodeTurn(threadId);
+        const removed = opencodeThreadStore.remove(threadId);
+        res.status(removed ? 200 : 404).json({ ok: removed, ...(removed ? {} : { error: "thread not found" }) });
+    });
+    app.post("/agent/opencode/turn", (req, res) => {
+        const threadId = String(req.body?.threadId || "");
+        const accepted = runOpencodeTurn({
+            threadId,
+            prompt: String(req.body?.prompt || ""),
+            cwd: typeof req.body?.cwd === "string" ? req.body.cwd : undefined,
+            permissionMode: permissionMode(req.body?.permissionMode),
+            model: typeof req.body?.model === "string" ? req.body.model : undefined,
+        }, emit);
+        if (!accepted) return void res.status(400).json({ ok: false, error: "prompt required" });
+        res.json({ ok: true, threadId, turnId: `opencode-turn-${Date.now().toString(36)}` });
+    });
+    app.post("/agent/opencode/interrupt", (req, res) => {
+        const ok = interruptOpencodeTurn(String(req.body?.threadId || ""));
+        res.status(ok ? 200 : 409).json({ ok, ...(ok ? {} : { error: "当前没有可停止的任务" }) });
+    });
+    app.post("/agent/opencode/history/ack", (_req, res) => res.json({ ok: true }));
+    app.post("/agent/opencode/approval", (_req, res) => res.status(409).json({ ok: false, error: "opencode driver 使用 --auto 权限，不支持逐条审批" }));
+    app.get("/agent/opencode/skills", (_req, res) => res.json({ ok: true, data: [], note: "opencode driver 暂不支持技能市场" }));
     app.use((_req, res) => res.status(404).json({ ok: false, error: "not found" }));
     app.use((error: Error, req: Request, res: Response, _next: NextFunction) => {
         logger.error("HTTP request failed", { method: req.method, path: req.path, error });
@@ -949,6 +1006,11 @@ function withAttachmentContext(prompt: string, attachments: Array<{ id: string; 
 }
 
 /** Claude driver 的 workspace 视图：与 Codex 的 AgentWorkspace 同形。 */
+function opencodeWorkspace(activeThreadId = ""): { workspacePath: string; activeThreadId?: string } {
+    const latest = activeThreadId || opencodeThreadStore.list()[0]?.id || "";
+    return { workspacePath: "", activeThreadId: latest || undefined };
+}
+
 function claudeWorkspace(activeThreadId = ""): { workspacePath: string; activeThreadId?: string } {
     const latest = activeThreadId || claudeThreadStore.list()[0]?.id || "";
     return { workspacePath: "", activeThreadId: latest || undefined };

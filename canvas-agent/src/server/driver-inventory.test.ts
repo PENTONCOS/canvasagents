@@ -3,10 +3,10 @@ import { test } from "node:test";
 
 import { driverInventory } from "../agent/driver-inventory.js";
 
-test("driver 清单：codex 与 claude 都在，字段完整", () => {
+test("driver 清单：codex / claude / opencode 都在，字段完整", () => {
     const entries = driverInventory();
     const ids = entries.map((entry) => entry.id);
-    assert.deepEqual(ids, ["codex", "claude"]);
+    assert.deepEqual(ids, ["codex", "claude", "opencode"]);
     for (const entry of entries) {
         assert.equal(typeof entry.label, "string");
         assert.equal(typeof entry.available, "boolean");

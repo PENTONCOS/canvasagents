@@ -33,4 +33,10 @@ test("rewriteAgentDriverPath returns null for unknown drivers and non-agent path
 test("isKnownAgentDriver narrows correctly", () => {
     assert.equal(isKnownAgentDriver("codex"), true);
     assert.equal(isKnownAgentDriver("claude"), true);
+    assert.equal(isKnownAgentDriver("opencode"), true);
+    assert.equal(isKnownAgentDriver("gemini"), false);
+});
+
+test("rewriteAgentDriverPath keeps opencode paths as-is (own handlers)", () => {
+    assert.deepEqual(rewriteAgentDriverPath("/agent/opencode/turn"), { driver: "opencode", canonicalPath: "/agent/opencode/turn" });
 });

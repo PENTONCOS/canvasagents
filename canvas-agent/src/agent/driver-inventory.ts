@@ -13,6 +13,7 @@ export type DriverInventoryEntry = {
 const DRIVERS: Array<{ id: string; label: string; bin: string; args: string[] }> = [
     { id: "codex", label: "Codex", bin: "codex", args: ["--version"] },
     { id: "claude", label: "Claude Code", bin: "claude", args: ["--version"] },
+    { id: "opencode", label: "OpenCode", bin: "opencode", args: ["--version"] },
 ];
 
 /**

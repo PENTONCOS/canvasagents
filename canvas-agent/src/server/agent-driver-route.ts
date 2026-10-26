@@ -2,7 +2,7 @@
 // existing `/agent/codex/*` handlers so a second driver can register its own prefix later
 // without touching the frontend. Pure function so the rewrite rules stay unit-testable.
 
-export const KNOWN_AGENT_DRIVERS = ["codex", "claude"] as const;
+export const KNOWN_AGENT_DRIVERS = ["codex", "claude", "opencode"] as const;
 
 export type AgentDriver = (typeof KNOWN_AGENT_DRIVERS)[number];
 

@@ -6,10 +6,10 @@
  * 也被非 React 代码调用；放 store 会引入循环依赖，且取不到 hook 外的最新值。
  */
 
-export type AgentDriverId = "codex" | "claude";
+export type AgentDriverId = "codex" | "claude" | "opencode";
 
 export const AGENT_DRIVER_STORAGE_KEY = "canvasagents.agent.driver";
-export const AGENT_DRIVER_IDS: AgentDriverId[] = ["codex", "claude"];
+export const AGENT_DRIVER_IDS: AgentDriverId[] = ["codex", "claude", "opencode"];
 
 const listeners = new Set<(driver: AgentDriverId) => void>();
 
@@ -57,5 +57,7 @@ export function agentApiPath(path: string, driver: AgentDriverId = current): str
 }
 
 export function agentDriverLabel(driver: AgentDriverId): string {
-    return driver === "claude" ? "Claude Code" : "Codex";
+    if (driver === "claude") return "Claude Code";
+    if (driver === "opencode") return "OpenCode";
+    return "Codex";
 }
