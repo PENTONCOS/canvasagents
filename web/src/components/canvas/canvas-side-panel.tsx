@@ -58,6 +58,8 @@ type Props = {
     onAcStatementChange: (acId: string, statement: string) => void;
     /** D3: 把 AC 交给 Agent 生成用例——走既有投喂预览层，不另开通道。 */
     onGenerateTestCases: (acId: string, targetWindowId?: string) => void;
+    /** WO-03: 按规则直接生成分层用例（不需要连 Agent），落成用例实体。 */
+    onPlanTestCases: (acId: string) => void;
 };
 
 const NODE_TYPE_ICON: Record<string, typeof Square> = {
@@ -76,7 +78,7 @@ const STATUS_COLOR: Record<string, string> = {
     idle: "transparent",
 };
 
-export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, onHoverNode, onInsertAsset, onAcStatementChange, onGenerateTestCases }: Props) {
+export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, onHoverNode, onInsertAsset, onAcStatementChange, onGenerateTestCases, onPlanTestCases }: Props) {
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const [tab, setTab] = useState<PanelTab>("canvas");
@@ -140,7 +142,7 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
                     ) : tab === "prompts" ? (
                         <CanvasPromptsTab onInsert={onInsertAsset} theme={theme} />
                     ) : tab === "acceptance" ? (
-                        <DeliveryAcceptanceTab theme={theme} onFocusNode={onFocusNode} onAcStatementChange={onAcStatementChange} onGenerateTestCases={onGenerateTestCases} />
+                        <DeliveryAcceptanceTab theme={theme} onFocusNode={onFocusNode} onAcStatementChange={onAcStatementChange} onGenerateTestCases={onGenerateTestCases} onPlanTestCases={onPlanTestCases} />
                     ) : (
                         <DeliveryRunsTab nodes={nodes} theme={theme} onFocusNode={onFocusNode} />
                     )}
@@ -168,11 +170,13 @@ function DeliveryAcceptanceTab({
     onFocusNode,
     onAcStatementChange,
     onGenerateTestCases,
+    onPlanTestCases,
 }: {
     theme: CanvasTheme;
     onFocusNode: (nodeId: string) => void;
     onAcStatementChange: (acId: string, statement: string) => void;
     onGenerateTestCases: (acId: string, targetWindowId?: string) => void;
+    onPlanTestCases: (acId: string) => void;
 }) {
     const { t } = useTranslation();
     const acceptance = useDeliveryStore((state) => state.acceptance);
@@ -251,6 +255,7 @@ function DeliveryAcceptanceTab({
                     onFocusNode={onFocusNode}
                     onAcStatementChange={onAcStatementChange}
                     onGenerateTestCases={() => onGenerateTestCases(item.id, target)}
+                    onPlanTestCases={() => onPlanTestCases(item.id)}
                 />
             ))}
             <AcceptanceOverviewModal open={overviewOpen} theme={theme} onClose={() => setOverviewOpen(false)} onFocusNode={onFocusNode} />
@@ -270,6 +275,7 @@ function AcCard({
     onFocusNode,
     onAcStatementChange,
     onGenerateTestCases,
+    onPlanTestCases,
 }: {
     ac: AcceptanceCriterion;
     theme: CanvasTheme;
@@ -278,6 +284,7 @@ function AcCard({
     onFocusNode: (nodeId: string) => void;
     onAcStatementChange: (acId: string, statement: string) => void;
     onGenerateTestCases: () => void;
+    onPlanTestCases: () => void;
 }) {
     const { t } = useTranslation();
     const steps = useDeliveryStore((state) => state.steps);
@@ -446,6 +453,15 @@ function AcCard({
                         data-testid="ac-generate-tests"
                     >
                         {t("canvas.sidePanel.acGenerate")}
+                    </button>
+                    <button
+                        type="button"
+                        className="rounded border px-1.5 py-0.5 text-[10px] transition-opacity hover:opacity-80"
+                        style={{ borderColor: theme.node.stroke, color: theme.node.text }}
+                        onClick={onPlanTestCases}
+                        data-testid="ac-plan-tests"
+                    >
+                        {t("canvas.sidePanel.acPlan", { defaultValue: "按规则生成" })}
                     </button>
                     <span className="text-[10px]" style={{ color: theme.node.muted }}>
                         {anchor}

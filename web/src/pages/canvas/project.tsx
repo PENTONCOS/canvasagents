@@ -38,6 +38,7 @@ import { composedImageTitle, composeImageSummary, feedImageNodes, shouldComposeF
 import { composeScreenshots, ComposeError } from "@/lib/canvas/compose-image";
 import { imageToDataUrl } from "@/services/image-storage";
 import { buildAcTestCasePrompt } from "@/lib/delivery/ac-testcase";
+import { mergeParsedCases, parseTestCaseReply, planCasesForAc } from "@/lib/delivery/testcase-plan";
 import { FeedPreviewModal } from "@/components/canvas/feed-preview-modal";
 import { nextEntityId, nextStepId, nextVariantId, type DeliveryAnnotation, type DesignVariant, type JourneyStep } from "@/types/delivery";
 import { generateDesignVariants, type DesignBrief } from "@/lib/delivery/design-generator";
@@ -3656,6 +3657,44 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
         });
     }, []);
 
+    /**
+     * WO-03: 按规则给这条 AC 直接生成三条分层用例（unit/component/e2e），落成实体。
+     * 连不上 Agent 时也能得到可统计、可回填的结构，不再让结果停在聊天里。
+     */
+    const planAcTestCases = useCallback((acId: string) => {
+        const delivery = useDeliveryStore.getState();
+        const ac = delivery.acceptance[acId];
+        if (!ac) return;
+        const existing = Object.values(delivery.testCases).filter((testCase) => testCase.acId === acId);
+        const drafts = planCasesForAc(ac, existing);
+        for (const draft of drafts) delivery.upsertTestCase(draft);
+    }, []);
+
+    // WO-03: Agent 回复里的用例清单自动落库（JSON 块或带 @AC-xx 锚点的列表）。
+    // 用 message id 去重，同一段回复不会重复写；标题相同的用例也不会重复建。
+    const seenTestCaseReplies = useRef<Set<string>>(new Set());
+    useEffect(() => {
+        const scan = () => {
+            const agent = useAgentStore.getState();
+            const acceptance = useDeliveryStore.getState().acceptance;
+            const validAcIds = new Set(Object.keys(acceptance));
+            if (validAcIds.size === 0) return;
+            for (const window of agent.windows) {
+                for (const chatItem of window.messages) {
+                    if (chatItem.role !== "assistant" || !chatItem.text || seenTestCaseReplies.current.has(chatItem.id)) continue;
+                    const parsed = parseTestCaseReply(chatItem.text, validAcIds);
+                    seenTestCaseReplies.current.add(chatItem.id);
+                    if (parsed.length === 0) continue;
+                    const delivery = useDeliveryStore.getState();
+                    const added = mergeParsedCases(parsed, { acceptance: delivery.acceptance, testCases: delivery.testCases }, (testCase) => delivery.upsertTestCase(testCase));
+                    if (added > 0) message.success(`已从 Agent 回复导入 ${added} 条用例`);
+                }
+            }
+        };
+        scan();
+        return useAgentStore.subscribe(scan);
+    }, []);
+
     const handleNodeViewImage = useCallback((node: CanvasNodeData, imageId?: string) => {
         setPreviewNodeId(node.id);
         setPreviewImageId(imageId || null);
@@ -3792,6 +3831,7 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
                 onInsertAsset={handleAssetInsert}
                 onAcStatementChange={updateAcStatement}
                 onGenerateTestCases={openAcTestCasePrompt}
+                onPlanTestCases={planAcTestCases}
             />
             <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
                 <CanvasProjectNav
