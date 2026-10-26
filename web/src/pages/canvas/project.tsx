@@ -40,6 +40,8 @@ import { imageToDataUrl } from "@/services/image-storage";
 import { buildAcTestCasePrompt } from "@/lib/delivery/ac-testcase";
 import { mergeParsedCases, parseTestCaseReply, planCasesForAc } from "@/lib/delivery/testcase-plan";
 import { buildDemoScenario } from "@/lib/delivery/demo-scenario";
+import { useCompactViewport } from "@/lib/use-compact-viewport";
+import { useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { FeedPreviewModal } from "@/components/canvas/feed-preview-modal";
 import { nextEntityId, nextStepId, nextVariantId, type DeliveryAnnotation, type DesignVariant, type JourneyStep } from "@/types/delivery";
 import { generateDesignVariants, type DesignBrief } from "@/lib/delivery/design-generator";
@@ -3695,6 +3697,15 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
         scan();
         return useAgentStore.subscribe(scan);
     }, []);
+
+    // WO-05: 手机/窄屏进入时先收起左栏，否则覆盖层会把画布完全挡住（用户第一眼看不到内容）。
+    const compactViewport = useCompactViewport();
+    const compactPanelClosed = useRef(false);
+    useEffect(() => {
+        if (!compactViewport || compactPanelClosed.current) return;
+        compactPanelClosed.current = true;
+        useCanvasSidePanelStore.getState().closePanel();
+    }, [compactViewport]);
 
     /**
      * WO-04: 一键铺开七幕示例（需求→旅程→设计→AC/用例→运行→问题→环境）。
