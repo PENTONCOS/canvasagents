@@ -68,7 +68,6 @@ import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "@/componen
 import { CanvasToolbar } from "@/components/canvas/canvas-toolbar";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { CanvasSidePanel } from "@/components/canvas/canvas-side-panel";
-import { CanvasProjectNav } from "@/components/canvas/canvas-project-nav";
 import { CanvasJournalPanel } from "@/components/canvas/canvas-journal-panel";
 import { CanvasTimelinePanel } from "@/components/canvas/canvas-timeline-panel";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
@@ -3867,11 +3866,6 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
                 onPlanTestCases={planAcTestCases}
             />
             <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-                <CanvasProjectNav
-                    canvasId={projectId}
-                    canvasTitle={currentProject?.title || t("canvas.projectPage.untitledCanvas")}
-                    onOpenSessions={openAgentPanel}
-                />
                 <CanvasTopBar
                     title={currentProject?.title || t("canvas.projectPage.untitledCanvas")}
                     titleDraft={titleDraft}
