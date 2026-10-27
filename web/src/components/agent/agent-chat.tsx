@@ -82,6 +82,7 @@ export function AgentChatTimeline({
                 <div ref={contentRef} className="space-y-4 px-4 pt-4">
                     {timeline.map((entry) => entry.type === "commands"
                         ? <AgentCommandGroupRow key={entry.id} items={entry.items} theme={theme} />: entry.type === "tools"? <AgentToolGroupRow key={entry.id} items={entry.items} theme={theme} />
+                        : entry.type === "reasoning"? <AgentReasoningGroupRow key={entry.id} items={entry.items} theme={theme} />
                         : <AgentChatMessageRow key={entry.item.id} item={entry.item} theme={theme} />)}
                     {pendingTool ? (
                         <AgentPendingToolCard
@@ -124,6 +125,21 @@ const AgentChatMessageRow = memo(function AgentChatMessageRow({ item, theme }: {
     );
 });
 
+const AgentReasoningGroupRow = memo(function AgentReasoningGroupRow({ items, theme }: { items: AgentChatItem[]; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
+    const { t } = useTranslation();
+    return (
+        <details className="group min-w-0" style={historyMessageStyle}>
+            <summary className="flex w-full cursor-pointer list-none items-center gap-1.5 py-1 text-left text-xs" style={{ color: theme.node.muted }}>
+                <ChevronRight className="size-3.5 shrink-0 transition-transform group-open:rotate-90" />
+                {t("agent.message.reasoningGroup", { count: items.length, defaultValue: "思考过程 · {{count}} 项" })}
+            </summary>
+            <div className="flex flex-col gap-1.5">
+                {items.map((item) => <AgentChatMessageRow key={item.id} item={item} theme={theme} />)}
+            </div>
+        </details>
+    );
+});
+
 const AgentToolGroupRow = memo(function AgentToolGroupRow({ items, theme }: { items: AgentChatItem[]; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
     const { t } = useTranslation();
     const failed = items.filter((item) => item.role === "error").length;
@@ -148,7 +164,7 @@ const AgentCommandGroupRow = memo(function AgentCommandGroupRow({ items, theme }
     );
 });
 
-type AgentTimelineEntry = { type: "message"; item: AgentChatItem } | { type: "commands"; id: string; items: AgentChatItem[] } | { type: "tools"; id: string; items: AgentChatItem[] };
+type AgentTimelineEntry = { type: "message"; item: AgentChatItem } | { type: "commands"; id: string; items: AgentChatItem[] } | { type: "tools"; id: string; items: AgentChatItem[] } | { type: "reasoning"; id: string; items: AgentChatItem[] };
 
 function groupTimelineMessages(messages: AgentChatItem[]) {
     const timeline: AgentTimelineEntry[] = [];
@@ -159,6 +175,14 @@ function groupTimelineMessages(messages: AgentChatItem[]) {
         timeline.push({ type: "commands", id: `commands:${commands[0].id}`, items: commands });
         commands = [];
         commandScope = "";
+    };
+    // WO-07: 多段思考过程收成一组，避免一次任务里十几条 reasoning 把对话刷满。
+    let reasoning: AgentChatItem[] = [];
+    const flushReasoning = () => {
+        if (!reasoning.length) return;
+        if (reasoning.length === 1) timeline.push({ type: "message", item: reasoning[0] });
+        else timeline.push({ type: "reasoning", id: `reasoning:${reasoning[0].id}`, items: reasoning });
+        reasoning = [];
     };
     let tools: AgentChatItem[] = [];
     const flushTools = () => {
@@ -177,17 +201,32 @@ function groupTimelineMessages(messages: AgentChatItem[]) {
             commandScope = scope;
             return;
         }
+        if (isReasoningMessage(item)) {
+            flushCommands();
+            flushTools();
+            reasoning.push(item);
+            return;
+        }
         if (isGroupableToolMessage(item)) {
+            flushReasoning();
             tools.push(item);
             return;
         }
         flushCommands();
+        flushReasoning();
         flushTools();
         timeline.push({ type: "message", item });
     });
     flushCommands();
+    flushReasoning();
     flushTools();
     return timeline;
+}
+
+function isReasoningMessage(item: AgentChatItem) {
+    if (item.role !== "tool" || item.streamId) return false;
+    const detail = item.detail as { kind?: unknown } | undefined;
+    return detail?.kind === "reasoning";
 }
 
 function isGroupableToolMessage(item: AgentChatItem) {
