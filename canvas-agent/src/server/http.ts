@@ -22,6 +22,7 @@ import { BranchError, listRepoBranches, mergeRepoBranch } from "../repo/branches
 import { logger } from "../utils/logger.js";
 import { checkVersions } from "../version-check.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
+import { getSkillPreset, SKILL_PRESETS, type SkillPresetId } from "../skills/presets.js";
 import { IMAGE_PARSE_BODY_LIMIT, requestUpstream, resolveImageParseUrl, truncateUpstreamText } from "./image-parse.js";
 import { terminalManager } from "./terminal.js";
 import { captureWall, listWall, listWindows, pickCaptureWindow, readWallFile } from "./capture.js";
@@ -487,6 +488,23 @@ export function startHttpServer(options: StartHttpServerOptions = {}) {
     }));
     app.post("/agent/codex/skills", codexMutation(async (req, res) => {
         const data = await skillStore.create(req.body);
+        session.emitAll("skills_changed", { forceReload: true });
+        res.status(201).json({ ok: true, data });
+    }));
+    // WO-08: 三套流程 Skill 的发现与一键安装。预设内容与用户自建技能共用同一套存储校验，
+    // 安装后就是普通托管技能，可以改、可以删、可以回滚。
+    app.get("/agent/skills/presets", (_req, res) => {
+        res.json({ ok: true, data: SKILL_PRESETS });
+    });
+    app.post("/agent/skills/presets/:id/install", codexMutation(async (req, res) => {
+        const preset = getSkillPreset(routeParam(req.params.id) as SkillPresetId);
+        if (!preset) return void res.status(404).json({ ok: false, error: "unknown skill preset" });
+        const data = await skillStore.create({
+            name: preset.name,
+            description: preset.description,
+            instructions: preset.instructions,
+            interface: { displayName: preset.displayName, shortDescription: preset.shortDescription, defaultPrompt: preset.defaultPrompt },
+        });
         session.emitAll("skills_changed", { forceReload: true });
         res.status(201).json({ ok: true, data });
     }));
