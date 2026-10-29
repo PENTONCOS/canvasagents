@@ -4083,7 +4083,7 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
                     onDelete={(node) => deleteNodes(new Set([node.id]))}
                     onUngroup={(node) => ungroupSelection(new Set([node.id]))}
                     followWindowId={toolbarNode?.metadata?.followWindowId}
-                    followOptions={agentWindows.map((win, index) => ({ id: win.id, index: index + 1, title: win.title }))}
+                    followOptions={agentWindows.length > 1 ? agentWindows.map((win, index) => ({ id: win.id, index: index + 1, title: win.title, status: win.conversation?.status })) : []}
                     onFollow={(node, windowId) => setNodes((prev) => followWindowNodes(prev, node.id, windowId))}
                     onUnfollow={(node) => setNodes((prev) => unfollowWindowNodes(prev, node.id))}
                 />

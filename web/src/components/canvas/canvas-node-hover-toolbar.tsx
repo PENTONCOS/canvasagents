@@ -42,7 +42,7 @@ type CanvasNodeHoverToolbarProps = {
     onDelete: (node: CanvasNodeData) => void;
     onUngroup?: (node: CanvasNodeData) => void;
     followWindowId?: string;
-    followOptions: { id: string; index: number; title: string }[];
+    followOptions: { id: string; index: number; title: string; status?: string }[];
     onFollow: (node: CanvasNodeData, windowId: string) => void;
     onUnfollow: (node: CanvasNodeData) => void;
     extraTools?: CanvasNodeToolbarItem[];
@@ -386,6 +386,7 @@ export function CanvasNodeHoverToolbar({
                               >
                                   <span className="font-mono text-[10px] opacity-60">{option.index}</span>
                                   <span className="truncate">{option.title}</span>
+                                  {option.status ? <span className="ml-auto shrink-0 text-[10px] opacity-50">{option.status}</span> : null}
                               </button>
                           ))}
                       </div>,
