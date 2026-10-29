@@ -63,13 +63,41 @@ const NEW_GROUP_TITLE = () => i18n.t("canvas.group.defaultTitle");
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let queuedPersistState: PersistedCanvasState | null = null;
 
+// 紧急备份：只在 pagehide（刷新/关闭/跳走）时写一次 localStorage。
+// localForage 是异步的，去抖窗口里刷新会丢写入；但常驻镜像会盖掉测试预置的数据，
+// 所以备份只在「主存储读不到 / 读出来是空库」时兜底。
+const CANVAS_BACKUP_KEY = `${APP_ID}:canvas_store:backup`;
+type BackupValue = StorageValue<PersistedCanvasState> & { savedAt?: number };
+
+function readBackup(): BackupValue | null {
+    try {
+        const raw = window.localStorage.getItem(CANVAS_BACKUP_KEY);
+        return raw ? (JSON.parse(raw) as BackupValue) : null;
+    } catch {
+        return null;
+    }
+}
+
 const canvasStorage: PersistStorage<PersistedCanvasState> = {
     getItem: async (name) => {
         const value = await localForageStorage.getItem(name);
-        if (!value) return null;
-        const parsed = JSON.parse(value) as StorageValue<PersistedCanvasState>;
-        queuedPersistState = parsed.state;
-        return parsed;
+        if (value) {
+            const parsed = JSON.parse(value) as StorageValue<PersistedCanvasState>;
+            // 主存储是空库、备份里有内容 → 用备份（上次刷新时还没落盘的那一版）。
+            const backup = readBackup();
+            if (backup && (parsed.state?.projects?.length || 0) === 0 && (backup.state?.projects?.length || 0) > 0) {
+                queuedPersistState = backup.state;
+                return backup;
+            }
+            queuedPersistState = parsed.state;
+            return parsed;
+        }
+        const backup = readBackup();
+        if (backup?.state) {
+            queuedPersistState = backup.state;
+            return backup;
+        }
+        return null;
     },
     setItem: (name, value) => {
         const nextState = value.state;
@@ -83,6 +111,25 @@ const canvasStorage: PersistStorage<PersistedCanvasState> = {
     },
     removeItem: (name) => localForageStorage.removeItem(name),
 };
+
+// 防丢：页面被刷新/关闭时把还没落盘的那一次写掉。
+// 之前只靠 400ms 去抖，导致「建完项目立刻进画布/刷新」会丢写入（实测可复现）。
+if (typeof window !== "undefined") {
+    window.addEventListener("pagehide", () => {
+        if (!queuedPersistState) return;
+        const snapshot: BackupValue = { state: queuedPersistState, version: 1, savedAt: Date.now() };
+        try {
+            window.localStorage.setItem(CANVAS_BACKUP_KEY, JSON.stringify(snapshot));
+        } catch {
+            // 配额满就只靠 IndexedDB，最坏情况是丢掉最后 400ms 的写入。
+        }
+        if (saveTimer) {
+            clearTimeout(saveTimer);
+            saveTimer = null;
+            void localForageStorage.setItem(CANVAS_STORE_KEY, JSON.stringify(snapshot));
+        }
+    });
+}
 
 /** 取第一个项目归入；一个都没有时建一个默认项目（旧数据首次落库走这条）。 */
 function ensureGroup(groups: CanvasProjectGroup[], now: string): { groups: CanvasProjectGroup[]; groupId: string } {

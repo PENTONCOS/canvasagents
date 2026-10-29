@@ -138,6 +138,14 @@ async function selectAllAndRevealFeed(page: Page) {
     return feedButton;
 }
 
+
+/** 画布只渲染视口内节点；总数从侧栏「画布元素 N」读。 */
+async function totalCanvasNodes(page: Page) {
+    const text = await page.locator("body").innerText();
+    const matched = /画布元素\s*(\d+)/.exec(text);
+    return matched ? Number(matched[1]) : -1;
+}
+
 test("全链路：需求 → 旅程 → 设计选定 → 验收失败定位 → 三类内容投喂进目标窗", async ({ page }) => {
     test.setTimeout(180_000);
     await page.request.get(`${AGENT_URL}/__reset`);
@@ -147,16 +155,18 @@ test("全链路：需求 → 旅程 → 设计选定 → 验收失败定位 → 
     await createFromMenu(page, "需求便签", { x: 140, y: 120 });
     await expect(page.locator("[data-node-id]")).toHaveCount(1, { timeout: 10_000 });
 
-    // 2) 用户旅程：自动排出 3 个步骤并连线。
+    // 2) 用户旅程：从需求梳理出三条旅程 + 步骤原型并连线（WO-02 起不再固定三步）。
     await createFromMenu(page, "用户旅程", { x: 620, y: 120 });
-    await expect(page.locator("[data-node-id]")).toHaveCount(5, { timeout: 10_000 });
-    await expect(page.locator("[data-connection-id]")).toHaveCount(3, { timeout: 10_000 });
-    await expect(page.getByText("步骤 1")).toBeVisible();
-    await expect(page.getByText("步骤 3")).toBeVisible();
+    await expect(page.getByText("核心流程", { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("异常与边界", { exact: true }).first()).toBeVisible();
+    await expect.poll(async () => totalCanvasNodes(page), { timeout: 10_000 }).toBeGreaterThanOrEqual(12);
+    const beforeDesign = await totalCanvasNodes(page);
+    await expect.poll(async () => page.locator("[data-connection-id]").count(), { timeout: 10_000 }).toBeGreaterThanOrEqual(3);
 
     // 3) 设计稿三版：默认只选定 A。
     await createFromMenu(page, "设计稿", { x: 520, y: 460 });
-    await expect(page.locator("[data-node-id]")).toHaveCount(8, { timeout: 10_000 });
+    // 设计稿固定三版：在既有节点基础上 +3，不写死总数。
+    await expect.poll(async () => totalCanvasNodes(page), { timeout: 10_000 }).toBe(beforeDesign + 3);
 
     const nodeWithBadge = (label: string) => page.locator("[data-node-id]").filter({ has: page.locator(`span:text-is("${label}")`) }).first();
     const nodeA = nodeWithBadge("A");

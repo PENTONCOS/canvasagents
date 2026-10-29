@@ -57,18 +57,27 @@ test("创建需求节点 → 刷新后仍在（持久化）", async ({ page }) =
     await expect(page.getByText("需求便签").first()).toBeVisible({ timeout: 15_000 });
 });
 
+
+/** 画布只渲染视口内节点，[data-node-id] 不是全部；侧栏「画布元素 N」才是真实总数。 */
+async function totalCanvasNodes(page: Page) {
+    const text = await page.locator("body").innerText();
+    const matched = /画布元素\s*(\d+)/.exec(text);
+    return matched ? Number(matched[1]) : -1;
+}
+
 export { DELIVERY_MENU_TITLES };
 
-test("创建旅程 → 自动排出 3 个步骤并连线", async ({ page }) => {
+test("创建旅程 → 从需求梳理出三条旅程与步骤原型并连线", async ({ page }) => {
     await openFreshCanvas(page);
     await createFromMenu(page, "旅程");
-    // 1 个旅程 + 3 个步骤 = 4 个画布节点。
-    await expect(page.locator("[data-node-id]")).toHaveCount(4, { timeout: 10_000 });
-    // 连线：旅程 -> 每个步骤各一条。
-    await expect(page.locator("[data-connection-id]")).toHaveCount(3, { timeout: 10_000 });
-    // 步骤正文带序号，避免三个空白步骤分不清。
-    await expect(page.getByText("步骤 1")).toBeVisible();
-    await expect(page.getByText("步骤 3")).toBeVisible();
+    // WO-02 起：一次创建会梳理出三条旅程（核心流程 / 异常与边界 / 管理与回顾），
+    // 每条旅程下再排步骤原型；节点与连线数量不再是固定的 4 / 3，但结构关系必须成立。
+    await expect(page.getByText("核心流程", { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("异常与边界", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("管理与回顾", { exact: true }).first()).toBeVisible();
+    await expect.poll(async () => totalCanvasNodes(page), { timeout: 10_000 }).toBeGreaterThanOrEqual(10);
+    // 连线：需求/旅程 -> 步骤，至少每条旅程一条。
+    await expect.poll(async () => page.locator("[data-connection-id]").count(), { timeout: 10_000 }).toBeGreaterThanOrEqual(3);
 });
 
 test("创建设计稿 → 三版并排，默认只选中 A 版", async ({ page }) => {
