@@ -109,6 +109,12 @@ function defaultWindowTitle(index: number): string {
     return i18n.t("agent.window.defaultTitle", { index });
 }
 
+/** 一个窗口还是默认名（会话 N / Window N）时才允许被任务名覆盖。 */
+function isDefaultWindowTitle(title: string): boolean {
+    const trimmed = title.trim();
+    return Array.from({ length: 10 }, (_, index) => defaultWindowTitle(index + 1)).includes(trimmed);
+}
+
 function createDefaultWindow(titleIndex: number): AgentWindow {
     return createAgentWindow({ id: createWindowId(), title: defaultWindowTitle(titleIndex), activity: i18n.t("agent.state.ready") });
 }
@@ -361,7 +367,14 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
             return next;
         });
     },
-    addMessage: (item) => set((state) => patchActiveWindow(state, (window) => withAppendedChatItem(window, item, true))),
+    addMessage: (item) => set((state) => patchActiveWindow(state, (window) => {
+        const next = withAppendedChatItem(window, item, true);
+        // 窗口就是任务：首条用户消息决定名字（参考产品里是「2:需求执行」这种）。
+        // 用户手动改过名就不再覆盖。
+        if (item.role !== "user" || !item.text || !isDefaultWindowTitle(window.title)) return next;
+        const title = item.text.replace(/\s+/g, " ").trim().slice(0, 14);
+        return title ? { ...next, title } : next;
+    })),
     addEventLog: (item) => set((state) => patchActiveWindow(state, (window) => withAppendedEventLog(window, item))),
     clearEventLogs: () => set((state) => patchActiveWindow(state, (window) => ({ ...window, eventLogs: [] }))),
     addWindow: () => {

@@ -3615,7 +3615,13 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
         });
         latest.openPanel();
         // 已连接才排队自动发送；没连上就先落进输入框，避免请求悬在半空。
-        if (latest.connected) latest.requestFeedSend({ text: outcome.text, windowId: pending.preview.targetWindowId });
+        if (latest.connected) {
+            latest.requestFeedSend({ text: outcome.text, windowId: pending.preview.targetWindowId });
+            // 「跟随便着投喂建立」：这块内容交给你了，才叫跟随。
+            // 之前是让用户先在菜单里选窗口，等于把结果当成了输入，所以看起来像个编号选择器。
+            const followedIds = pending.references.map((reference) => reference.nodeId).filter(Boolean);
+            if (followedIds.length) setNodes((prev) => followedIds.reduce((acc, nodeId) => followWindowNodes(acc, nodeId, pending.preview.targetWindowId), prev));
+        }
     }, [feedPreview]);
 
     /**
