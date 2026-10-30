@@ -330,6 +330,16 @@ function AcCard({
                     <span className="rounded px-1 text-[10px]" style={{ background: `${AC_STATUS_COLOR[ac.status]}22`, color: AC_STATUS_COLOR[ac.status] }}>
                         {t(acStatusLabelKey(ac.status))}
                     </span>
+                    {cases.length === 0 ? (
+                        <span
+                            className="shrink-0 rounded px-1 text-[10px] font-medium"
+                            style={{ background: "rgba(239,68,68,0.14)", color: "#ef4444" }}
+                            data-unproven="true"
+                            title="这条验收标准没有任何用例，等于无法证明"
+                        >
+                            {t("canvas.acOverview.unproven", { defaultValue: "不可证明" })}
+                        </span>
+                    ) : null}
                     <span className="ml-auto shrink-0 text-[10px]" style={{ color: theme.node.muted }} data-testcase-count={cases.length}>
                         {t("canvas.sidePanel.acCases", { count: cases.length })}
                     </span>

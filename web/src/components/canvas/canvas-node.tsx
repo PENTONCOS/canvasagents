@@ -624,6 +624,8 @@ function DeliveryNodeContent({ node, theme, pluginContext }: NodeContentRenderer
     );
     // AC 的状态以 store 为准（测试结果回填的是实体，不是节点元数据）。
     const acStatus = useDeliveryStore((state) => (meta?.acId ? state.acceptance[meta.acId]?.status : undefined));
+    // 质量三角第一条：没有用例的 AC 不可证明 —— 画布上必须显式标出来，不能靠侧栏计数。
+    const acCaseCount = useDeliveryStore((state) => (meta?.acId ? Object.values(state.testCases).filter((testCase) => testCase.acId === meta.acId).length : -1));
     // M4: 运行节点显示的是最近一次运行的真实状态，不是节点上的静态文案。
     const runStatus = useDeliveryStore((state) => (meta?.runId ? state.runs[meta.runId]?.status : undefined));
     const body = meta?.statement || meta?.content || "";
@@ -648,6 +650,9 @@ function DeliveryNodeContent({ node, theme, pluginContext }: NodeContentRenderer
     if (meta?.selected) badges.push({ text: t("canvas.node.delivery.selected") });
     if (acStatus) {
         badges.push({ text: t(acStatusLabelKey(acStatus)), color: AC_STATUS_COLOR[acStatus], status: acStatus });
+    }
+    if (node.type === CanvasNodeType.Acceptance && acCaseCount === 0) {
+        badges.push({ text: t("canvas.acOverview.unproven", { defaultValue: "不可证明" }), color: "#ef4444", status: "unproven" });
     }
     if (runStatus) {
         badges.push({ text: t(runStatusLabelKey(runStatus)), color: RUN_STATUS_COLOR[runStatus] });

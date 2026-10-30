@@ -96,6 +96,17 @@ export function fetchCodexSkill(endpoint: string, token: string, name: string) {
     return fetchAgentJson<AgentSkillResponse>(endpoint, token, agentApiPath(`/skills/${encodeURIComponent(name)}`));
 }
 
+export type SkillPresetSummary = { id: string; name: string; displayName: string; shortDescription: string; description: string; defaultPrompt: string };
+
+/** WO-08：三套流程预设（0→1 / 1→N / Bug 修复）的发现与一键安装。 */
+export function fetchSkillPresets(endpoint: string, token: string) {
+    return fetchAgentJson<{ ok?: boolean; data?: SkillPresetSummary[] }>(endpoint, token, "/agent/skills/presets");
+}
+
+export function installSkillPreset(endpoint: string, token: string, id: string) {
+    return fetchAgentJson<{ ok?: boolean; data?: unknown }>(endpoint, token, `/agent/skills/presets/${encodeURIComponent(id)}/install`, jsonPost({}));
+}
+
 export function createCodexSkill(endpoint: string, token: string, input: AgentSkillInput) {
     return fetchAgentJson<AgentSkillResponse>(endpoint, token, agentApiPath("/skills"), jsonPost(input));
 }

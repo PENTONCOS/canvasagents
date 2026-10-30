@@ -5,7 +5,7 @@ import { Check, ChevronDown, CircleAlert, FilePenLine, LoaderCircle, LockKeyhole
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
-import { createCodexSkill, createCodexSkillDraft, deleteCodexSkill, fetchCodexSkill, postState, setCodexSkillEnabled, updateCodexSkill, type AgentSkillDetail, type AgentSkillDraft, type AgentSkillInterface, type AgentSkillScope, type AgentSkillSummary } from "@/services/api/canvas-agent";
+import { createCodexSkill, createCodexSkillDraft, deleteCodexSkill, fetchCodexSkill, fetchSkillPresets, installSkillPreset, postState, setCodexSkillEnabled, updateCodexSkill, type AgentSkillDetail, type AgentSkillDraft, type AgentSkillInterface, type AgentSkillScope, type AgentSkillSummary, type SkillPresetSummary } from "@/services/api/canvas-agent";
 import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import { boundSkills, isSkillBound } from "@/lib/agent/skill-bindings";
 import { useAgentStore, type AgentChatItem } from "@/stores/use-agent-store";
@@ -69,6 +69,32 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
     const editorValues = editor?.mode === "edit" ? skillFormValues(editor.detail) : editor?.values;
 
     const refresh = (forceReload = true) => loadSkills(endpoint, token, forceReload);
+
+    // WO-08：流程预设。面板里能直接看到并安装，而不是只有接口。
+    const [presets, setPresets] = useState<SkillPresetSummary[]>([]);
+    const [presetBusy, setPresetBusy] = useState("");
+    useEffect(() => {
+        if (!connected || !endpoint || !token) return;
+        let alive = true;
+        void fetchSkillPresets(endpoint, token)
+            .then((res) => { if (alive) setPresets(res.data || []); })
+            .catch(() => { if (alive) setPresets([]); });
+        return () => { alive = false; };
+    }, [connected, endpoint, token]);
+
+    const installPreset = async (preset: SkillPresetSummary) => {
+        if (!connected) return message.warning(t("agent.skillManager.availableAfterRun"));
+        setPresetBusy(preset.id);
+        try {
+            await installSkillPreset(endpoint, token, preset.id);
+            message.success(`${preset.displayName} 已安装`);
+            refresh(true);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : String(error));
+        } finally {
+            setPresetBusy("");
+        }
+    };
     const connectionIsCurrent = (revision: number) => {
         const agent = useAgentStore.getState();
         const skillsState = useAgentSkillStore.getState();
@@ -275,6 +301,28 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">
+            {presets.length ? (
+                <div className="shrink-0 border-b px-4 py-3" style={{ borderColor: theme.node.stroke }} data-testid="skill-presets">
+                    <div className="text-sm font-semibold">{t("agent.skillManager.presets", { defaultValue: "流程预设" })}</div>
+                    <div className="mt-0.5 text-xs" style={{ color: theme.node.muted }}>{t("agent.skillManager.presetsHint", { defaultValue: "三套固定流程：0→1 新功能 / 1→N 迭代 / Bug 修复，一键装成可用技能" })}</div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                        {presets.map((preset) => (
+                            <button
+                                key={preset.id}
+                                type="button"
+                                className="rounded-md border px-2 py-1 text-xs transition hover:opacity-80"
+                                style={{ borderColor: theme.node.stroke, color: theme.node.text }}
+                                title={preset.shortDescription}
+                                disabled={presetBusy === preset.id}
+                                onClick={() => void installPreset(preset)}
+                                data-preset-id={preset.id}
+                            >
+                                {presetBusy === preset.id ? "…" : preset.displayName}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            ) : null}
             <div className="shrink-0 border-b px-4 py-3" style={{ borderColor: theme.node.stroke }}>
                 <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
