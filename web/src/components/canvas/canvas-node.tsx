@@ -30,6 +30,10 @@ const selectionBlue = "#2f80ff";
 type CanvasNodeProps = {
     data: CanvasNodeData;
     followIndex?: number;
+    /** 跟随的会话窗名字（含序号），例如「2 · Bug 修复」。 */
+    followLabel?: string;
+    /** 那个窗最近在做什么（运行中/空闲/最后一条活动），作为徽标的补充信息。 */
+    followActivity?: string;
     scale: number;
     isSelected: boolean;
     isRelated: boolean;
@@ -117,6 +121,8 @@ export const CanvasNode = React.memo(function CanvasNode({
     isGroupDropTarget = false,
     batchExpanded = false,
     followIndex = 0,
+    followLabel,
+    followActivity,
     onMouseDown,
     onSelectCapture,
     onHoverStart,
@@ -423,7 +429,14 @@ export const CanvasNode = React.memo(function CanvasNode({
             >
                 {!isGroup ? <CanvasNodeStageBadge stage={data.metadata?.stage} /> : null}
                 {followIndex > 0 ? (
-                    <span className="pointer-events-none absolute -top-2 -left-2 z-20 flex h-5 min-w-5 items-center justify-center rounded-full bg-violet-500 px-1 font-mono text-[10px] font-semibold text-white shadow">{followIndex}</span>
+                    // WO-09: 跟概要能读出「归谁改」。只有数字时用户看不懂，所以带任务名与当前动作。
+                    <span
+                        className="pointer-events-none absolute -top-2 -left-2 z-20 flex h-5 max-w-[70%] items-center gap-1 truncate rounded-full bg-violet-500 px-1.5 text-[10px] font-semibold text-white shadow"
+                        title={followActivity ? `${followLabel || followIndex} · ${followActivity}` : undefined}
+                    >
+                        <span className="font-mono">{followIndex}</span>
+                        {followLabel ? <span className="truncate">{followLabel.replace(/^\d+\s*[:·]?\s*/, "")}</span> : null}
+                    </span>
                 ) : null}
                 <div
                     className={`relative flex h-full w-full items-center justify-center rounded-[inherit] ${isBatchRoot ? "overflow-visible" : "overflow-hidden"}`}

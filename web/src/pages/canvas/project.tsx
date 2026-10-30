@@ -3946,6 +3946,16 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
                             key={node.id}
                             data={node}
                             followIndex={node.metadata?.followWindowId ? agentWindows.findIndex((w) => w.id === node.metadata?.followWindowId) + 1 : 0}
+                            followLabel={(() => {
+                                const index = agentWindows.findIndex((w) => w.id === node.metadata?.followWindowId);
+                                return index >= 0 ? `${index + 1} · ${agentWindows[index].title}` : undefined;
+                            })()}
+                            followActivity={(() => {
+                                const win = agentWindows.find((w) => w.id === node.metadata?.followWindowId);
+                                if (!win) return undefined;
+                                const status = win.conversation?.status;
+                                return status && status !== "idle" ? status : win.activity || undefined;
+                            })()}
                             scale={viewport.k}
                             isSelected={selectedNodeIds.has(node.id)}
                             isRelated={relatedHighlight.nodeIds.has(node.id)}
