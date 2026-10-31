@@ -428,6 +428,11 @@ export const CanvasNode = React.memo(function CanvasNode({
                 }}
             >
                 {!isGroup ? <CanvasNodeStageBadge stage={data.metadata?.stage} /> : null}
+                {followIndex > 0 && followActivity ? (
+                    <span className="pointer-events-none absolute left-0 top-4 z-20 max-w-full truncate rounded bg-violet-500/85 px-1.5 py-0.5 text-[10px] font-medium text-white shadow" data-follow-output>
+                        {followActivity}
+                    </span>
+                ) : null}
                 {followIndex > 0 ? (
                     // WO-09: 跟概要能读出「归谁改」。只有数字时用户看不懂，所以带任务名与当前动作。
                     <span
@@ -626,6 +631,8 @@ function DeliveryNodeContent({ node, theme, pluginContext }: NodeContentRenderer
     const acStatus = useDeliveryStore((state) => (meta?.acId ? state.acceptance[meta.acId]?.status : undefined));
     // 质量三角第一条：没有用例的 AC 不可证明 —— 画布上必须显式标出来，不能靠侧栏计数。
     const acCaseCount = useDeliveryStore((state) => (meta?.acId ? Object.values(state.testCases).filter((testCase) => testCase.acId === meta.acId).length : -1));
+    // 质量三角第三条：环境只有一次部署记录 = 没有可回滚的版本，坏了退不回去。
+    const envRollbackPoints = useDeliveryStore((state) => (meta?.envId ? (state.environments[meta.envId]?.history?.length ?? 0) : -1));
     // M4: 运行节点显示的是最近一次运行的真实状态，不是节点上的静态文案。
     const runStatus = useDeliveryStore((state) => (meta?.runId ? state.runs[meta.runId]?.status : undefined));
     const body = meta?.statement || meta?.content || "";
@@ -650,6 +657,9 @@ function DeliveryNodeContent({ node, theme, pluginContext }: NodeContentRenderer
     if (meta?.selected) badges.push({ text: t("canvas.node.delivery.selected") });
     if (acStatus) {
         badges.push({ text: t(acStatusLabelKey(acStatus)), color: AC_STATUS_COLOR[acStatus], status: acStatus });
+    }
+    if (node.type === CanvasNodeType.Environment && envRollbackPoints === 0) {
+        badges.push({ text: t("canvas.node.delivery.envNoRollback", { defaultValue: "不可恢复" }), color: "#ef4444" });
     }
     if (node.type === CanvasNodeType.Acceptance && acCaseCount === 0) {
         badges.push({ text: t("canvas.acOverview.unproven", { defaultValue: "不可证明" }), color: "#ef4444", status: "unproven" });

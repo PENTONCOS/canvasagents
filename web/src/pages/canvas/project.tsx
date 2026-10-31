@@ -3954,7 +3954,14 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
                                 const win = agentWindows.find((w) => w.id === node.metadata?.followWindowId);
                                 if (!win) return undefined;
                                 const status = win.conversation?.status;
-                                return status && status !== "idle" ? status : win.activity || undefined;
+                                if (status === "running") return "运行中";
+                                // 产出回流：把这个窗最后一条助手回复当作「最近产出」贴到节点上。
+                                const last = [...win.messages].reverse().find((item) => item.role === "assistant" && item.text?.trim());
+                                if (last) {
+                                    const text = last.text.replace(/\s+/g, " ").trim().slice(0, 32);
+                                    return text.length < last.text.trim().length ? `${text}…` : text;
+                                }
+                                return win.activity || undefined;
                             })()}
                             scale={viewport.k}
                             isSelected={selectedNodeIds.has(node.id)}
