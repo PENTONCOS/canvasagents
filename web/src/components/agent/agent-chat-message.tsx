@@ -167,7 +167,7 @@ function AgentCanvasMention({ reference, theme }: { reference: AgentCanvasRefere
             trigger={["hover", "focus"]}
             placement="top"
             mouseEnterDelay={0.15}
-            content={<AgentCanvasReferencePreview reference={reference} previewUrl={previewUrl} previewText={previewText} theme={theme} />}
+            content={<AgentCanvasReferencePreview reference={reference} previewUrl={previewUrl} previewText={previewText} theme={theme} onLocate={() => useAgentStore.getState().canvasContext?.focusNode?.(reference.nodeId)} />}
         >
             <span
                 tabIndex={0}

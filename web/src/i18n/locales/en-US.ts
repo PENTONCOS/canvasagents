@@ -1902,6 +1902,8 @@ export default {
                 noSkills: "No enabled Skills match",
                 noResources: "No matching canvas assets",
                 previewUnavailable: "This asset cannot be previewed",
+                locate: "Locate",
+                locateTitle: "Locate this asset on the canvas",
                 referenceLabel: "Referenced {{kind}}: {{title}}",
                 resourceMissing: "Canvas asset “{{title}}” no longer exists",
                 imageReadFailed: "Could not read canvas image “{{title}}”",

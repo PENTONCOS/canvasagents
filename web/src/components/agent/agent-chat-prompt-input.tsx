@@ -37,6 +37,22 @@ export function AgentChatPromptInput({ value, disabled, placeholder, theme, onCh
     const [activeIndex, setActiveIndex] = useState(0);
     const [resourceCandidates, setResourceCandidates] = useState<CanvasResourceReference[]>([]);
     const [referenceHover, setReferenceHover] = useState<ReferenceHover | null>(null);
+    const previewHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const clearPreviewHide = () => {
+        if (previewHideTimerRef.current) {
+            clearTimeout(previewHideTimerRef.current);
+            previewHideTimerRef.current = null;
+        }
+    };
+    // 预览卡里有「定位」按钮，鼠标从 token 移到卡片上时不能立刻关掉，留 240ms 过渡窗口。
+    const hidePreviewLater = () => {
+        clearPreviewHide();
+        previewHideTimerRef.current = setTimeout(() => {
+            previewHideTimerRef.current = null;
+            setReferenceHover(null);
+        }, 240);
+    };
+    useEffect(() => () => clearPreviewHide(), []);
 
     const messageSkill = useMemo<AgentSkillReference | undefined>(() => selectedSkill ? {
         name: selectedSkill.name,
@@ -160,6 +176,7 @@ export function AgentChatPromptInput({ value, disabled, placeholder, theme, onCh
         const token = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-agent-token-kind='resource']") : null;
         const container = containerRef.current;
         if (!token || !container?.contains(token)) return setReferenceHover(null);
+        clearPreviewHide();
         const reference = useAgentStore.getState().canvasReferences.find((item) => item.nodeId === token.dataset.nodeId);
         if (!reference) return setReferenceHover(null);
         const tokenRect = token.getBoundingClientRect();
@@ -218,7 +235,7 @@ export function AgentChatPromptInput({ value, disabled, placeholder, theme, onCh
                 }}
                 onClick={syncCommand}
                 onMouseOver={showReferencePreview}
-                onMouseLeave={() => setReferenceHover(null)}
+                onMouseLeave={hidePreviewLater}
                 onBlur={(event) => {
                     if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.closest("[data-agent-command-menu]")) return;
                     window.setTimeout(closeCommand, 120);
@@ -228,7 +245,11 @@ export function AgentChatPromptInput({ value, disabled, placeholder, theme, onCh
                 <Popover
                     open
                     placement="top"
-                    content={<AgentCanvasReferencePreview reference={referenceHover.reference} previewUrl={referenceHover.reference.previewUrl} previewText={referenceHover.reference.text} theme={theme} />}
+                    content={
+                        <div onMouseEnter={clearPreviewHide} onMouseLeave={hidePreviewLater}>
+                            <AgentCanvasReferencePreview reference={referenceHover.reference} previewUrl={referenceHover.reference.previewUrl} previewText={referenceHover.reference.text} theme={theme} onLocate={() => useAgentStore.getState().canvasContext?.focusNode?.(referenceHover.reference.nodeId)} />
+                        </div>
+                    }
                 >
                     <span
                         aria-hidden

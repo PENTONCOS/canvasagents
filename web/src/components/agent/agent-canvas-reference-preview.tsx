@@ -1,11 +1,11 @@
-import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
+import { Crosshair, FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
 import { canvasThemes } from "@/lib/canvas-theme";
 import type { AgentCanvasReference } from "@/stores/use-agent-store";
 
-export function AgentCanvasReferencePreview({ reference, previewUrl, previewText, theme }: { reference: AgentCanvasReference; previewUrl?: string; previewText?: string; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
+export function AgentCanvasReferencePreview({ reference, previewUrl, previewText, theme, onLocate }: { reference: AgentCanvasReference; previewUrl?: string; previewText?: string; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onLocate?: () => void }) {
     const { t } = useTranslation();
     const Icon = canvasReferenceIcon(reference.kind);
     return (
@@ -23,6 +23,18 @@ export function AgentCanvasReferencePreview({ reference, previewUrl, previewText
                 </div>
             ) : null}
             {!previewUrl && !(reference.kind === "text" && previewText) ? <div className="py-3 text-center text-xs" style={{ color: theme.node.muted }}>{t("agent.composer.mentions.previewUnavailable")}</div> : null}
+            {onLocate ? (
+                <button
+                    type="button"
+                    onClick={onLocate}
+                    className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border py-1.5 text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
+                    style={{ borderColor: theme.node.stroke, color: theme.node.text }}
+                    title={t("agent.composer.mentions.locateTitle", { defaultValue: "在画布上定位这个素材" })}
+                >
+                    <Crosshair className="size-3.5" />
+                    {t("agent.composer.mentions.locate", { defaultValue: "定位" })}
+                </button>
+            ) : null}
         </div>
     );
 }

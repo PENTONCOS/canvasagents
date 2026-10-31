@@ -1811,6 +1811,8 @@ export default {
                 noSkills: "没有匹配的已启用 Skill",
                 noResources: "当前画布没有匹配的可引用素材",
                 previewUnavailable: "当前无法预览该素材",
+                locate: "定位",
+                locateTitle: "在画布上定位这个素材",
                 referenceLabel: "引用{{kind}}：{{title}}",
                 resourceMissing: "画布素材“{{title}}”已不存在",
                 imageReadFailed: "无法读取画布图片“{{title}}”",
