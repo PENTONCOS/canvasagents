@@ -41,6 +41,7 @@ import { buildAcTestCasePrompt } from "@/lib/delivery/ac-testcase";
 import { mergeParsedCases, parseTestCaseReply, planCasesForAc } from "@/lib/delivery/testcase-plan";
 import { buildDemoScenario } from "@/lib/delivery/demo-scenario";
 import { useCompactViewport } from "@/lib/use-compact-viewport";
+import { summarizeWindowOutput } from "@/lib/agent/follow-output";
 import { useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { FeedPreviewModal } from "@/components/canvas/feed-preview-modal";
 import { nextEntityId, nextStepId, nextVariantId, type DeliveryAnnotation, type DesignVariant, type JourneyStep } from "@/types/delivery";
@@ -3955,13 +3956,9 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
                                 if (!win) return undefined;
                                 const status = win.conversation?.status;
                                 if (status === "running") return "运行中";
-                                // 产出回流：把这个窗最后一条助手回复当作「最近产出」贴到节点上。
-                                const last = [...win.messages].reverse().find((item) => item.role === "assistant" && item.text?.trim());
-                                if (last) {
-                                    const text = last.text.replace(/\s+/g, " ").trim().slice(0, 32);
-                                    return text.length < last.text.trim().length ? `${text}…` : text;
-                                }
-                                return win.activity || undefined;
+                                // 产出回流：优先给结构化摘要（文件数 / 测试通过数），抽不到才退回窗口活动文案。
+                                const summary = summarizeWindowOutput(win.messages);
+                                return summary?.text || win.activity || undefined;
                             })()}
                             scale={viewport.k}
                             isSelected={selectedNodeIds.has(node.id)}
