@@ -1,3 +1,4 @@
+import { lazy, Suspense, type ReactNode } from "react";
 import { Navigate, createBrowserRouter, Outlet } from "react-router-dom";
 
 import { AccountOnboardingBanner } from "@/components/layout/account-onboarding-banner";
@@ -5,11 +6,22 @@ import { AnalyticsTracker } from "@/components/layout/analytics-tracker";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { SettingsDrawer } from "@/components/layout/settings-drawer";
 import UserLayout from "@/layouts/user-layout";
-import AuthPage from "@/pages/auth";
-import CanvasPage from "@/pages/canvas";
-import CanvasProjectPage from "@/pages/canvas/project";
-import NotFound from "@/pages/not-found";
-import PricingPage, { CoursesPage } from "@/pages/marketing";
+
+// 首屏只加载落地页需要的代码；画布工程页（编辑器/Agent 面板）体量最大，改成按需加载。
+const AuthPage = lazy(() => import("@/pages/auth"));
+const CanvasPage = lazy(() => import("@/pages/canvas"));
+const CanvasProjectPage = lazy(() => import("@/pages/canvas/project"));
+const NotFound = lazy(() => import("@/pages/not-found"));
+const PricingPage = lazy(() => import("@/pages/marketing"));
+const CoursesPage = lazy(() => import("@/pages/marketing").then((mod) => ({ default: mod.CoursesPage })));
+
+function withRouteFallback(node: ReactNode) {
+    return (
+        <Suspense fallback={<div style={{ position: "fixed", inset: 0, background: "#0b0b0d" }} />}>
+            {node}
+        </Suspense>
+    );
+}
 
 // Legacy routes (/image /video /assets /prompts /config) intentionally redirect to /canvas
 // so old links keep working; the capability now lives inside the canvas (M1 immersive redesign).
@@ -22,10 +34,10 @@ export const router = createBrowserRouter([
             </>
         ),
         children: [
-            { path: "/login", element: <AuthPage mode="login" /> },
-            { path: "/register", element: <AuthPage mode="register" /> },
-            { path: "/pricing", element: <PricingPage /> },
-            { path: "/courses", element: <CoursesPage /> },
+            { path: "/login", element: withRouteFallback(<AuthPage mode="login" />) },
+            { path: "/register", element: withRouteFallback(<AuthPage mode="register" />) },
+            { path: "/pricing", element: withRouteFallback(<PricingPage />) },
+            { path: "/courses", element: withRouteFallback(<CoursesPage />) },
             {
                 // AccountOnboardingBanner lives here (not in ClientRootInit) because it needs
                 // router context; ClientRootInit renders outside <RouterProvider>.
@@ -46,11 +58,11 @@ export const router = createBrowserRouter([
                     { path: "/assets", element: <Navigate to="/canvas" replace /> },
                     { path: "/prompts", element: <Navigate to="/canvas" replace /> },
                     { path: "/config", element: <Navigate to="/canvas" replace /> },
-                    { path: "/canvas", element: <CanvasPage /> },
-                    { path: "/canvas/:id", element: <CanvasProjectPage /> },
+                    { path: "/canvas", element: withRouteFallback(<CanvasPage />) },
+                    { path: "/canvas/:id", element: withRouteFallback(<CanvasProjectPage />) },
                 ],
             },
         ],
     },
-    { path: "*", element: <NotFound /> },
+    { path: "*", element: withRouteFallback(<NotFound />) },
 ]);
