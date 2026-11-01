@@ -43,19 +43,6 @@ export default defineConfig({
     plugins: [react(), localPluginsManifest()],
     build: {
         chunkSizeWarningLimit: 1200,
-        rollupOptions: {
-            output: {
-                // 单包 4MB+ 会让首屏白/黑屏好几秒：把大头拆开，落地页只拉它真正需要的部分。
-                manualChunks(id: string) {
-                    if (!id.includes("node_modules")) return undefined;
-                    if (id.includes("antd") || id.includes("@ant-design")) return "vendor-antd";
-                    if (id.includes("@codemirror") || id.includes("@lezer")) return "vendor-editor";
-                    if (id.includes("streamdown") || id.includes("remark") || id.includes("rehype") || id.includes("katex") || id.includes("micromark") || id.includes("unified")) return "vendor-markdown";
-                    if (id.includes("react-dom") || id.includes("/react/") || id.includes("scheduler")) return "vendor-react";
-                    return undefined;
-                },
-            },
-        },
     },
     resolve: {
         alias: {
