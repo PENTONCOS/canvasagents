@@ -1,10 +1,8 @@
-import { lazy, Suspense, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
+import { AgentPanel } from "@/components/agent/agent-panel";
+import { AgentQueueView } from "@/components/agent/agent-queue-view";
 import { AppTopNav } from "@/components/layout/app-top-nav";
-
-// Agent 面板（对话 / 队列 / 技能）体量很大，首屏不需要它，放到落地后再加载。
-const AgentPanel = lazy(() => import("@/components/agent/agent-panel").then((mod) => ({ default: mod.AgentPanel })));
-const AgentQueueView = lazy(() => import("@/components/agent/agent-queue-view").then((mod) => ({ default: mod.AgentQueueView })));
 
 export default function UserLayout({ children }: { children: ReactNode }) {
     return (
@@ -13,10 +11,10 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                 <AppTopNav />
                 <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
             </div>
-            <Suspense fallback={null}>
-                <AgentPanel />
-                <AgentQueueView />
-            </Suspense>
+            {/* 面板不做懒加载：延迟挂载会让「连接后自动展开」的初始动画错过时机，
+                面板停在视口外，e2e 里点「新建会话窗」这类动作会一直报 outside of the viewport。 */}
+            <AgentPanel />
+            <AgentQueueView />
         </div>
     );
 }
