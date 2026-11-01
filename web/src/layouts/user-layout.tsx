@@ -1,8 +1,10 @@
-import type { ReactNode } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 
-import { AgentPanel } from "@/components/agent/agent-panel";
-import { AgentQueueView } from "@/components/agent/agent-queue-view";
 import { AppTopNav } from "@/components/layout/app-top-nav";
+
+// Agent 面板（对话 / 队列 / 技能）体量很大，首屏不需要它，放到落地后再加载。
+const AgentPanel = lazy(() => import("@/components/agent/agent-panel").then((mod) => ({ default: mod.AgentPanel })));
+const AgentQueueView = lazy(() => import("@/components/agent/agent-queue-view").then((mod) => ({ default: mod.AgentQueueView })));
 
 export default function UserLayout({ children }: { children: ReactNode }) {
     return (
@@ -11,8 +13,10 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                 <AppTopNav />
                 <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
             </div>
-            <AgentPanel />
-            <AgentQueueView />
+            <Suspense fallback={null}>
+                <AgentPanel />
+                <AgentQueueView />
+            </Suspense>
         </div>
     );
 }
