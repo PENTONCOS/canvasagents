@@ -15,6 +15,8 @@ import { useCanvasUiStore } from "@/stores/canvas/use-canvas-ui-store";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
 import { groupCanvases } from "@/lib/canvas/canvas-projects";
 import { hasAgentUrlBootstrap } from "@/lib/agent/agent-url-bootstrap";
+import { addCounts, summarizeProjectTasks } from "@/lib/delivery/project-status";
+import { useDeliveryStore } from "@/stores/use-delivery-store";
 
 export default function CanvasPage() {
     const { message } = App.useApp();
@@ -43,6 +45,10 @@ export default function CanvasPage() {
     const agentQuery = agentMode ? `?${searchParams.toString()}` : "";
     const buckets = useMemo(() => groupCanvases(projects, groups), [groups, projects]);
     const groupOptions = useMemo(() => groups.map((group) => ({ id: group.id, title: group.title })), [groups]);
+    // F2: 左侧「待办 / 项目」按真实 AC 状态计数（passing=已完成，failing/blocked=进行中，其余=待办）。
+    const acceptance = useDeliveryStore((state) => state.acceptance);
+    const projectCounts = useMemo(() => projects.map((project) => ({ project, counts: summarizeProjectTasks(project.nodes, acceptance) })), [acceptance, projects]);
+    const totals = useMemo(() => projectCounts.reduce((acc, item) => addCounts(acc, item.counts), { done: 0, doing: 0, todo: 0, total: 0 }), [projectCounts]);
 
     const enterProject = (id: string) => {
         const agentHash = hasAgentUrlBootstrap(window.location.hash) ? window.location.hash : "";
@@ -97,7 +103,43 @@ export default function CanvasPage() {
     if (hydrated && (mode === "new" || mode === "recent")) return <main className="flex h-full items-center justify-center bg-background text-sm text-stone-500">{t("canvas.opening")}</main>;
 
     return (
-        <main className="h-full overflow-auto bg-background text-stone-950 dark:text-stone-100">
+        <main className="flex h-full overflow-hidden bg-background text-stone-950 dark:text-stone-100">
+            {/* F2：左侧「待办 / 项目」，对齐参考产品左上角的状态树。窄屏隐藏，不抢画布宽度。 */}
+            <aside className="hidden w-60 shrink-0 flex-col gap-7 overflow-y-auto border-r border-stone-200 px-4 py-6 lg:flex dark:border-stone-800">
+                <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-stone-500">{t("canvas.rail.title")}</p>
+                    <div className="mt-3 flex flex-col gap-1.5 text-sm">
+                        <RailRow label={t("canvas.rail.todo")} value={totals.todo} tone="text-amber-600 dark:text-amber-400" />
+                        <RailRow label={t("canvas.rail.doing")} value={totals.doing} tone="text-sky-600 dark:text-sky-400" />
+                        <RailRow label={t("canvas.rail.done")} value={totals.done} tone="text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                </div>
+                <div className="min-h-0">
+                    <p className="text-xs font-medium uppercase tracking-wide text-stone-500">{t("canvas.rail.projects")}</p>
+                    {projectCounts.length ? (
+                        <ul className="mt-3 flex flex-col gap-0.5">
+                            {projectCounts.map(({ project, counts }) => (
+                                <li key={project.id}>
+                                    <button
+                                        type="button"
+                                        onClick={() => enterProject(project.id)}
+                                        title={t("canvas.rail.openProject", { title: project.title })}
+                                        className="w-full rounded-md px-2 py-1.5 text-left transition hover:bg-stone-100 dark:hover:bg-stone-800"
+                                    >
+                                        <span className="block truncate text-sm">{project.title}</span>
+                                        <span className="mt-0.5 block text-xs text-stone-500 tabular-nums">
+                                            {t("canvas.rail.summary", { todo: counts.todo, doing: counts.doing, done: counts.done })}
+                                        </span>
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="mt-3 text-xs text-stone-500">{t("canvas.rail.empty")}</p>
+                    )}
+                </div>
+            </aside>
+            <div className="min-h-0 flex-1 overflow-auto">
             <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-10">
                 <header className="flex flex-wrap items-end justify-between gap-4 border-b border-stone-200 pb-6 dark:border-stone-800">
                     <div>
@@ -209,9 +251,19 @@ export default function CanvasPage() {
                     </section>
                 )}
             </div>
+            </div>
 
             <input ref={inputRef} type="file" accept="application/zip,.zip" className="hidden" onChange={(event) => void importCanvas(event.target.files?.[0])} />
             <CanvasDeleteProjectsDialog />
         </main>
+    );
+}
+
+function RailRow({ label, value, tone }: { label: string; value: number; tone: string }) {
+    return (
+        <div className="flex items-center justify-between gap-2">
+            <span className="text-stone-600 dark:text-stone-400">{label}</span>
+            <span className={`tabular-nums ${value ? tone : "text-stone-400 dark:text-stone-600"}`}>{value}</span>
+        </div>
     );
 }
