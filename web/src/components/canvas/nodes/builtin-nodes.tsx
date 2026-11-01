@@ -3,6 +3,7 @@ import { FileText, Group, Image as ImageIcon, Music2, Settings2, Video } from "l
 import i18n from "@/i18n";
 
 import { NODE_SPECS } from "@/constant/canvas";
+import { compareNodeDefinition } from "@/components/canvas/nodes/compare-node";
 import { DELIVERY_DEFINITIONS } from "@/components/canvas/nodes/delivery-nodes";
 import { registerNodeDefinitions } from "@/lib/canvas/node-registry";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
@@ -39,4 +40,6 @@ export function registerBuiltinNodes() {
     registerNodeDefinitions(BUILTIN_DEFINITIONS, "builtin");
     // M0: delivery-domain nodes share the builtin owner so they ship with the app.
     registerNodeDefinitions(DELIVERY_DEFINITIONS, "builtin");
+    // F3: 对照块是 CanvasNodeType 成员，必须随 builtin 一起注册（否则测试/插件环境查不到）。
+    registerNodeDefinitions([compareNodeDefinition()], "builtin");
 }

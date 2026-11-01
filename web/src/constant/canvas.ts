@@ -17,6 +17,8 @@ export const NODE_DEFAULT_SIZE = {
     [CanvasNodeType.Video]: { width: 420, height: 236, get title() { return i18n.t("canvas.nodeTypes.video"); } },
     [CanvasNodeType.Audio]: { width: 340, height: 120, get title() { return i18n.t("canvas.nodeTypes.audio"); } },
     [CanvasNodeType.Group]: { width: 760, height: 480, get title() { return i18n.t("canvas.nodeTypes.group"); } },
+    // F3: 红绿对照块，两列并排，比文本节点更宽。
+    [CanvasNodeType.Compare]: { width: 620, height: 320, get title() { return i18n.t("canvas.nodeTypes.compare"); } },
     // M0: delivery domain
     // A4: 一句话需求便签，单行高度即可；实际创建尺寸以节点注册表里的 defaultSize 为准。
     [CanvasNodeType.Requirement]: { width: 340, height: 120, get title() { return i18n.t("canvas.nodeTypes.requirement"); } },
@@ -54,6 +56,10 @@ export const NODE_SPECS = {
     [CanvasNodeType.Group]: {
         width: 760, height: 480, get title() { return NODE_DEFAULT_SIZE[CanvasNodeType.Group].title; },
         metadata: { status: "idle" },
+    },
+    [CanvasNodeType.Compare]: {
+        width: 620, height: 320, get title() { return NODE_DEFAULT_SIZE[CanvasNodeType.Compare].title; },
+        metadata: { status: "idle", problems: "", solutions: "" },
     },
     // M0: delivery domain
     [CanvasNodeType.Requirement]: {

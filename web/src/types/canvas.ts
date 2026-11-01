@@ -16,6 +16,8 @@ export enum CanvasNodeType {
     Video = "video",
     Audio = "audio",
     Group = "group",
+    // F3: 对照块（现在的问题 ↔ 方案），对齐参考产品的红绿并排块。
+    Compare = "compare",
     // M0: delivery domain nodes (dev plan §1.1)
     Requirement = "requirement",
     Journey = "journey",
@@ -239,6 +241,9 @@ export type CanvasNodeMetadata = {
     durationMs?: number;
     videoTaskId?: string;
     videoTaskProvider?: "openai" | "gemini";
+    // F3: 对照块两侧正文（按行拆条渲染）。
+    problems?: string;
+    solutions?: string;
     groupId?: string;
     interactive?: boolean; // Plugin node interaction/move state; see CanvasNodeDefinition.interactionToggle.
 };

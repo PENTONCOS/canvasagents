@@ -126,6 +126,7 @@ import { registerServiceNode } from "@/components/canvas/nodes/service-node";
 import { registerImageRegionsNode } from "@/components/canvas/nodes/image-regions-node";
 import { registerEditorNode } from "@/components/canvas/nodes/editor-node";
 import { registerMarkdownNode } from "@/components/canvas/nodes/markdown-node";
+import { registerCompareNode } from "@/components/canvas/nodes/compare-node";
 import { registerRequirementNode } from "@/components/canvas/nodes/requirement-node";
 import { registerSketchNode } from "@/components/canvas/nodes/sketch-node";
 import { CanvasConnectionPanel } from "@/components/canvas/canvas-connection-panel";
@@ -169,6 +170,8 @@ registerEditorNode();
 // A1/A3: Markdown 与线框草图节点（A2 复用上面的 preview）。
 registerMarkdownNode();
 registerSketchNode();
+// F3: 红绿对照块（现在的问题 ↔ 方案）。
+registerCompareNode();
 
 type CanvasClipboard = {
     nodes: CanvasNodeData[];

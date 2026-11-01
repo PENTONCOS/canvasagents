@@ -465,6 +465,7 @@ export default {
         nodeTypes: {
             image: "Image",
             text: "Text",
+            compare: "Compare",
             markdown: "Markdown",
             sketch: "Sketch",
             config: "Generation config",
@@ -552,6 +553,17 @@ export default {
             shapeCount: "{{count}} / {{limit}} shapes",
             emptyTitle: "Empty sketch",
             emptyHint: "Pick rectangle or arrow, then drag inside the node (at least {{min}}px).",
+        },
+        compare: {
+            label: "Compare",
+            description: "Side-by-side problems vs. solutions block",
+            problems: "Current problems",
+            solutions: "Solutions",
+            edit: "Edit",
+            save: "Done",
+            cancel: "Cancel",
+            hint: "Double-click to edit, one item per line",
+            unbalanced: "Unbalanced",
         },
         code: {
             description: "Browse a repository file tree and diffs (read-only)",
