@@ -29,7 +29,7 @@ test("左侧待办计数跟着 AC 走：新建一条 draft AC → 待办 1", asy
     await page.waitForTimeout(900);
     await page.goto("/canvas");
 
-    const rail = page.locator("aside");
+    const rail = page.locator('nav[aria-label="待办"]');
     await expect(rail).toBeVisible({ timeout: 15_000 });
     await expect.poll(async () => (await rail.innerText()).replace(/\s+/g, " "), { timeout: 10_000 }).toMatch(/待办 1/);
     await expect.poll(async () => (await rail.innerText()).replace(/\s+/g, " "), { timeout: 10_000 }).toMatch(/1 待办 · 0 进行中 · 0 已完成/);

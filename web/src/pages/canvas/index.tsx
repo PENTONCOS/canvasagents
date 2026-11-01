@@ -111,7 +111,9 @@ export default function CanvasPage() {
     return (
         <main className="flex h-full overflow-hidden bg-background text-stone-950 dark:text-stone-100">
             {/* F2：左侧「待办 / 项目」，对齐参考产品左上角的状态树。窄屏隐藏，不抢画布宽度。 */}
-            <aside className="hidden w-60 shrink-0 flex-col gap-7 overflow-y-auto border-r border-stone-200 px-4 py-6 lg:flex dark:border-stone-800">
+            {/* 用 nav 而不是 aside：Agent 面板本身是 aside，两个 aside 会让既有 e2e/辅助逻辑
+                （page.locator("aside").first()）指错元素，把面板判定成「在视口内」。 */}
+            <nav aria-label={t("canvas.rail.title")} className="hidden w-60 shrink-0 flex-col gap-7 overflow-y-auto border-r border-stone-200 px-4 py-6 lg:flex dark:border-stone-800">
                 <div>
                     <p className="text-xs font-medium uppercase tracking-wide text-stone-500">{t("canvas.rail.title")}</p>
                     <div className="mt-3 flex flex-col gap-1.5 text-sm">
@@ -144,7 +146,7 @@ export default function CanvasPage() {
                         <p className="mt-3 text-xs text-stone-500">{t("canvas.rail.empty")}</p>
                     )}
                 </div>
-            </aside>
+            </nav>
             <div className="min-h-0 flex-1 overflow-auto">
             <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-10">
                 <header className="flex flex-wrap items-end justify-between gap-4 border-b border-stone-200 pb-6 dark:border-stone-800">
