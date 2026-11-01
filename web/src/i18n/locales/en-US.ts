@@ -355,6 +355,9 @@ export default {
         importFailed: "Import failed. Select a valid canvas package.",
         opening: "Opening canvas...",
         loading: "Loading canvases...",
+        demoTitle: "Store booking · demo project",
+        loadDemo: "Load demo project",
+        emptyDemoHint: "No agent needed: load the seven-act demo (requirement → journey → design → acceptance → run → bugs → environments)",
         rail: {
             title: "To do",
             todo: "To do",

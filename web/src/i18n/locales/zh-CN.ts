@@ -356,6 +356,9 @@ export default {
         create: "新建画布",
         empty: "还没有画布",
         emptyDescription: "新建一个画布后，就可以独立保存节点、连线和画布外观。",
+        demoTitle: "门店预约 · 示例项目",
+        loadDemo: "载入示例项目",
+        emptyDemoHint: "没连 Agent 也能先看：载入七幕示例（需求 → 旅程 → 设计 → 验收 → 运行 → 问题 → 环境）",
         rail: {
             title: "待办",
             todo: "待办",

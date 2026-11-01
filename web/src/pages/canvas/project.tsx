@@ -3737,6 +3737,18 @@ const handleNodeUseAsHd = useCallback((node: CanvasNodeData) => {
         message.success(`已载入示例项目：${demo.nodes.length} 个节点`);
     }, [message, setConnections, setNodes]);
 
+    // A12: 从项目列表点「载入示例项目」进来（?demo=1）时，空画布自动铺七幕示例。
+    // 只在「画布确实为空 + 只触发一次」的前提下铺，避免刷新后把用户已有的内容顶掉。
+    const demoSeededRef = useRef(false);
+    const demoRequested = searchParams.get("demo") === "1";
+    useEffect(() => {
+        if (!demoRequested || !projectLoaded || demoSeededRef.current) return;
+        if (nodes.length > 0) return;
+        demoSeededRef.current = true;
+        loadDemoCanvas();
+        navigate(`/canvas/${projectId}`, { replace: true });
+    }, [demoRequested, loadDemoCanvas, navigate, nodes.length, projectId, projectLoaded]);
+
     const handleNodeViewImage = useCallback((node: CanvasNodeData, imageId?: string) => {
         setPreviewNodeId(node.id);
         setPreviewImageId(imageId || null);

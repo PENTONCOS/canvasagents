@@ -55,6 +55,12 @@ export default function CanvasPage() {
         navigate(`/canvas/${id}${agentQuery}${agentHash}`, { replace: Boolean(agentHash) });
     };
     const createAndEnter = (groupId?: string) => enterProject(createProject(t("canvas.defaultTitle", { count: projects.length + 1 }), groupId));
+    // A12: 打开即有内容 —— 建项目并带 demo 标记进入，画布页看到空场景就铺七幕示例。
+    const createDemoAndEnter = () => {
+        const id = createProject(t("canvas.demoTitle", { defaultValue: "门店预约 · 示例项目" }));
+        const agentHash = hasAgentUrlBootstrap(window.location.hash) ? window.location.hash : "";
+        navigate(`/canvas/${id}?demo=1${agentHash}`, { replace: Boolean(agentHash) });
+    };
     const importCanvas = async (file?: File) => {
         if (!file) return;
         try {
@@ -245,8 +251,12 @@ export default function CanvasPage() {
                     <section className="flex min-h-[360px] flex-col items-center justify-center border-y border-stone-200 text-center dark:border-stone-800">
                         <h2 className="text-xl font-medium">{t("canvas.empty")}</h2>
                         <p className="mt-3 text-sm text-stone-500">{t("canvas.emptyDescription")}</p>
+                        <p className="mt-2 text-xs text-stone-500">{t("canvas.emptyDemoHint", { defaultValue: "没连 Agent 也能先看：载入七幕示例（需求 → 旅程 → 设计 → 验收 → 运行 → 问题 → 环境）" })}</p>
                         <Button type="primary" className="mt-6" icon={<Plus className="size-4" />} onClick={() => createAndEnter()}>
                             {t("canvas.create")}
+                        </Button>
+                        <Button className="mt-2" onClick={createDemoAndEnter}>
+                            {t("canvas.loadDemo", { defaultValue: "载入示例项目" })}
                         </Button>
                     </section>
                 )}
