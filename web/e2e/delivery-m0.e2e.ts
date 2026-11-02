@@ -17,6 +17,8 @@ async function openFreshCanvas(page: Page) {
     await page.goto("/canvas?mode=new");
     await page.waitForURL(/\/canvas\//, { timeout: 30_000 });
     await expect(page.locator("main").first()).toBeVisible({ timeout: 30_000 });
+    // 画布挂载完再动手：只等 main 可见时双击会被首屏初始化吃掉，菜单不出现。
+    await expect(page.getByText("画布元素").first()).toBeVisible({ timeout: 30_000 });
 }
 
 async function createFromMenu(page: Page, title: string) {

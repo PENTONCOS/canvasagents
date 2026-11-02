@@ -19,6 +19,8 @@ async function openCanvas(page: Page) {
     await page.goto("/canvas?mode=new");
     await page.waitForURL(/\/canvas\//, { timeout: 30_000 });
     await expect(page.locator("main").first()).toBeVisible({ timeout: 30_000 });
+    // 画布挂载完再双击，否则菜单不出来（与 delivery-m0 同一处时序问题）。
+    await expect(page.getByText("画布元素").first()).toBeVisible({ timeout: 30_000 });
 }
 
 async function createAcceptanceNode(page: Page) {
