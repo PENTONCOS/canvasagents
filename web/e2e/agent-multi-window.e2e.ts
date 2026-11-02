@@ -43,9 +43,9 @@ async function panelInViewport(page: Page) {
 async function seedAndOpen(page: Page) {
     await page.goto(`/canvas?agentUrl=${encodeURIComponent(AGENT_URL)}&agentToken=${AGENT_TOKEN}`);
     await expect(page.locator(WINDOW_TABS)).toBeAttached({ timeout: 30_000 });
+    // 2026-11-02 起：一键连接（?agentUrl&agentToken）会自动展开面板，此时顶栏没有「打开 Agent」按钮。
     const toggle = page.getByRole("button", { name: "打开 Agent", exact: true });
-    await expect(toggle).toBeVisible({ timeout: 30_000 });
-    await toggle.click();
+    if (await toggle.count()) await toggle.click();
     await expect.poll(() => panelInViewport(page), { timeout: 15_000 }).toBe(true);
     await expect(page.getByRole("button", { name: /新\s*对\s*话/ })).toBeEnabled({ timeout: 30_000 });
 }

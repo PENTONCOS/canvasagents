@@ -21,6 +21,7 @@ async function openFreshCanvas(page: Page) {
     await page.goto("/canvas?mode=new");
     await page.waitForURL(/\/canvas\//, { timeout: 30_000 });
     await expect(page.locator("main").first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator("main > section")).toBeVisible({ timeout: 30_000 });
 }
 
 async function createEnvironmentNode(page: Page) {

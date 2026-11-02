@@ -22,6 +22,8 @@ async function openCanvas(page: Page) {
     await page.goto("/canvas?mode=new");
     await page.waitForURL(/\/canvas\//, { timeout: 30_000 });
     await expect(page.locator("main").first()).toBeVisible({ timeout: 30_000 });
+    // 画布区（main 里的 section）挂载完再操作，否则双击/点击会打在初始化中的空壳上。
+    await expect(page.locator("main > section")).toBeVisible({ timeout: 30_000 });
 }
 
 async function createAcceptanceNode(page: Page) {
