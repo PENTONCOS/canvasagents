@@ -18,6 +18,8 @@ export enum CanvasNodeType {
     Group = "group",
     // F3: 对照块（现在的问题 ↔ 方案），对齐参考产品的红绿并排块。
     Compare = "compare",
+    // F4: 分节文档（左目录 + 右分节排版），对齐参考产品的 Spec Doc。
+    Doc = "doc",
     // M0: delivery domain nodes (dev plan §1.1)
     Requirement = "requirement",
     Journey = "journey",

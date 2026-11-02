@@ -34,6 +34,7 @@ export default function CanvasPage() {
     const renameGroup = useCanvasStore((state) => state.renameGroup);
     const deleteGroup = useCanvasStore((state) => state.deleteGroup);
     const moveProjectToGroup = useCanvasStore((state) => state.moveProjectToGroup);
+    const setProjectFavorite = useCanvasStore((state) => state.setProjectFavorite);
     const selectedIds = useCanvasUiStore((state) => state.selectedProjectIds);
     const setDeleteIds = useCanvasUiStore((state) => state.setDeleteProjectIds);
     // 项目名就地编辑：只存「正在改哪个项目」和草稿，不落库直到确认。
@@ -49,6 +50,9 @@ export default function CanvasPage() {
     const acceptance = useDeliveryStore((state) => state.acceptance);
     const projectCounts = useMemo(() => projects.map((project) => ({ project, counts: summarizeProjectTasks(project.nodes, acceptance) })), [acceptance, projects]);
     const totals = useMemo(() => projectCounts.reduce((acc, item) => addCounts(acc, item.counts), { done: 0, doing: 0, todo: 0, total: 0 }), [projectCounts]);
+    // 收藏分组：参考产品的项目树把收藏的放上面，其余归到一段。
+    const favored = useMemo(() => projectCounts.filter((item) => item.project.favorite), [projectCounts]);
+    const others = useMemo(() => projectCounts.filter((item) => !item.project.favorite), [projectCounts]);
 
     const enterProject = (id: string) => {
         const agentHash = hasAgentUrlBootstrap(window.location.hash) ? window.location.hash : "";
@@ -125,23 +129,28 @@ export default function CanvasPage() {
                 <div className="min-h-0">
                     <p className="text-xs font-medium uppercase tracking-wide text-stone-500">{t("canvas.rail.projects")}</p>
                     {projectCounts.length ? (
-                        <ul className="mt-3 flex flex-col gap-0.5">
-                            {projectCounts.map(({ project, counts }) => (
-                                <li key={project.id}>
-                                    <button
-                                        type="button"
-                                        onClick={() => enterProject(project.id)}
-                                        title={t("canvas.rail.openProject", { title: project.title })}
-                                        className="w-full rounded-md px-2 py-1.5 text-left transition hover:bg-stone-100 dark:hover:bg-stone-800"
-                                    >
-                                        <span className="block truncate text-sm">{project.title}</span>
-                                        <span className="mt-0.5 block text-xs text-stone-500 tabular-nums">
-                                            {t("canvas.rail.summary", { todo: counts.todo, doing: counts.doing, done: counts.done })}
-                                        </span>
-                                    </button>
-                                </li>
-                            ))}
-                        </ul>
+                        <div className="mt-3 flex flex-col gap-4">
+                            {favored.length ? (
+                                <div>
+                                    <p className="px-2 text-[11px] text-stone-400 dark:text-stone-500">{t("canvas.rail.favorites")}</p>
+                                    <ul className="mt-1 flex flex-col gap-0.5">
+                                        {favored.map(({ project, counts }) => (
+                                            <RailProjectRow key={project.id} project={project} counts={counts} onOpen={() => enterProject(project.id)} onToggleFavorite={() => setProjectFavorite(project.id, !project.favorite)} />
+                                        ))}
+                                    </ul>
+                                </div>
+                            ) : null}
+                            {others.length ? (
+                                <div>
+                                    <p className="px-2 text-[11px] text-stone-400 dark:text-stone-500">{favored.length ? t("canvas.rail.others") : t("canvas.rail.allProjects")}</p>
+                                    <ul className="mt-1 flex flex-col gap-0.5">
+                                        {others.map(({ project, counts }) => (
+                                            <RailProjectRow key={project.id} project={project} counts={counts} onOpen={() => enterProject(project.id)} onToggleFavorite={() => setProjectFavorite(project.id, !project.favorite)} />
+                                        ))}
+                                    </ul>
+                                </div>
+                            ) : null}
+                        </div>
                     ) : (
                         <p className="mt-3 text-xs text-stone-500">{t("canvas.rail.empty")}</p>
                     )}
@@ -277,5 +286,33 @@ function RailRow({ label, value, tone }: { label: string; value: number; tone: s
             <span className="text-stone-600 dark:text-stone-400">{label}</span>
             <span className={`tabular-nums ${value ? tone : "text-stone-400 dark:text-stone-600"}`}>{value}</span>
         </div>
+    );
+}
+
+function RailProjectRow({ project, counts, onOpen, onToggleFavorite }: {
+    project: { id: string; title: string; favorite?: boolean };
+    counts: { done: number; doing: number; todo: number };
+    onOpen: () => void;
+    onToggleFavorite: () => void;
+}) {
+    const { t } = useTranslation();
+    return (
+        <li className="group flex items-center gap-1 rounded-md transition hover:bg-stone-100 dark:hover:bg-stone-800">
+            <button type="button" onClick={onOpen} title={t("canvas.rail.openProject", { title: project.title })} className="min-w-0 flex-1 px-2 py-1.5 text-left">
+                <span className="block truncate text-sm">{project.title}</span>
+                <span className="mt-0.5 block text-xs text-stone-500 tabular-nums">
+                    {t("canvas.rail.summary", { todo: counts.todo, doing: counts.doing, done: counts.done })}
+                </span>
+            </button>
+            <button
+                type="button"
+                onClick={onToggleFavorite}
+                aria-label={project.favorite ? t("canvas.rail.unfavorite") : t("canvas.rail.favorite")}
+                aria-pressed={Boolean(project.favorite)}
+                className={`mr-1 shrink-0 rounded p-1 text-xs transition ${project.favorite ? "text-amber-500" : "text-stone-400 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"}`}
+            >
+                {project.favorite ? "★" : "☆"}
+            </button>
+        </li>
     );
 }

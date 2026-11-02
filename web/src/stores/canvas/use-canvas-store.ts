@@ -14,6 +14,8 @@ export type { CanvasProjectGroup };
 export type CanvasProject = {
     id: string;
     title: string;
+    // 收藏：左侧项目树分成「收藏 / 其他」两段（对齐参考产品）。可选，旧数据当作未收藏。
+    favorite?: boolean;
     // 所属项目（I1 项目层）。可选：旧数据没有这一层，迁移时补默认项目。
     groupId?: string;
     createdAt: string;
@@ -52,6 +54,8 @@ type CanvasStore = {
     /** 只有空项目能删；项目里还有画布时返回 false，绝不连带删画布。 */
     deleteGroup: (id: string) => boolean;
     moveProjectToGroup: (projectId: string, groupId: string) => void;
+    /** 收藏/取消收藏：左侧项目树按它分「收藏 / 其他」两段。 */
+    setProjectFavorite: (projectId: string, favorite: boolean) => void;
     /** 迁移旧数据：补默认项目、修正指向不存在项目的 groupId。幂等。 */
     normalizeGroups: () => void;
 };
@@ -231,6 +235,10 @@ export const useCanvasStore = create<CanvasStore>()(
                     if (!state.groups.some((group) => group.id === groupId)) return state;
                     return { projects: state.projects.map((project) => (project.id === projectId ? { ...project, groupId, updatedAt: new Date().toISOString() } : project)) };
                 }),
+            setProjectFavorite: (projectId, favorite) =>
+                set((state) => ({
+                    projects: state.projects.map((project) => (project.id === projectId ? { ...project, favorite, updatedAt: new Date().toISOString() } : project)),
+                })),
             normalizeGroups: () =>
                 set((state) => {
                     const now = new Date().toISOString();
