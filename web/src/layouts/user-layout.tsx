@@ -1,10 +1,23 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { AgentPanel } from "@/components/agent/agent-panel";
 import { AgentQueueView } from "@/components/agent/agent-queue-view";
 import { AppTopNav } from "@/components/layout/app-top-nav";
+import { hasAgentUrlBootstrap } from "@/lib/agent/agent-url-bootstrap";
+import { useAgentStore } from "@/stores/use-agent-store";
 
 export default function UserLayout({ children }: { children: ReactNode }) {
+    const [searchParams] = useSearchParams();
+    const bootstrapFromQuery = searchParams.has("agentUrl") || searchParams.has("agentToken");
+
+    // 一键连接（?agentUrl=&agentToken= 或 #agentUrl=）必须把面板打开：
+    // 否则连上了但面板停在视口外，用户看不到任何变化，e2e 里也点不到面板里的按钮。
+    useEffect(() => {
+        if (!bootstrapFromQuery && !hasAgentUrlBootstrap(window.location.hash)) return;
+        useAgentStore.getState().openPanel();
+    }, [bootstrapFromQuery]);
+
     return (
         <div className="flex h-dvh overflow-hidden bg-background text-foreground">
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
